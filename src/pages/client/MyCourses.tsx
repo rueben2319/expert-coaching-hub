@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { BookOpen, TrendingUp, Calendar, User } from "lucide-react";
+import { clientNavItems, clientSidebarSections } from "@/config/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 
@@ -30,31 +31,8 @@ export default function MyCourses() {
     enabled: !!user?.id,
   });
 
-  const navItems = [
-    { label: "Dashboard", href: "/client" },
-    { label: "Browse Courses", href: "/client/courses" },
-    { label: "My Courses", href: "/client/my-courses" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Learning",
-      items: [
-        { icon: <BookOpen className="h-4 w-4" />, label: "Browse Courses", href: "/client/courses" },
-        { icon: <TrendingUp className="h-4 w-4" />, label: "My Courses", href: "/client/my-courses" },
-      ],
-    },
-    {
-      title: "Account",
-      items: [
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/client/schedule" },
-        { icon: <User className="h-4 w-4" />, label: "Profile", href: "/client/profile" },
-      ],
-    },
-  ];
-
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+    <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">My Courses</h1>

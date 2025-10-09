@@ -46,7 +46,7 @@ export function DashboardLayout({
   children,
   navItems,
   sidebarSections = [],
-  brandName = "Insight Coach",
+  brandName = "Experts Coaching Hub",
 }: DashboardLayoutProps) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);

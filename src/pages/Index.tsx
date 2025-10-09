@@ -33,7 +33,7 @@ const Index = () => {
             <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
               <GraduationCap className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-lg">Insight Coach</span>
+            <span className="font-semibold text-lg">Experts Coaching Hub</span>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => navigate("/auth")}>
@@ -118,7 +118,7 @@ const Index = () => {
 
       <footer className="border-t mt-20">
         <div className="container mx-auto px-4 py-8 text-center text-muted-foreground">
-          <p>&copy; 2025 Insight Coach. All rights reserved.</p>
+          <p>&copy; 2025 Experts Coaching Hub. All rights reserved.</p>
         </div>
       </footer>
     </div>

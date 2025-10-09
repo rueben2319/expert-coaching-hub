@@ -3,55 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, User, Calendar, TrendingUp } from "lucide-react";
+import { clientNavItems, clientSidebarSections } from "@/config/navigation";
 
 export default function ClientDashboard() {
   const { user } = useAuth();
 
-  const navItems = [
-    { label: "Dashboard", href: "/client" },
-    { label: "My Courses", href: "/client/courses" },
-    { label: "Schedule", href: "/client/schedule" },
-    { label: "Progress", href: "/client/progress" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Learning",
-      items: [
-        {
-          icon: <BookOpen className="h-4 w-4" />,
-          label: "Browse Courses",
-          href: "/client/courses",
-        },
-        {
-          icon: <TrendingUp className="h-4 w-4" />,
-          label: "My Courses",
-          href: "/client/my-courses",
-        },
-      ],
-    },
-    {
-      title: "Account",
-      items: [
-        {
-          icon: <Calendar className="h-4 w-4" />,
-          label: "Schedule",
-          href: "/client/schedule",
-        },
-        {
-          icon: <User className="h-4 w-4" />,
-          label: "Profile",
-          href: "/client/profile",
-        },
-      ],
-    },
-  ];
-
   return (
     <DashboardLayout
-      navItems={navItems}
-      sidebarSections={sidebarSections}
-      brandName="Insight Coach"
+      navItems={clientNavItems}
+      sidebarSections={clientSidebarSections}
+      brandName="Experts Coaching Hub"
     >
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">

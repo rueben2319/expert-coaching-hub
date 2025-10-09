@@ -8,6 +8,7 @@ import { BookOpen, Clock, TrendingUp, Calendar, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
+import { clientNavItems, clientSidebarSections } from "@/config/navigation";
 
 export default function Courses() {
   const { user } = useAuth();
@@ -55,35 +56,12 @@ export default function Courses() {
     },
   });
 
-  const navItems = [
-    { label: "Dashboard", href: "/client" },
-    { label: "Browse Courses", href: "/client/courses" },
-    { label: "My Courses", href: "/client/my-courses" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Learning",
-      items: [
-        { icon: <BookOpen className="h-4 w-4" />, label: "Browse Courses", href: "/client/courses" },
-        { icon: <TrendingUp className="h-4 w-4" />, label: "My Courses", href: "/client/my-courses" },
-      ],
-    },
-    {
-      title: "Account",
-      items: [
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/client/schedule" },
-        { icon: <User className="h-4 w-4" />, label: "Profile", href: "/client/profile" },
-      ],
-    },
-  ];
-
   const isEnrolled = (course: any) => {
     return course.course_enrollments?.some((e: any) => e.user_id === user?.id);
   };
 
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+    <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Browse Courses</h1>
