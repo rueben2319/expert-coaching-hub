@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,9 +20,14 @@ interface QuizQuestion {
 
 interface QuizContentProps {
   content: {
-    title: string;
+    title?: string;
     description?: string;
-    questions: QuizQuestion[];
+    question?: string;
+    options?: string[];
+    correct?: number;
+    explanation?: string;
+    // Legacy format support
+    questions?: QuizQuestion[];
     passingScore?: number; // percentage
   };
   contentId: string;
@@ -35,6 +39,16 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
   const [answers, setAnswers] = useState<Record<string, number[]>>({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+
+  // Convert new format to legacy format for compatibility
+  const questions = content.questions || (content.question ? [{
+    id: 'quiz-question',
+    question: content.question,
+    type: 'single' as const,
+    options: content.options || [],
+    correctAnswers: [content.correct || 0],
+    explanation: content.explanation
+  }] : []);
 
   const handleSingleAnswer = (questionId: string, answerIndex: number) => {
     setAnswers((prev) => ({
@@ -56,7 +70,7 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
 
   const calculateScore = () => {
     let correct = 0;
-    content.questions.forEach((question) => {
+    questions.forEach((question) => {
       const userAnswer = answers[question.id] || [];
       const correctAnswer = question.correctAnswers;
 
@@ -68,11 +82,11 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
       }
     });
 
-    return (correct / content.questions.length) * 100;
+    return (correct / questions.length) * 100;
   };
 
   const isAnswerCorrect = (questionId: string) => {
-    const question = content.questions.find((q) => q.id === questionId);
+    const question = questions.find((q) => q.id === questionId);
     if (!question) return false;
 
     const userAnswer = answers[questionId] || [];
@@ -123,32 +137,34 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
     setScore(0);
   };
 
-  const allQuestionsAnswered = content.questions.every(
+  const allQuestionsAnswered = questions.every(
     (q) => answers[q.id] && answers[q.id].length > 0
   );
 
   return (
-    <div className="space-y-6 border rounded-lg p-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-xl font-semibold">{content.title}</h3>
-          {content.description && (
-            <p className="text-sm text-muted-foreground mt-2">{content.description}</p>
+    <div className="space-y-6">
+      {content.title && (
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-xl font-semibold">{content.title}</h3>
+            {content.description && (
+              <p className="text-sm text-muted-foreground mt-2">{content.description}</p>
+            )}
+          </div>
+          {submitted && (
+            <Badge
+              variant={score >= (content.passingScore || 70) ? "default" : "destructive"}
+              className="text-lg px-4 py-1"
+            >
+              {score.toFixed(0)}%
+            </Badge>
           )}
         </div>
-        {submitted && (
-          <Badge
-            variant={score >= (content.passingScore || 70) ? "default" : "destructive"}
-            className="text-lg px-4 py-1"
-          >
-            {score.toFixed(0)}%
-          </Badge>
-        )}
-      </div>
+      )}
       
       <div className="space-y-6">
-        {content.questions.map((question, qIndex) => (
-          <div key={question.id} className="space-y-3 p-4 border rounded-lg">
+        {questions.map((question, qIndex) => (
+          <div key={question.id} className="space-y-3">
             <div className="flex items-start gap-2">
               <span className="font-semibold text-sm text-muted-foreground">
                 Q{qIndex + 1}.
