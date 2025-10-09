@@ -22,10 +22,12 @@ interface CreateLessonDialogProps {
   moduleId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editLesson?: any;
 }
 
-export function CreateLessonDialog({ moduleId, open, onOpenChange }: CreateLessonDialogProps) {
+export function CreateLessonDialog({ moduleId, open, onOpenChange, editLesson }: CreateLessonDialogProps) {
   const queryClient = useQueryClient();
+  const isEditing = !!editLesson;
 
   const { data: lessonCount } = useQuery({
     queryKey: ["lesson-count", moduleId],
@@ -36,35 +38,49 @@ export function CreateLessonDialog({ moduleId, open, onOpenChange }: CreateLesso
         .eq("module_id", moduleId);
       return count || 0;
     },
+    enabled: !isEditing,
   });
 
   const form = useForm<LessonFormData>({
     resolver: zodResolver(lessonSchema),
     defaultValues: {
-      title: "",
-      description: "",
+      title: editLesson?.title || "",
+      description: editLesson?.description || "",
+      estimated_duration: editLesson?.estimated_duration || undefined,
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: LessonFormData) => {
-      const { error } = await supabase.from("lessons").insert({
-        module_id: moduleId,
-        title: data.title,
-        description: data.description || null,
-        estimated_duration: data.estimated_duration || null,
-        order_index: lessonCount || 0,
-      });
-      if (error) throw error;
+      if (isEditing) {
+        const { error } = await supabase
+          .from("lessons")
+          .update({
+            title: data.title,
+            description: data.description || null,
+            estimated_duration: data.estimated_duration || null,
+          })
+          .eq("id", editLesson.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("lessons").insert({
+          module_id: moduleId,
+          title: data.title,
+          description: data.description || null,
+          estimated_duration: data.estimated_duration || null,
+          order_index: lessonCount || 0,
+        });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["course-modules"] });
-      toast({ title: "Lesson created successfully" });
+      toast({ title: isEditing ? "Lesson updated successfully" : "Lesson created successfully" });
       form.reset();
       onOpenChange(false);
     },
     onError: () => {
-      toast({ title: "Failed to create lesson", variant: "destructive" });
+      toast({ title: isEditing ? "Failed to update lesson" : "Failed to create lesson", variant: "destructive" });
     },
   });
 
@@ -72,7 +88,7 @@ export function CreateLessonDialog({ moduleId, open, onOpenChange }: CreateLesso
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create New Lesson</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Lesson" : "Create New Lesson"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
@@ -123,7 +139,9 @@ export function CreateLessonDialog({ moduleId, open, onOpenChange }: CreateLesso
                 Cancel
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Creating..." : "Create Lesson"}
+                {createMutation.isPending 
+                  ? (isEditing ? "Updating..." : "Creating...") 
+                  : (isEditing ? "Update Lesson" : "Create Lesson")}
               </Button>
             </div>
           </form>

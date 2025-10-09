@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Edit } from "lucide-react";
 import { LessonItem } from "./LessonItem";
 import { CreateLessonDialog } from "./CreateLessonDialog";
+import { CreateModuleDialog } from "./CreateModuleDialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -17,6 +18,7 @@ interface ModuleItemProps {
 export function ModuleItem({ module, courseId }: ModuleItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateLesson, setShowCreateLesson] = useState(false);
+  const [showEditModule, setShowEditModule] = useState(false);
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
@@ -50,8 +52,10 @@ export function ModuleItem({ module, courseId }: ModuleItemProps) {
               </CollapsibleTrigger>
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => setShowCreateLesson(true)}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Lesson
+                  <Plus className="h-4 w-4 mr-1" /> 
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowEditModule(true)}>
+                  <Edit className="h-4 w-4" />
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => deleteMutation.mutate()}>
                   <Trash2 className="h-4 w-4" />
@@ -81,6 +85,13 @@ export function ModuleItem({ module, courseId }: ModuleItemProps) {
         moduleId={module.id}
         open={showCreateLesson}
         onOpenChange={setShowCreateLesson}
+      />
+
+      <CreateModuleDialog
+        courseId={courseId}
+        open={showEditModule}
+        onOpenChange={setShowEditModule}
+        editModule={module}
       />
     </>
   );

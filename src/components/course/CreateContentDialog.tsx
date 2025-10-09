@@ -12,7 +12,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 const contentSchema = z.object({
   content_type: z.enum(["text", "video", "quiz", "interactive", "file"]),
@@ -28,11 +28,15 @@ interface CreateContentDialogProps {
   lessonId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editContent?: any;
 }
 
-export function CreateContentDialog({ lessonId, open, onOpenChange }: CreateContentDialogProps) {
+export function CreateContentDialog({ lessonId, open, onOpenChange, editContent }: CreateContentDialogProps) {
   const queryClient = useQueryClient();
-  const [contentType, setContentType] = useState<"text" | "video" | "quiz" | "interactive" | "file">("text");
+  const isEditing = !!editContent;
+  const [contentType, setContentType] = useState<"text" | "video" | "quiz" | "interactive" | "file">(
+    editContent?.content_type || "text"
+  );
 
   const { data: contentCount } = useQuery({
     queryKey: ["content-count", lessonId],
@@ -43,47 +47,109 @@ export function CreateContentDialog({ lessonId, open, onOpenChange }: CreateCont
         .eq("lesson_id", lessonId);
       return count || 0;
     },
+    enabled: !isEditing,
   });
 
   const form = useForm<ContentFormData>({
     resolver: zodResolver(contentSchema),
     defaultValues: {
-      content_type: "text",
-      is_required: true,
-      text_content: "",
-      video_url: "",
+      content_type: editContent?.content_type || "text",
+      is_required: editContent?.is_required ?? true,
+      text_content: editContent?.content_data?.text || editContent?.content_data?.html || "",
+      video_url: editContent?.content_data?.url || "",
+      quiz_question: editContent?.content_data?.question || "",
     },
   });
+
+  // Update contentType state and form when dialog opens with edit data
+  useEffect(() => {
+    if (!open) return;
+    
+    if (editContent && editContent.id && editContent.content_type) {
+      const contentType = editContent.content_type;
+      setContentType(contentType);
+      
+      // Extract content based on type
+      let textContent = "";
+      let videoUrl = "";
+      let quizQuestion = "";
+      
+      if (contentType === "text") {
+        textContent = editContent.content_data?.text || editContent.content_data?.html || "";
+      } else if (contentType === "video" || contentType === "interactive" || contentType === "file") {
+        videoUrl = editContent.content_data?.url || "";
+      } else if (contentType === "quiz") {
+        quizQuestion = editContent.content_data?.question || "";
+      }
+      
+      // Use setTimeout to ensure the form is ready
+      setTimeout(() => {
+        form.reset({
+          content_type: contentType,
+          is_required: editContent.is_required ?? true,
+          text_content: textContent,
+          video_url: videoUrl,
+          quiz_question: quizQuestion,
+        });
+      }, 100);
+    } else {
+      // Reset to defaults when creating new content
+      setContentType("text");
+      form.reset({
+        content_type: "text",
+        is_required: true,
+        text_content: "",
+        video_url: "",
+        quiz_question: "",
+      });
+    }
+  }, [open, editContent, isEditing, form]);
 
   const createMutation = useMutation({
     mutationFn: async (data: ContentFormData) => {
       let contentData = {};
 
       if (data.content_type === "text") {
-        contentData = { html: data.text_content || "" };
+        contentData = { text: data.text_content || "", html: data.text_content || "" };
       } else if (data.content_type === "video") {
         contentData = { url: data.video_url || "" };
       } else if (data.content_type === "quiz") {
         contentData = { question: data.quiz_question || "", options: [], correct: 0 };
+      } else if (data.content_type === "interactive") {
+        contentData = { url: data.video_url || "" };
+      } else if (data.content_type === "file") {
+        contentData = { url: data.video_url || "", filename: "File" };
       }
 
-      const { error } = await supabase.from("lesson_content").insert({
-        lesson_id: lessonId,
-        content_type: data.content_type,
-        content_data: contentData,
-        is_required: data.is_required,
-        order_index: contentCount || 0,
-      });
-      if (error) throw error;
+      if (isEditing) {
+        const { error } = await supabase
+          .from("lesson_content")
+          .update({
+            content_type: data.content_type,
+            content_data: contentData,
+            is_required: data.is_required,
+          })
+          .eq("id", editContent.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("lesson_content").insert({
+          lesson_id: lessonId,
+          content_type: data.content_type,
+          content_data: contentData,
+          is_required: data.is_required,
+          order_index: contentCount || 0,
+        });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["course-modules"] });
-      toast({ title: "Content added successfully" });
+      toast({ title: isEditing ? "Content updated successfully" : "Content added successfully" });
       form.reset();
       onOpenChange(false);
     },
     onError: () => {
-      toast({ title: "Failed to add content", variant: "destructive" });
+      toast({ title: isEditing ? "Failed to update content" : "Failed to add content", variant: "destructive" });
     },
   });
 
@@ -91,7 +157,9 @@ export function CreateContentDialog({ lessonId, open, onOpenChange }: CreateCont
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add Content to Lesson</DialogTitle>
+          <DialogTitle>
+            {isEditing ? `Edit Content (${editContent?.content_type})` : "Add Content to Lesson"}
+          </DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
@@ -106,7 +174,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange }: CreateCont
                       field.onChange(value);
                       setContentType(value as any);
                     }}
-                    defaultValue={field.value}
+                    value={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -167,6 +235,38 @@ export function CreateContentDialog({ lessonId, open, onOpenChange }: CreateCont
                     <FormLabel>Quiz Question</FormLabel>
                     <FormControl>
                       <Textarea placeholder="Enter your question" rows={3} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {contentType === "interactive" && (
+              <FormField
+                control={form.control}
+                name="video_url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Interactive Content URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://example.com/interactive-content" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {contentType === "file" && (
+              <FormField
+                control={form.control}
+                name="video_url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>File URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://example.com/file.pdf" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

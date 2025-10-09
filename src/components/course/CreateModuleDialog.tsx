@@ -21,10 +21,12 @@ interface CreateModuleDialogProps {
   courseId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editModule?: any;
 }
 
-export function CreateModuleDialog({ courseId, open, onOpenChange }: CreateModuleDialogProps) {
+export function CreateModuleDialog({ courseId, open, onOpenChange, editModule }: CreateModuleDialogProps) {
   const queryClient = useQueryClient();
+  const isEditing = !!editModule;
 
   const { data: moduleCount } = useQuery({
     queryKey: ["module-count", courseId],
@@ -35,34 +37,46 @@ export function CreateModuleDialog({ courseId, open, onOpenChange }: CreateModul
         .eq("course_id", courseId);
       return count || 0;
     },
+    enabled: !isEditing,
   });
 
   const form = useForm<ModuleFormData>({
     resolver: zodResolver(moduleSchema),
     defaultValues: {
-      title: "",
-      description: "",
+      title: editModule?.title || "",
+      description: editModule?.description || "",
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: ModuleFormData) => {
-      const { error } = await supabase.from("course_modules").insert({
-        course_id: courseId,
-        title: data.title,
-        description: data.description || null,
-        order_index: moduleCount || 0,
-      });
-      if (error) throw error;
+      if (isEditing) {
+        const { error } = await supabase
+          .from("course_modules")
+          .update({
+            title: data.title,
+            description: data.description || null,
+          })
+          .eq("id", editModule.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("course_modules").insert({
+          course_id: courseId,
+          title: data.title,
+          description: data.description || null,
+          order_index: moduleCount || 0,
+        });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["course-modules", courseId] });
-      toast({ title: "Module created successfully" });
+      toast({ title: isEditing ? "Module updated successfully" : "Module created successfully" });
       form.reset();
       onOpenChange(false);
     },
     onError: () => {
-      toast({ title: "Failed to create module", variant: "destructive" });
+      toast({ title: isEditing ? "Failed to update module" : "Failed to create module", variant: "destructive" });
     },
   });
 
@@ -70,7 +84,7 @@ export function CreateModuleDialog({ courseId, open, onOpenChange }: CreateModul
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create New Module</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Module" : "Create New Module"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
@@ -107,7 +121,9 @@ export function CreateModuleDialog({ courseId, open, onOpenChange }: CreateModul
                 Cancel
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Creating..." : "Create Module"}
+                {createMutation.isPending 
+                  ? (isEditing ? "Updating..." : "Creating...") 
+                  : (isEditing ? "Update Module" : "Create Module")}
               </Button>
             </div>
           </form>

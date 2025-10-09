@@ -23,7 +23,7 @@ export function CourseCurriculum({ courseId }: CourseCurriculumProps) {
           *,
           lessons(
             *,
-            lesson_content(count)
+            lesson_content(*)
           )
         `)
         .eq("course_id", courseId)
