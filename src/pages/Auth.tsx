@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { GraduationCap, Users, BookOpen } from "lucide-react";
+import { GraduationCap, Users, BookOpen, Mail, Loader2 } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -19,14 +21,28 @@ export default function Auth() {
   const [fullName, setFullName] = useState("");
   const [selectedRole, setSelectedRole] = useState<"client" | "coach">("client");
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [showRoleDialog, setShowRoleDialog] = useState(false);
+  const [pendingRole, setPendingRole] = useState<"client" | "coach">("client");
+  const [submittingRole, setSubmittingRole] = useState(false);
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, role, refreshRole, signOut } = useAuth();
 
   useEffect(() => {
     if (user && role) {
       navigate(`/${role}`);
     }
   }, [user, role, navigate]);
+
+  useEffect(() => {
+    if (user) {
+      setOauthLoading(false);
+    }
+
+    if (user && !role) {
+      setShowRoleDialog(true);
+    }
+  }, [user, role]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +96,59 @@ export default function Auth() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    try {
+      setOauthLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth`,
+        },
+      });
+
+      if (error) throw error;
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Google sign-in failed");
+      setOauthLoading(false);
+    }
+  };
+
+  const handleRoleSubmit = async () => {
+    if (!user) return;
+    setSubmittingRole(true);
+
+    try {
+      const { error: roleError } = await supabase
+        .from("user_roles")
+        .upsert(
+          {
+            user_id: user.id,
+            role: pendingRole,
+          },
+          { onConflict: "user_id" }
+        );
+
+      if (roleError) throw roleError;
+
+      const { error: metadataError } = await supabase.auth.updateUser({
+        data: { role: pendingRole },
+      });
+
+      if (metadataError) throw metadataError;
+
+      await refreshRole();
+      setShowRoleDialog(false);
+      toast.success("Role selected successfully");
+      navigate(`/${pendingRole}`);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Failed to set role");
+    } finally {
+      setSubmittingRole(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">
       {/* Theme Toggle - Top Right */}
@@ -126,7 +195,6 @@ export default function Auth() {
                           <Users className="h-4 w-4" />
                           <div>
                             <div className="font-medium">Student</div>
-                            <div className="text-xs text-muted-foreground">Learn from expert coaches</div>
                           </div>
                         </div>
                       </SelectItem>
@@ -135,8 +203,7 @@ export default function Auth() {
                           <BookOpen className="h-4 w-4" />
                           <div>
                             <div className="font-medium">Coach</div>
-                            <div className="text-xs text-muted-foreground">Create and teach courses</div>
-                          </div>
+                           </div>
                         </div>
                       </SelectItem>
                     </SelectContent>
@@ -175,6 +242,30 @@ export default function Auth() {
               {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
             </Button>
           </form>
+          <div className="relative my-6">
+            <Separator className="my-6" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="bg-background px-3 text-xs text-muted-foreground uppercase tracking-wide">
+                or continue with
+              </span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleGoogleAuth}
+            disabled={loading || oauthLoading}
+          >
+            {oauthLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Mail className="h-4 w-4 mr-2" />
+            )}
+            Continue with Google
+          </Button>
+
           <div className="mt-4 text-center text-sm">
             <button
               type="button"
@@ -186,6 +277,64 @@ export default function Auth() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select your role</DialogTitle>
+            <DialogDescription>
+              Choose how you would like to use Experts Coaching Hub.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Label htmlFor="oauth-role">I want to join as a</Label>
+            <Select value={pendingRole} onValueChange={(value: "client" | "coach") => setPendingRole(value)}>
+              <SelectTrigger id="oauth-role">
+                <SelectValue placeholder="Select your role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Student</div>
+                      <div className="text-xs text-muted-foreground">Learn from expert coaches</div>
+                    </div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="coach">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Coach</div>
+                      <div className="text-xs text-muted-foreground">Create and teach courses</div>
+                    </div>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter className="mt-4 gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={async () => {
+                setShowRoleDialog(false);
+                await signOut();
+              }}
+              disabled={submittingRole}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleRoleSubmit} disabled={submittingRole}>
+              {submittingRole && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -218,3 +218,5 @@ const Schedule = () => {
     </DashboardLayout>
   );
 }
+
+export default Schedule;
