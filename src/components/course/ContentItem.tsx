@@ -67,7 +67,7 @@ export function ContentItem({ content, lessonId }: ContentItemProps) {
 
   return (
     <>
-      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border-l-4 border-l-primary/20">
+      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
         <div className="flex items-center gap-3">
           {getContentIcon(content.content_type)}
           <div className="flex-1">

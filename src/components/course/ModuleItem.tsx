@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown, Plus, Trash2, Edit } from "lucide-react";
@@ -37,34 +36,32 @@ export function ModuleItem({ module, courseId }: ModuleItemProps) {
 
   return (
     <>
-      <Card>
-        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CollapsibleTrigger className="flex items-center gap-2 flex-1 text-left">
-                <ChevronDown className={`h-5 w-5 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
-                <div className="flex-1">
-                  <CardTitle className="text-lg">{module.title}</CardTitle>
-                  {module.description && (
-                    <p className="text-sm text-muted-foreground mt-1">{module.description}</p>
-                  )}
-                </div>
-              </CollapsibleTrigger>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => setShowCreateLesson(true)}>
-                  <Plus className="h-4 w-4 mr-1" /> 
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setShowEditModule(true)}>
-                  <Edit className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => deleteMutation.mutate()}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <div className="bg-muted/30 rounded-lg">
+          <div className="flex items-center justify-between p-4">
+            <CollapsibleTrigger className="flex items-center gap-2 flex-1 text-left">
+              <ChevronDown className={`h-5 w-5 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold">{module.title}</h3>
+                {module.description && (
+                  <p className="text-sm text-muted-foreground mt-1">{module.description}</p>
+                )}
               </div>
+            </CollapsibleTrigger>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => setShowCreateLesson(true)}>
+                <Plus className="h-4 w-4 mr-1" /> 
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowEditModule(true)}>
+                <Edit className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => deleteMutation.mutate()}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
-          </CardHeader>
+          </div>
           <CollapsibleContent>
-            <CardContent>
+            <div className="px-4 pb-4">
               {module.lessons && module.lessons.length > 0 ? (
                 <div className="space-y-2">
                   {module.lessons.map((lesson: any) => (
@@ -76,10 +73,10 @@ export function ModuleItem({ module, courseId }: ModuleItemProps) {
                   No lessons yet. Click "Add Lesson" to create one.
                 </p>
               )}
-            </CardContent>
+            </div>
           </CollapsibleContent>
-        </Collapsible>
-      </Card>
+        </div>
+      </Collapsible>
 
       <CreateLessonDialog
         moduleId={module.id}

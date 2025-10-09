@@ -192,6 +192,13 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       }
 
       if (isEditing) {
+        console.log("Updating content with:", {
+          content_type: data.content_type,
+          content_data: contentData,
+          is_required: data.is_required,
+          id: editContent.id
+        });
+        
         const { error } = await supabase
           .from("lesson_content")
           .update({
@@ -200,7 +207,11 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
             is_required: data.is_required,
           })
           .eq("id", editContent.id);
-        if (error) throw error;
+        if (error) {
+          console.error("Update error:", error);
+          throw error;
+        }
+        console.log("Update successful");
       } else {
         const { error } = await supabase.from("lesson_content").insert({
           lesson_id: lessonId,
@@ -297,7 +308,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
             )}
 
             {contentType === "quiz" && (
-              <div className="space-y-4 border rounded-lg p-3 sm:p-4">
+              <div className="space-y-4">
                 <h3 className="font-semibold text-base sm:text-lg">Quiz Builder</h3>
                 
                 <FormField
@@ -357,7 +368,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                       <FormLabel>Questions</FormLabel>
                       <div className="space-y-4">
                         {field.value?.map((question, questionIndex) => (
-                          <div key={questionIndex} className="border rounded-lg p-4 space-y-3">
+                          <div key={questionIndex} className="space-y-3 p-4 bg-muted/30 rounded-lg">
                             <div className="flex items-center justify-between">
                               <h4 className="font-medium">Question {questionIndex + 1}</h4>
                               {field.value && field.value.length > 1 && (

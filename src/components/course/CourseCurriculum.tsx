@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,15 +54,13 @@ export function CourseCurriculum({ courseId }: CourseCurriculumProps) {
           ))}
         </div>
       ) : (
-        <Card>
-          <CardContent className="text-center py-12">
-            <p className="text-muted-foreground mb-4">No modules yet</p>
-            <Button onClick={() => setShowCreateModule(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create First Module
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="text-center py-12">
+          <p className="text-muted-foreground mb-4">No modules yet</p>
+          <Button onClick={() => setShowCreateModule(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create First Module
+          </Button>
+        </div>
       )}
 
       <CreateModuleDialog
