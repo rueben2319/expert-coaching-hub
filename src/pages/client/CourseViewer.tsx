@@ -5,6 +5,7 @@ import { CourseTemplateLayout } from "@/components/CourseTemplateLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ContentRenderer } from "@/components/content/ContentRenderer";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
@@ -383,54 +384,29 @@ export default function CourseViewer() {
           </div>
 
           {/* Lesson Content */}
-          <Card>
-            <CardContent className="pt-6">
-              {currentLesson?.lesson_content &&
-              currentLesson.lesson_content.length > 0 ? (
-                <div className="space-y-6">
-                  {currentLesson.lesson_content
-                    .sort((a: any, b: any) => a.order_index - b.order_index)
-                    .map((content: any) => (
-                      <div key={content.id} className="space-y-2">
-                        <Badge variant="outline">{content.content_type}</Badge>
-                        <div className="prose max-w-none">
-                          {content.content_type === "text" && (
-                            <div
-                              dangerouslySetInnerHTML={{
-                                __html: content.content_data.text || "",
-                              }}
-                            />
-                          )}
-                          {content.content_type === "video" && (
-                            <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                              <p className="text-muted-foreground">
-                                Video: {content.content_data.url}
-                              </p>
-                            </div>
-                          )}
-                          {content.content_type === "file" && (
-                            <div className="p-4 border rounded-lg">
-                              <BookOpen className="h-8 w-8 text-muted-foreground mb-2" />
-                              <p className="font-medium">
-                                {content.content_data.filename}
-                              </p>
-                              <Button size="sm" variant="link" className="px-0">
-                                Download
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              ) : (
+          {currentLesson?.lesson_content &&
+          currentLesson.lesson_content.length > 0 ? (
+            <div className="space-y-6">
+              {currentLesson.lesson_content
+                .sort((a: any, b: any) => a.order_index - b.order_index)
+                .map((content: any) => (
+                  <ContentRenderer
+                    key={content.id}
+                    content={content}
+                    onComplete={handleMarkComplete}
+                  />
+                ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
                 <div className="text-center py-12 text-muted-foreground">
                   <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No content available for this lesson yet.</p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </CourseTemplateLayout>
