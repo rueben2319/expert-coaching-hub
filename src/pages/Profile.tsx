@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { User, Lock, Trash2, Save, Camera, BookOpen, Plus, Users, BarChart3, Calendar, Video } from "lucide-react";
+import { getProfileNavItems, getProfileSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,51 +37,17 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 type PasswordFormData = z.infer<typeof passwordSchema>;
 
 export default function Profile() {
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Determine user role and navigation
-  const userRole = user?.user_metadata?.role || "client";
+  const userRole = (role as string | null) || user?.user_metadata?.role || "client";
   const dashboardPath = userRole === "coach" ? "/coach" : userRole === "admin" ? "/admin" : "/client";
 
-  const navItems = [
-    { label: "Dashboard", href: dashboardPath },
-    { label: "Profile", href: "/profile" },
-  ];
-
-  const sidebarSections = userRole === "coach" ? [
-    {
-      title: "Course Management",
-      items: [
-        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
-        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
-        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
-      ],
-    },
-    {
-      title: "Students",
-      items: [
-        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
-      ],
-    },
-    {
-      title: "Analytics",
-      items: [
-        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
-      ],
-    },
-  ] : [
-    {
-      title: "Learning",
-      items: [
-        { icon: <BookOpen className="h-4 w-4" />, label: "All Courses", href: "/client/courses" },
-        { icon: <Users className="h-4 w-4" />, label: "My Courses", href: "/client/my-courses" },
-      ],
-    },
-  ];
+  const navItems = [...getProfileNavItems(userRole), { label: "Profile", href: "/profile" }];
+  const sidebarSections = getProfileSidebarSections(userRole);
 
   // Fetch user profile
   const { data: profile, isLoading: profileLoading } = useQuery({

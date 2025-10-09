@@ -1,40 +1,10 @@
 import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, Plus, Users, BarChart3, Calendar, Video, TrendingUp, TrendingDown, Eye, Clock } from "lucide-react";
+import { coachNavItems, coachSidebarSections } from "@/config/navigation";
 
 export default function Analytics() {
   const { user } = useAuth();
-
-  const navItems = [
-    { label: "Dashboard", href: "/coach" },
-    { label: "My Courses", href: "/coach/courses" },
-    { label: "Students", href: "/coach/students" },
-    { label: "Analytics", href: "/coach/analytics" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Course Management",
-      items: [
-        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
-        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
-        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
-      ],
-    },
-    {
-      title: "Students",
-      items: [
-        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
-      ],
-    },
-    {
-      title: "Analytics",
-      items: [
-        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
-      ],
-    },
-  ];
 
   // Mock analytics data
   const stats = [
@@ -138,8 +108,8 @@ export default function Analytics() {
 
   return (
     <DashboardLayout
-      navItems={navItems}
-      sidebarSections={sidebarSections}
+      navItems={coachNavItems}
+      sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >
       <div className="space-y-6">

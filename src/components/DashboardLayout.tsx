@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft, ChevronRight, GraduationCap, LogOut, Menu, User, Search, HelpCircle, Globe } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
+import { ThemeToggle } from "@/components/ThemeToggle";
 interface NavItem {
   label: string;
   href: string;
@@ -209,7 +210,7 @@ export function DashboardLayout({
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Navbar */}
-      <header className="flex-shrink-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <header className="flex-shrink-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 items-center px-4 md:px-6">
           {/* Mobile Menu Toggle */}
           {sidebarSections.length > 0 && (
@@ -268,6 +269,9 @@ export function DashboardLayout({
             <Button variant="ghost" size="icon" className="h-9 w-9">
               <Globe className="h-4 w-4" />
             </Button>
+
+            {/* Theme Toggle */}
+            <ThemeToggle />
 
             {/* User Menu */}
             <DropdownMenu>

@@ -1,8 +1,9 @@
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { BookOpen, Plus, Users, BarChart3, Calendar, Video, TrendingUp, Clock } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { BookOpen, Users, BarChart3, Calendar, Video, Plus, TrendingUp, Clock } from "lucide-react";
+import { coachNavItems, coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,36 +12,7 @@ export default function CoachDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const navItems = [
-    { label: "Dashboard", href: "/coach" },
-    { label: "My Courses", href: "/coach/courses" },
-    { label: "Students", href: "/coach/students" },
-    { label: "Analytics", href: "/coach/analytics" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Course Management",
-      items: [
-        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
-        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
-        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
-      ],
-    },
-    {
-      title: "Students",
-      items: [
-        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
-      ],
-    },
-    {
-      title: "Analytics",
-      items: [
-        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
-      ],
-    },
-  ];
+  if (!user) return null;
 
   // Fetch coach's courses
   const { data: courses, isLoading: coursesLoading } = useQuery({
@@ -101,8 +73,8 @@ export default function CoachDashboard() {
 
   return (
     <DashboardLayout
-      navItems={navItems}
-      sidebarSections={sidebarSections}
+      navItems={coachNavItems}
+      sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

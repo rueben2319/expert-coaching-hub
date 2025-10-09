@@ -1,46 +1,17 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { BookOpen, Plus, Users, BarChart3, Calendar, Video, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { BookOpen, Plus, Users, BarChart3, Calendar, Video, Clock, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { format, addDays, startOfWeek } from "date-fns";
+import { coachNavItems, coachSidebarSections } from "@/config/navigation";
 
-export default function Schedule() {
+const Schedule = () => {
   const { user } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const navItems = [
-    { label: "Dashboard", href: "/coach" },
-    { label: "My Courses", href: "/coach/courses" },
-    { label: "Students", href: "/coach/students" },
-    { label: "Analytics", href: "/coach/analytics" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Course Management",
-      items: [
-        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
-        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
-        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
-      ],
-    },
-    {
-      title: "Students",
-      items: [
-        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
-      ],
-    },
-    {
-      title: "Analytics",
-      items: [
-        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
-      ],
-    },
-  ];
-
-  // Mock schedule data
   const events = [
     {
       id: 1,
@@ -129,8 +100,8 @@ export default function Schedule() {
 
   return (
     <DashboardLayout
-      navItems={navItems}
-      sidebarSections={sidebarSections}
+      navItems={coachNavItems}
+      sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >
       <div className="space-y-6">
