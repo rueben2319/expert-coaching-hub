@@ -398,14 +398,10 @@ export default function CourseViewer() {
                 ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-12 text-muted-foreground">
-                  <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No content available for this lesson yet.</p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="text-center py-12 text-muted-foreground">
+              <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No content available for this lesson yet.</p>
+            </div>
           )}
         </div>
       )}

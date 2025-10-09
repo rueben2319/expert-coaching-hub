@@ -128,26 +128,25 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle>{content.title}</CardTitle>
-            {content.description && (
-              <CardDescription className="mt-2">{content.description}</CardDescription>
-            )}
-          </div>
-          {submitted && (
-            <Badge
-              variant={score >= (content.passingScore || 70) ? "default" : "destructive"}
-              className="text-lg px-4 py-1"
-            >
-              {score.toFixed(0)}%
-            </Badge>
+    <div className="space-y-6 border rounded-lg p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-xl font-semibold">{content.title}</h3>
+          {content.description && (
+            <p className="text-sm text-muted-foreground mt-2">{content.description}</p>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        {submitted && (
+          <Badge
+            variant={score >= (content.passingScore || 70) ? "default" : "destructive"}
+            className="text-lg px-4 py-1"
+          >
+            {score.toFixed(0)}%
+          </Badge>
+        )}
+      </div>
+      
+      <div className="space-y-6">
         {content.questions.map((question, qIndex) => (
           <div key={question.id} className="space-y-3 p-4 border rounded-lg">
             <div className="flex items-start gap-2">
@@ -270,7 +269,7 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
             </>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

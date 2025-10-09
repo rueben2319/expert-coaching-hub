@@ -86,56 +86,53 @@ export function VideoContent({ content, contentId, onProgress }: VideoContentPro
   };
 
   return (
-    <Card>
+    <div className="space-y-4">
       {content.title && (
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{content.title}</CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openInNewTab}
-              title="Open in new tab"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Watch on Platform
-            </Button>
-          </div>
-        </CardHeader>
-      )}
-      <CardContent className="space-y-4">
-        <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-          <iframe
-            src={embedUrl}
-            className="w-full h-full border-0"
-            title={content.title || "Video Content"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-            onLoad={handleVideoStart}
-          />
-        </div>
-
-        {/* Video Info and Actions */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Play className="h-4 w-4" />
-            <span>
-              {content.duration ? `${content.duration} minutes` : "Video content"}
-            </span>
-          </div>
+          <h3 className="text-lg font-semibold">{content.title}</h3>
           <Button
             variant="outline"
             size="sm"
-            onClick={handleMarkWatched}
+            onClick={openInNewTab}
+            title="Open in new tab"
           >
-            Mark as Watched
+            <ExternalLink className="h-4 w-4 mr-2" />
+            Watch on Platform
           </Button>
         </div>
+      )}
+      
+      <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+        <iframe
+          src={embedUrl}
+          className="w-full h-full border-0"
+          title={content.title || "Video Content"}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          onLoad={handleVideoStart}
+        />
+      </div>
 
-        <p className="text-xs text-muted-foreground">
-          💡 Tip: Watch the entire video and click "Mark as Watched" to track your progress.
-        </p>
-      </CardContent>
-    </Card>
+      {/* Video Info and Actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Play className="h-4 w-4" />
+          <span>
+            {content.duration ? `${content.duration} minutes` : "Video content"}
+          </span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleMarkWatched}
+        >
+          Mark as Watched
+        </Button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        💡 Tip: Watch the entire video and click "Mark as Watched" to track your progress.
+      </p>
+    </div>
   );
 }

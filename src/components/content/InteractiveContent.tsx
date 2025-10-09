@@ -45,57 +45,54 @@ export function InteractiveContent({ content, contentId }: InteractiveContentPro
   };
 
   return (
-    <Card>
+    <div className="space-y-4">
       {content.title && (
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{content.title}</CardTitle>
-            <div className="flex gap-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">{content.title}</h3>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openInNewTab}
+              title="Open in new tab"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+            {content.allowFullscreen !== false && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={openInNewTab}
-                title="Open in new tab"
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
               >
-                <ExternalLink className="h-4 w-4" />
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
               </Button>
-              {content.allowFullscreen !== false && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleFullscreen}
-                  title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                >
-                  {isFullscreen ? (
-                    <Minimize2 className="h-4 w-4" />
-                  ) : (
-                    <Maximize2 className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-            </div>
+            )}
           </div>
-        </CardHeader>
-      )}
-      <CardContent>
-        <div
-          id={`interactive-${contentId}`}
-          className="relative bg-muted rounded-lg overflow-hidden"
-          style={{ height: isFullscreen ? "100vh" : `${iframeHeight}px` }}
-        >
-          <iframe
-            src={content.url}
-            className="w-full h-full border-0"
-            title={content.title || "Interactive Content"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen={content.allowFullscreen !== false}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
-          />
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          Interactive content loaded from: {new URL(content.url).hostname}
-        </p>
-      </CardContent>
-    </Card>
+      )}
+      
+      <div
+        id={`interactive-${contentId}`}
+        className="relative bg-muted rounded-lg overflow-hidden"
+        style={{ height: isFullscreen ? "100vh" : `${iframeHeight}px` }}
+      >
+        <iframe
+          src={content.url}
+          className="w-full h-full border-0"
+          title={content.title || "Interactive Content"}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen={content.allowFullscreen !== false}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Interactive content loaded from: {new URL(content.url).hostname}
+      </p>
+    </div>
   );
 }
