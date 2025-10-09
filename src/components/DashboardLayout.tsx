@@ -217,9 +217,9 @@ export function DashboardLayout({
   );
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Navbar */}
-      <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <header className="flex-shrink-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="flex h-16 items-center px-4 md:px-6">
           {/* Mobile Menu Toggle */}
           {sidebarSections.length > 0 && (
@@ -337,17 +337,17 @@ export function DashboardLayout({
       </header>
 
       {/* Main Layout */}
-      <div className="flex h-[calc(100vh-4rem)]">
+      <div className="flex flex-1 overflow-hidden">
         {/* Desktop Sidebar */}
         {sidebarSections.length > 0 && (
           <aside
             className={cn(
-              "hidden md:flex flex-col border-r bg-card/50 transition-all duration-300",
+              "hidden md:flex flex-col border-r bg-card/50 transition-all duration-300 overflow-hidden",
               sidebarCollapsed ? "w-16" : "w-64"
             )}
           >
             {/* Collapse Toggle Button - Top */}
-            <div className="flex items-center justify-end p-2 border-b">
+            <div className="flex items-center justify-end p-2 border-b flex-shrink-0">
               <Button
                 variant="ghost"
                 size="icon"

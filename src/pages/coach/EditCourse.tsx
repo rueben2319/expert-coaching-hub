@@ -10,7 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { CourseOverview } from "@/components/course/CourseOverview";
 import { CourseCurriculum } from "@/components/course/CourseCurriculum";
-import { Eye, Save } from "lucide-react";
+import { Eye, Save, Plus, BookOpen, Users, BarChart3, Calendar, Video } from "lucide-react";
 
 export default function EditCourse() {
   const { courseId } = useParams();
@@ -50,12 +50,32 @@ export default function EditCourse() {
   const navItems = [
     { label: "Dashboard", href: "/coach" },
     { label: "Courses", href: "/coach/courses" },
-    { label: "Edit Course", href: `/coach/courses/${courseId}/edit` },
+    { label: "Students", href: "/coach/students" },
+    { label: "Analytics", href: "/coach/analytics" },
+  ];
+
+  const sidebarSections = [
+    {
+      title: "Course Management",
+      items: [
+        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
+        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
+        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
+      ],
+    },
+    {
+      title: "Students",
+      items: [
+        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
+        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
+        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
+      ],
+    },
   ];
 
   if (isLoading) {
     return (
-      <DashboardLayout navItems={navItems}>
+      <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
         <div className="text-center py-12">Loading course...</div>
       </DashboardLayout>
     );
@@ -63,14 +83,14 @@ export default function EditCourse() {
 
   if (!course) {
     return (
-      <DashboardLayout navItems={navItems}>
+      <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
         <div className="text-center py-12">Course not found</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout navItems={navItems}>
+    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">

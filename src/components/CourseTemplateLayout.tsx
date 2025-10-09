@@ -218,9 +218,9 @@ export function CourseTemplateLayout({
   );
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <header className="flex-shrink-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="flex h-14 items-center px-4 gap-4">
           {/* Mobile Menu Toggle */}
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -246,16 +246,16 @@ export function CourseTemplateLayout({
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-3.5rem)]">
+      <div className="flex flex-1 overflow-hidden">
         {/* Desktop Sidebar */}
-        <aside className="hidden md:flex w-80 border-r bg-card/50">
+        <aside className="hidden md:flex w-80 border-r bg-card/50 overflow-hidden">
           <SidebarContent />
         </aside>
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col overflow-hidden">
           {/* Sticky Breadcrumbs */}
-          <div className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="flex-shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="px-6 py-4">
               <Breadcrumb>
                 <BreadcrumbList>
@@ -286,7 +286,7 @@ export function CourseTemplateLayout({
           </div>
 
           {/* Content Area */}
-          <ScrollArea className="flex-1">
+          <div className="flex-1 overflow-y-auto">
             <div className="container max-w-4xl mx-auto p-6">
               {children}
 
@@ -308,7 +308,7 @@ export function CourseTemplateLayout({
                 </div>
               )}
             </div>
-          </ScrollArea>
+          </div>
         </main>
       </div>
     </div>
