@@ -12,20 +12,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  Search,
-  HelpCircle,
-  Globe,
-  Menu,
-  GraduationCap,
-  LogOut,
-  User,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
-
+import { ChevronLeft, ChevronRight, GraduationCap, LogOut, Menu, User, Search, HelpCircle, Globe } from "lucide-react";
+import expertsLogo from "@/assets/experts-logo.png";
 interface NavItem {
   label: string;
   href: string;
@@ -92,8 +82,8 @@ export function DashboardLayout({
       {!collapsed && (
         <div className="md:hidden p-6 border-b">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-              <GraduationCap className="w-4 h-4 text-primary-foreground" />
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
             </div>
             <span className="font-semibold text-lg">{brandName}</span>
           </div>
@@ -237,8 +227,8 @@ export function DashboardLayout({
 
           {/* Logo/Brand */}
           <div className="flex items-center gap-2 mr-6">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-              <GraduationCap className="w-4 h-4 text-primary-foreground" />
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
             </div>
             <span className="font-semibold text-lg hidden sm:inline">{brandName}</span>
           </div>

@@ -21,6 +21,7 @@ import Students from "./pages/coach/Students";
 import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -131,6 +132,16 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <Analytics />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Profile Route - Available to all authenticated users */}
+            <Route 
+              path="/profile" 
+              element={
+                <ProtectedRoute allowedRoles={["client", "coach", "admin"]}>
+                  <Profile />
                 </ProtectedRoute>
               } 
             />

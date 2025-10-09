@@ -6,14 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, Users, BookOpen } from "lucide-react";
+import expertsLogo from "@/assets/experts-logo.png";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [selectedRole, setSelectedRole] = useState<"client" | "coach">("client");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { user, role } = useAuth();
@@ -38,16 +41,35 @@ export default function Auth() {
         if (error) throw error;
         toast.success("Welcome back!");
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { full_name: fullName },
+            data: { 
+              full_name: fullName,
+              role: selectedRole 
+            },
             emailRedirectTo: `${window.location.origin}/`,
           },
         });
 
         if (error) throw error;
+
+        // Create user role record if user was created
+        if (data.user) {
+          const { error: roleError } = await supabase
+            .from("user_roles")
+            .insert({
+              user_id: data.user.id,
+              role: selectedRole,
+            });
+
+          if (roleError) {
+            console.error("Error creating user role:", roleError);
+            // Don't throw here as the user was created successfully
+          }
+        }
+
         toast.success("Account created! Please check your email to verify.");
       }
     } catch (error: any) {
@@ -61,30 +83,60 @@ export default function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="space-y-3 text-center">
-          <div className="mx-auto w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center">
-            <GraduationCap className="w-6 h-6 text-primary-foreground" />
+          <div className="mx-auto w-12 h-12 rounded-xl overflow-hidden">
+            <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
           </div>
           <CardTitle className="text-2xl bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            {isLogin ? "Welcome Back" : "Get Started"}
+            {isLogin ? "Welcome Back" : "Join Experts Coaching Hub"}
           </CardTitle>
           <CardDescription>
-            {isLogin ? "Sign in to your account" : "Create your account to begin"}
+            {isLogin ? "Sign in to your account" : "Create your account to begin learning or teaching"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAuth} className="space-y-4">
             {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder="John Doe"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">I want to join as a</Label>
+                  <Select value={selectedRole} onValueChange={(value: "client" | "coach") => setSelectedRole(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="client">
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          <div>
+                            <div className="font-medium">Student</div>
+                            <div className="text-xs text-muted-foreground">Learn from expert coaches</div>
+                          </div>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="coach">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-4 w-4" />
+                          <div>
+                            <div className="font-medium">Coach</div>
+                            <div className="text-xs text-muted-foreground">Create and teach courses</div>
+                          </div>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

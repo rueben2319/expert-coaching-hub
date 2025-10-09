@@ -140,7 +140,7 @@ export default function Analytics() {
     <DashboardLayout
       navItems={navItems}
       sidebarSections={sidebarSections}
-      brandName="Coach Studio"
+      brandName="Experts Coaching Hub"
     >
       <div className="space-y-6">
         <div>

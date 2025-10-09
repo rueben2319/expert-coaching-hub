@@ -103,7 +103,7 @@ export default function CoachDashboard() {
     <DashboardLayout
       navItems={navItems}
       sidebarSections={sidebarSections}
-      brandName="Coach Studio"
+      brandName="Experts Coaching Hub"
     >
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

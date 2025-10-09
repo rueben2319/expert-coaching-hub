@@ -90,7 +90,7 @@ export default function Sessions() {
     <DashboardLayout
       navItems={navItems}
       sidebarSections={sidebarSections}
-      brandName="Coach Studio"
+      brandName="Experts Coaching Hub"
     >
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
