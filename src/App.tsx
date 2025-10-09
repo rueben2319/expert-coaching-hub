@@ -16,6 +16,10 @@ import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
 import EditCourse from "./pages/coach/EditCourse";
+import Sessions from "./pages/coach/Sessions";
+import Students from "./pages/coach/Students";
+import Schedule from "./pages/coach/Schedule";
+import Analytics from "./pages/coach/Analytics";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 
 const queryClient = new QueryClient();
@@ -95,6 +99,38 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <EditCourse />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/sessions" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <Sessions />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/students" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <Students />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/schedule" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <Schedule />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/analytics" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <Analytics />
                 </ProtectedRoute>
               } 
             />

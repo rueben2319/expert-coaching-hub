@@ -161,10 +161,6 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
 
   const createMutation = useMutation({
     mutationFn: async (data: ContentFormData) => {
-      console.log("Form submission data:", data);
-      console.log("isEditing:", isEditing);
-      console.log("editContent:", editContent);
-      
       let contentData = {};
 
       if (data.content_type === "text") {
@@ -192,13 +188,6 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       }
 
       if (isEditing) {
-        console.log("Updating content with:", {
-          content_type: data.content_type,
-          content_data: contentData,
-          is_required: data.is_required,
-          id: editContent.id
-        });
-        
         const { error } = await supabase
           .from("lesson_content")
           .update({
@@ -207,11 +196,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
             is_required: data.is_required,
           })
           .eq("id", editContent.id);
-        if (error) {
-          console.error("Update error:", error);
-          throw error;
-        }
-        console.log("Update successful");
+        if (error) throw error;
       } else {
         const { error } = await supabase.from("lesson_content").insert({
           lesson_id: lessonId,
