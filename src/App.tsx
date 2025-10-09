@@ -7,10 +7,15 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
-import ClientDashboard from "./pages/client/ClientDashboard";
-import CoachDashboard from "./pages/coach/CoachDashboard";
-import AdminDashboard from "./pages/admin/AdminDashboard";
 import NotFound from "./pages/NotFound";
+import ClientDashboard from "./pages/client/ClientDashboard";
+import ClientCourses from "./pages/client/Courses";
+import MyCourses from "./pages/client/MyCourses";
+import CoachDashboard from "./pages/coach/CoachDashboard";
+import CoachCourses from "./pages/coach/Courses";
+import CreateCourse from "./pages/coach/CreateCourse";
+import EditCourse from "./pages/coach/EditCourse";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +29,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+
+            {/* Client Routes */}
             <Route 
               path="/client" 
               element={
@@ -33,6 +40,24 @@ const App = () => (
               } 
             />
             <Route 
+              path="/client/courses" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientCourses />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/client/my-courses" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <MyCourses />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Coach Routes */}
+            <Route 
               path="/coach" 
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
@@ -41,6 +66,32 @@ const App = () => (
               } 
             />
             <Route 
+              path="/coach/courses" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CoachCourses />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/courses/create" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CreateCourse />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/courses/:courseId/edit" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <EditCourse />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Admin Routes */}
+            <Route 
               path="/admin" 
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
@@ -48,6 +99,7 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
