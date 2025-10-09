@@ -1,70 +1,109 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookOpen, LogOut, User } from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { BookOpen, User, Calendar, TrendingUp } from "lucide-react";
 
 export default function ClientDashboard() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+
+  const navItems = [
+    { label: "Dashboard", href: "/client" },
+    { label: "My Courses", href: "/client/courses" },
+    { label: "Schedule", href: "/client/schedule" },
+    { label: "Progress", href: "/client/progress" },
+  ];
+
+  const sidebarSections = [
+    {
+      title: "Quick Links",
+      items: [
+        {
+          icon: <BookOpen className="h-4 w-4" />,
+          label: "Browse Courses",
+          href: "/client/courses",
+        },
+        {
+          icon: <Calendar className="h-4 w-4" />,
+          label: "Upcoming Sessions",
+          href: "/client/schedule",
+        },
+        {
+          icon: <TrendingUp className="h-4 w-4" />,
+          label: "My Progress",
+          href: "/client/progress",
+        },
+        {
+          icon: <User className="h-4 w-4" />,
+          label: "Profile",
+          href: "/client/profile",
+        },
+      ],
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-primary-foreground" />
+    <DashboardLayout
+      navItems={navItems}
+      sidebarSections={sidebarSections}
+      brandName="Insight Coach"
+    >
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          Welcome, {user?.user_metadata?.full_name || "Learner"}
+        </h1>
+        <p className="text-muted-foreground">Start your learning journey today</p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <BookOpen className="w-6 h-6 text-primary" />
             </div>
-            <span className="font-semibold text-lg">Learning Hub</span>
-          </div>
-          <Button variant="ghost" onClick={signOut}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
-        </div>
-      </header>
+            <CardTitle>My Courses</CardTitle>
+            <CardDescription>Browse and access your enrolled courses</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              No courses enrolled yet. Start exploring!
+            </p>
+            <Button className="w-full">Browse Courses</Button>
+          </CardContent>
+        </Card>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Welcome, {user?.user_metadata?.full_name || "Learner"}
-          </h1>
-          <p className="text-muted-foreground">Start your learning journey today</p>
-        </div>
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
+              <User className="w-6 h-6 text-accent" />
+            </div>
+            <CardTitle>Profile</CardTitle>
+            <CardDescription>Manage your account settings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Update your profile and preferences
+            </p>
+            <Button variant="outline" className="w-full">Edit Profile</Button>
+          </CardContent>
+        </Card>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                <BookOpen className="w-6 h-6 text-primary" />
-              </div>
-              <CardTitle>My Courses</CardTitle>
-              <CardDescription>Browse and access your enrolled courses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                No courses enrolled yet. Start exploring!
-              </p>
-              <Button className="w-full">Browse Courses</Button>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-                <User className="w-6 h-6 text-accent" />
-              </div>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Manage your account settings</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                Update your profile and preferences
-              </p>
-              <Button variant="outline" className="w-full">Edit Profile</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <Calendar className="w-6 h-6 text-primary" />
+            </div>
+            <CardTitle>Schedule</CardTitle>
+            <CardDescription>View your upcoming sessions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              No sessions scheduled
+            </p>
+            <Button variant="outline" className="w-full">View Calendar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
   );
 }

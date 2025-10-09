@@ -1,79 +1,117 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookOpen, LogOut, Users, Shield } from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { BookOpen, Users, Shield, Settings, BarChart3, AlertCircle } from "lucide-react";
 
 export default function AdminDashboard() {
-  const { signOut } = useAuth();
+  const { user } = useAuth();
+
+  const navItems = [
+    { label: "Dashboard", href: "/admin" },
+    { label: "Users", href: "/admin/users" },
+    { label: "Courses", href: "/admin/courses" },
+    { label: "Settings", href: "/admin/settings" },
+  ];
+
+  const sidebarSections = [
+    {
+      title: "Management",
+      items: [
+        {
+          icon: <Users className="h-4 w-4" />,
+          label: "User Management",
+          href: "/admin/users",
+        },
+        {
+          icon: <BookOpen className="h-4 w-4" />,
+          label: "Course Management",
+          href: "/admin/courses",
+        },
+        {
+          icon: <Shield className="h-4 w-4" />,
+          label: "Roles & Permissions",
+          href: "/admin/roles",
+        },
+      ],
+    },
+    {
+      title: "System",
+      items: [
+        {
+          icon: <BarChart3 className="h-4 w-4" />,
+          label: "Analytics",
+          href: "/admin/analytics",
+        },
+        {
+          icon: <Settings className="h-4 w-4" />,
+          label: "System Settings",
+          href: "/admin/settings",
+        },
+        {
+          icon: <AlertCircle className="h-4 w-4" />,
+          label: "Reports",
+          href: "/admin/reports",
+        },
+      ],
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-destructive/5">
-      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-              <Shield className="w-4 h-4 text-primary-foreground" />
+    <DashboardLayout
+      navItems={navItems}
+      sidebarSections={sidebarSections}
+      brandName="Admin Panel"
+    >
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          Admin Dashboard
+        </h1>
+        <p className="text-muted-foreground">Monitor and manage platform activity</p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <Users className="w-6 h-6 text-primary" />
             </div>
-            <span className="font-semibold text-lg">Admin Panel</span>
-          </div>
-          <Button variant="ghost" onClick={signOut}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
-        </div>
-      </header>
+            <CardTitle>Total Users</CardTitle>
+            <CardDescription>Registered platform users</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-primary">0</div>
+            <p className="text-sm text-muted-foreground">Active users</p>
+          </CardContent>
+        </Card>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Admin Dashboard
-          </h1>
-          <p className="text-muted-foreground">Monitor and manage platform activity</p>
-        </div>
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
+              <BookOpen className="w-6 h-6 text-accent" />
+            </div>
+            <CardTitle>Total Courses</CardTitle>
+            <CardDescription>Published courses</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-accent">0</div>
+            <p className="text-sm text-muted-foreground">Courses available</p>
+          </CardContent>
+        </Card>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                <Users className="w-6 h-6 text-primary" />
-              </div>
-              <CardTitle>Total Users</CardTitle>
-              <CardDescription>Registered platform users</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold mb-2 text-primary">0</div>
-              <p className="text-sm text-muted-foreground">Active users</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-                <BookOpen className="w-6 h-6 text-accent" />
-              </div>
-              <CardTitle>Total Courses</CardTitle>
-              <CardDescription>Published courses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold mb-2 text-accent">0</div>
-              <p className="text-sm text-muted-foreground">Courses available</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="w-12 h-12 bg-destructive/10 rounded-lg flex items-center justify-center mb-4">
-                <Shield className="w-6 h-6 text-destructive" />
-              </div>
-              <CardTitle>User Management</CardTitle>
-              <CardDescription>Manage user roles and access</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full">Manage Users</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+              <Shield className="w-6 h-6 text-primary" />
+            </div>
+            <CardTitle>User Management</CardTitle>
+            <CardDescription>Manage user roles and access</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" className="w-full">Manage Users</Button>
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
   );
 }
