@@ -16,7 +16,7 @@ export default function ClientDashboard() {
 
   const sidebarSections = [
     {
-      title: "Quick Links",
+      title: "Learning",
       items: [
         {
           icon: <BookOpen className="h-4 w-4" />,
@@ -24,14 +24,19 @@ export default function ClientDashboard() {
           href: "/client/courses",
         },
         {
-          icon: <Calendar className="h-4 w-4" />,
-          label: "Upcoming Sessions",
-          href: "/client/schedule",
-        },
-        {
           icon: <TrendingUp className="h-4 w-4" />,
-          label: "My Progress",
-          href: "/client/progress",
+          label: "My Courses",
+          href: "/client/my-courses",
+        },
+      ],
+    },
+    {
+      title: "Account",
+      items: [
+        {
+          icon: <Calendar className="h-4 w-4" />,
+          label: "Schedule",
+          href: "/client/schedule",
         },
         {
           icon: <User className="h-4 w-4" />,

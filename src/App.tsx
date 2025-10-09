@@ -11,6 +11,7 @@ import NotFound from "./pages/NotFound";
 import ClientDashboard from "./pages/client/ClientDashboard";
 import ClientCourses from "./pages/client/Courses";
 import MyCourses from "./pages/client/MyCourses";
+import CourseViewer from "./pages/client/CourseViewer";
 import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
@@ -52,6 +53,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <MyCourses />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/client/course/:courseId" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <CourseViewer />
                 </ProtectedRoute>
               } 
             />
