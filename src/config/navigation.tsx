@@ -48,18 +48,16 @@ export const coachSidebarSections = [
 // Client Navigation Configuration
 export const clientNavItems = [
   { label: "Dashboard", href: "/client" },
-  { label: "Browse Courses", href: "/client/courses" },
+  { label: "Explore", href: "/client/courses" },
   { label: "My Courses", href: "/client/my-courses" },
-  { label: "Progress", href: "/client/progress" },
 ];
 
 export const clientSidebarSections = [
   {
     title: "Learning",
     items: [
-      { icon: <Search className="w-4 h-4" />, label: "Browse Courses", href: "/client/courses" },
+      { icon: <Search className="w-4 h-4" />, label: "Explore", href: "/client/courses" },
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/client/my-courses" },
-      { icon: <TrendingUp className="w-4 h-4" />, label: "Progress", href: "/client/progress" },
     ],
   },
 ];
