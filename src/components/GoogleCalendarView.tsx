@@ -211,8 +211,8 @@ export const GoogleCalendarView = ({
           const isCurrentDay = isToday(date);
           
           return (
-            <Card key={index} className={`min-h-[200px] ${isCurrentDay ? 'ring-2 ring-primary' : ''}`}>
-              <CardHeader className="pb-2">
+            <Card key={index} className={`h-[200px] flex flex-col ${isCurrentDay ? 'ring-2 ring-primary' : ''}`}>
+              <CardHeader className="pb-2 flex-shrink-0">
                 <div className="text-center">
                   <div className="text-xs text-muted-foreground">
                     {format(date, 'EEE')}
@@ -222,8 +222,8 @@ export const GoogleCalendarView = ({
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
-                <div className="space-y-1">
+              <CardContent className="pt-0 flex-1 overflow-hidden">
+                <div className="space-y-1 h-full overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400">
                   {isLoading ? (
                     <>
                       <Skeleton className="h-8 w-full" />
@@ -235,27 +235,27 @@ export const GoogleCalendarView = ({
                       return (
                         <div
                           key={event.id}
-                          className="bg-blue-50 border-l-2 border-blue-500 p-2 rounded text-xs"
+                          className="bg-blue-50 border-l-2 border-blue-500 p-2 rounded text-xs flex-shrink-0"
                         >
-                          <div className="font-medium text-blue-900 mb-1 line-clamp-2">
+                          <div className="font-medium text-blue-900 mb-1 line-clamp-1 overflow-hidden text-ellipsis" title={event.summary}>
                             {event.summary}
                           </div>
-                          <div className="flex items-center gap-1 text-blue-700 mb-1">
-                            <Clock className="h-3 w-3" />
-                            <span>{formatEventTime(event)}</span>
+                          <div className="flex items-center gap-1 text-blue-700 mb-1 overflow-hidden">
+                            <Clock className="h-3 w-3 flex-shrink-0" />
+                            <span className="truncate">{formatEventTime(event)}</span>
                           </div>
                           {event.attendees && event.attendees.length > 0 && (
                             <div className="flex items-center gap-1 text-blue-700 mb-1">
-                              <Users className="h-3 w-3" />
+                              <Users className="h-3 w-3 flex-shrink-0" />
                               <span>{event.attendees.length}</span>
                             </div>
                           )}
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 overflow-hidden">
                             {meetLink && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-5 px-1 text-xs text-blue-600 hover:text-blue-800"
+                                className="h-5 px-1 text-xs text-blue-600 hover:text-blue-800 flex-shrink-0"
                                 onClick={() => window.open(meetLink, '_blank')}
                               >
                                 <Video className="h-3 w-3 mr-1" />
@@ -265,7 +265,7 @@ export const GoogleCalendarView = ({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-5 px-1 text-xs text-blue-600 hover:text-blue-800"
+                              className="h-5 px-1 text-xs text-blue-600 hover:text-blue-800 flex-shrink-0"
                               onClick={() => window.open(event.htmlLink, '_blank')}
                             >
                               <ExternalLink className="h-3 w-3 mr-1" />

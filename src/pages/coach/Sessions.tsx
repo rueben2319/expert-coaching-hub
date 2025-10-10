@@ -4,7 +4,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, Users, Video, Plus, ExternalLink, Copy, Trash2, Edit, RefreshCw, AlertCircle } from "lucide-react";
+import { Calendar, Clock, Users, Video, Plus, ExternalLink, Copy, Trash2, Edit, RefreshCw, AlertCircle, Save, X } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +24,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 export default function Sessions() {
   const navigate = useNavigate();
@@ -34,6 +37,13 @@ export default function Sessions() {
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
   const [isCalendarConnected, setIsCalendarConnected] = useState<boolean | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    summary: "",
+    description: "",
+    startTime: "",
+    endTime: "",
+  });
 
   const { data: meetings, isLoading, refetch } = useQuery({
     queryKey: ["coach-meetings"],
@@ -101,6 +111,53 @@ export default function Sessions() {
       timestamp: new Date().toISOString(),
       source: "sessions_page",
     });
+  };
+
+  const startEditMeeting = (meeting: any) => {
+    setEditingMeeting(meeting.id);
+    setEditForm({
+      summary: meeting.summary || "",
+      description: meeting.description || "",
+      startTime: format(new Date(meeting.start_time), "yyyy-MM-dd'T'HH:mm"),
+      endTime: format(new Date(meeting.end_time), "yyyy-MM-dd'T'HH:mm"),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingMeeting(null);
+    setEditForm({
+      summary: "",
+      description: "",
+      startTime: "",
+      endTime: "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingMeeting) return;
+
+    try {
+      await MeetingManager.updateMeeting(editingMeeting, {
+        summary: editForm.summary,
+        description: editForm.description,
+        startTime: new Date(editForm.startTime).toISOString(),
+        endTime: new Date(editForm.endTime).toISOString(),
+      });
+
+      toast({
+        title: "Meeting Updated",
+        description: "Meeting has been updated successfully",
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["coach-meetings"] });
+      cancelEdit();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update meeting",
+        variant: "destructive",
+      });
+    }
   };
 
   const filteredMeetings = meetings?.filter(meeting => {
@@ -178,6 +235,7 @@ export default function Sessions() {
           />
           
           {/* Debug Section - Remove in production */}
+          {/* 
           <Card className="border-dashed border-orange-200 bg-orange-50/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm text-orange-800 flex items-center gap-2">
@@ -218,6 +276,7 @@ export default function Sessions() {
               </p>
             </CardContent>
           </Card>
+          */}
           
           {isCalendarConnected === false && (
             <Alert>
@@ -294,40 +353,98 @@ export default function Sessions() {
             {filteredMeetings.map((meeting) => (
               <Card key={meeting.id}>
                 <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-3 flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-semibold">{meeting.summary}</h3>
-                        <Badge variant={getStatusColor(getMeetingStatus(meeting))}>
-                          {getStatusLabel(getMeetingStatus(meeting))}
-                        </Badge>
-                        {meeting.courses?.title && (
-                          <Badge variant="secondary">
-                            {meeting.courses.title}
-                          </Badge>
-                        )}
+                  {editingMeeting === meeting.id ? (
+                    // Edit Mode
+                    <div className="space-y-4 flex-1">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-summary">Meeting Title</Label>
+                        <Input
+                          id="edit-summary"
+                          value={editForm.summary}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, summary: e.target.value }))}
+                          placeholder="Meeting title"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-description">Description</Label>
+                        <Textarea
+                          id="edit-description"
+                          value={editForm.description}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Meeting description (optional)"
+                          rows={2}
+                        />
                       </div>
 
-                      {meeting.description && (
-                        <p className="text-sm text-muted-foreground">{meeting.description}</p>
-                      )}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-start">Start Time</Label>
+                          <Input
+                            id="edit-start"
+                            type="datetime-local"
+                            value={editForm.startTime}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, startTime: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-end">End Time</Label>
+                          <Input
+                            id="edit-end"
+                            type="datetime-local"
+                            value={editForm.endTime}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, endTime: e.target.value }))}
+                          />
+                        </div>
+                      </div>
 
-                      <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {format(new Date(meeting.start_time), "MMM d, yyyy")}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-4 w-4" />
-                          {format(new Date(meeting.start_time), "h:mm a")} -{" "}
-                          {format(new Date(meeting.end_time), "h:mm a")}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Users className="h-4 w-4" />
-                          {Array.isArray(meeting.attendees) ? meeting.attendees.length : 0} attendees
-                        </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={saveEdit}>
+                          <Save className="h-4 w-4 mr-1" />
+                          Save
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={cancelEdit}>
+                          <X className="h-4 w-4 mr-1" />
+                          Cancel
+                        </Button>
                       </div>
                     </div>
+                  ) : (
+                    // Display Mode
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-3 flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-lg font-semibold">{meeting.summary}</h3>
+                          <Badge variant={getStatusColor(getMeetingStatus(meeting))}>
+                            {getStatusLabel(getMeetingStatus(meeting))}
+                          </Badge>
+                          {meeting.courses?.title && (
+                            <Badge variant="secondary">
+                              {meeting.courses.title}
+                            </Badge>
+                          )}
+                        </div>
+
+                        {meeting.description && (
+                          <p className="text-sm text-muted-foreground">{meeting.description}</p>
+                        )}
+
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-4 w-4" />
+                            {format(new Date(meeting.start_time), "MMM d, yyyy")}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-4 w-4" />
+                            {format(new Date(meeting.start_time), "h:mm a")} -{" "}
+                            {format(new Date(meeting.end_time), "h:mm a")}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Users className="h-4 w-4" />
+                            {Array.isArray(meeting.attendees) ? meeting.attendees.length : 0} attendees
+                          </div>
+                        </div>
+                      </div>
 
                     <div className="flex gap-2 ml-4">
                       {meeting.meet_link && ["scheduled", "in_progress", "starting_soon"].includes(getMeetingStatus(meeting)) && (
@@ -362,19 +479,29 @@ export default function Sessions() {
                         </Button>
                       )}
                       {["scheduled", "starting_soon"].includes(getMeetingStatus(meeting)) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedMeeting(meeting.id);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => startEditMeeting(meeting)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedMeeting(meeting.id);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
-                  </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
