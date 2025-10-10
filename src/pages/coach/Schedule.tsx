@@ -2,15 +2,21 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { GoogleCalendarView } from "@/components/GoogleCalendarView";
+import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
 import { BookOpen, Plus, Users, BarChart3, Calendar, Video, Clock, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { format, addDays, startOfWeek } from "date-fns";
 import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { useNavigate } from "react-router-dom";
 
 const Schedule = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [isCalendarConnected, setIsCalendarConnected] = useState<boolean | null>(null);
 
   const events = [
     {
@@ -110,24 +116,44 @@ const Schedule = () => {
             <h1 className="text-3xl font-bold">Schedule</h1>
             <p className="text-muted-foreground">Manage your coaching schedule and appointments</p>
           </div>
-          <Button>
+          <Button onClick={() => navigate("/coach/sessions/create")}>
             <Plus className="w-4 h-4 mr-2" />
-            Add Event
+            Schedule New Session
           </Button>
         </div>
 
-        {/* Calendar Navigation */}
-        <div className="flex items-center justify-between bg-muted/30 rounded-lg p-4">
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <h2 className="text-lg font-semibold">
-            {formatDate(weekDates[0])} - {formatDate(weekDates[6])}
-          </h2>
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('next')}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        <GoogleCalendarStatus 
+          compact={true}
+          onStatusChange={setIsCalendarConnected}
+        />
+
+        <Tabs defaultValue="google-calendar" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="google-calendar">Google Calendar</TabsTrigger>
+            <TabsTrigger value="app-events">App Events</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="google-calendar" className="space-y-4">
+            <GoogleCalendarView 
+              currentDate={currentDate}
+              onDateChange={setCurrentDate}
+              showNavigation={true}
+            />
+          </TabsContent>
+          
+          <TabsContent value="app-events" className="space-y-4">
+            {/* Calendar Navigation */}
+            <div className="flex items-center justify-between bg-muted/30 rounded-lg p-4">
+              <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <h2 className="text-lg font-semibold">
+                {formatDate(weekDates[0])} - {formatDate(weekDates[6])}
+              </h2>
+              <Button variant="outline" size="sm" onClick={() => navigateWeek('next')}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
 
         {/* Weekly Calendar Grid */}
         <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
@@ -212,8 +238,10 @@ const Schedule = () => {
                 </div>
               </div>
             ))}
+            </div>
           </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

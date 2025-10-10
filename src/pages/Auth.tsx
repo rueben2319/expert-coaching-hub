@@ -103,6 +103,17 @@ export default function Auth() {
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth`,
+          scopes: [
+            'openid',
+            'email',
+            'profile',
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/calendar.readonly'
+          ].join(' '),
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent'
+          }
         },
       });
 

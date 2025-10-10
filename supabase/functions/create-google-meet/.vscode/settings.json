@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/vscode-settings.json",
+  "deno.enable": true,
+  "deno.lint": true,
+  "deno.unstable": true,
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "typescript.suggest.autoImports": false,
+  "typescript.validate.enable": false,
+  "editor.defaultFormatter": "denoland.vscode-deno",
+  "editor.formatOnSave": true,
+  "files.associations": {
+    "*.ts": "typescript"
+  }
+}

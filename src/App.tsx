@@ -17,6 +17,7 @@ import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
 import EditCourse from "./pages/coach/EditCourse";
 import Sessions from "./pages/coach/Sessions";
+import CreateSession from "./pages/coach/CreateSession";
 import Students from "./pages/coach/Students";
 import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
@@ -110,6 +111,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <Sessions />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/sessions/create" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CreateSession />
                 </ProtectedRoute>
               } 
             />

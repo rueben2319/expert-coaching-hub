@@ -326,6 +326,129 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_analytics: {
+        Row: {
+          created_at: string
+          event_data: Json
+          event_type: string
+          id: string
+          meeting_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_data?: Json
+          event_type: string
+          id?: string
+          meeting_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_data?: Json
+          event_type?: string
+          id?: string
+          meeting_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_analytics_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meeting_chat: {
+        Row: {
+          created_at: string
+          id: string
+          meeting_id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          meeting_id: string
+          message: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_chat_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meetings: {
+        Row: {
+          attendees: Json
+          calendar_event_id: string | null
+          course_id: string | null
+          created_at: string
+          description: string | null
+          end_time: string
+          id: string
+          meet_link: string | null
+          start_time: string
+          status: string
+          summary: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attendees?: Json
+          calendar_event_id?: string | null
+          course_id?: string | null
+          created_at?: string
+          description?: string | null
+          end_time: string
+          id?: string
+          meet_link?: string | null
+          start_time: string
+          status?: string
+          summary: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attendees?: Json
+          calendar_event_id?: string | null
+          course_id?: string | null
+          created_at?: string
+          description?: string | null
+          end_time?: string
+          id?: string
+          meet_link?: string | null
+          start_time?: string
+          status?: string
+          summary?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meetings_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

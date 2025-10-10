@@ -1,0 +1,322 @@
+import { supabase } from "@/integrations/supabase/client";
+import { googleCalendarService } from "@/integrations/google/calendar";
+import type { Database } from "@/integrations/supabase/types";
+
+export interface MeetingData {
+  summary: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  attendeeEmails: string[];
+  courseId?: string;
+}
+
+export type DatabaseMeeting = Database['public']['Tables']['meetings']['Row'];
+export type DatabaseMeetingInsert = Database['public']['Tables']['meetings']['Insert'];
+export type DatabaseMeetingUpdate = Database['public']['Tables']['meetings']['Update'];
+
+export class MeetingManager {
+  /**
+   * Creates a meeting with both Google Calendar event and database record
+   */
+  static async createMeeting(meetingData: MeetingData): Promise<DatabaseMeeting> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      // Create Google Calendar event with Meet link
+      const calendarEvent = await googleCalendarService.createMeetingWithGoogleMeet({
+        summary: meetingData.summary,
+        description: meetingData.description,
+        startTime: meetingData.startTime,
+        endTime: meetingData.endTime,
+        attendeeEmails: meetingData.attendeeEmails,
+      });
+
+      // Extract Google Meet link
+      const meetLink = calendarEvent.conferenceData?.entryPoints?.find(
+        ep => ep.entryPointType === 'video'
+      )?.uri || calendarEvent.hangoutLink;
+
+      // Create database record
+      const meetingInsert: DatabaseMeetingInsert = {
+        user_id: user.id,
+        course_id: meetingData.courseId || null,
+        summary: meetingData.summary,
+        description: meetingData.description || null,
+        meet_link: meetLink || null,
+        calendar_event_id: calendarEvent.id,
+        start_time: meetingData.startTime,
+        end_time: meetingData.endTime,
+        attendees: meetingData.attendeeEmails,
+        status: 'scheduled',
+      };
+
+      const { data: dbMeeting, error } = await supabase
+        .from('meetings')
+        .insert(meetingInsert)
+        .select()
+        .single();
+
+      if (error) {
+        // If database insert fails, try to clean up the calendar event
+        try {
+          await googleCalendarService.deleteEvent('primary', calendarEvent.id);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup calendar event:', cleanupError);
+        }
+        throw error;
+      }
+
+      // Log analytics event
+      await this.logAnalyticsEvent(dbMeeting.id, user.id, 'meeting_created', {
+        calendar_event_id: calendarEvent.id,
+        attendee_count: meetingData.attendeeEmails.length,
+      });
+
+      return dbMeeting;
+    } catch (error) {
+      console.error('Failed to create meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Updates a meeting in both Google Calendar and database
+   */
+  static async updateMeeting(
+    meetingId: string, 
+    updates: Partial<MeetingData>
+  ): Promise<DatabaseMeeting> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Get existing meeting
+    const { data: existingMeeting, error: fetchError } = await supabase
+      .from('meetings')
+      .select('*')
+      .eq('id', meetingId)
+      .single();
+
+    if (fetchError || !existingMeeting) {
+      throw new Error('Meeting not found');
+    }
+
+    try {
+      // Update Google Calendar event if calendar_event_id exists
+      if (existingMeeting.calendar_event_id && Object.keys(updates).length > 0) {
+        const calendarUpdates: any = {};
+        
+        if (updates.summary) calendarUpdates.summary = updates.summary;
+        if (updates.description) calendarUpdates.description = updates.description;
+        if (updates.startTime) {
+          calendarUpdates.start = { dateTime: updates.startTime };
+        }
+        if (updates.endTime) {
+          calendarUpdates.end = { dateTime: updates.endTime };
+        }
+        if (updates.attendeeEmails) {
+          calendarUpdates.attendees = updates.attendeeEmails.map(email => ({ email }));
+        }
+
+        await googleCalendarService.updateEvent(
+          'primary',
+          existingMeeting.calendar_event_id,
+          calendarUpdates
+        );
+      }
+
+      // Update database record
+      const dbUpdates: DatabaseMeetingUpdate = {};
+      if (updates.summary) dbUpdates.summary = updates.summary;
+      if (updates.description !== undefined) dbUpdates.description = updates.description || null;
+      if (updates.startTime) dbUpdates.start_time = updates.startTime;
+      if (updates.endTime) dbUpdates.end_time = updates.endTime;
+      if (updates.attendeeEmails) dbUpdates.attendees = updates.attendeeEmails;
+      if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
+
+      const { data: updatedMeeting, error } = await supabase
+        .from('meetings')
+        .update(dbUpdates)
+        .eq('id', meetingId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return updatedMeeting;
+    } catch (error) {
+      console.error('Failed to update meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cancels a meeting in both Google Calendar and database
+   */
+  static async cancelMeeting(meetingId: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Get existing meeting
+    const { data: existingMeeting, error: fetchError } = await supabase
+      .from('meetings')
+      .select('*')
+      .eq('id', meetingId)
+      .single();
+
+    if (fetchError || !existingMeeting) {
+      throw new Error('Meeting not found');
+    }
+
+    try {
+      // Delete from Google Calendar if calendar_event_id exists
+      if (existingMeeting.calendar_event_id) {
+        await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
+      }
+
+      // Update database status to cancelled
+      const { error } = await supabase
+        .from('meetings')
+        .update({ status: 'cancelled' })
+        .eq('id', meetingId);
+
+      if (error) throw error;
+
+      // Log analytics event
+      await this.logAnalyticsEvent(meetingId, user.id, 'meeting_cancelled');
+    } catch (error) {
+      console.error('Failed to cancel meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Gets meetings for a user with optional filtering
+   */
+  static async getUserMeetings(options: {
+    status?: string;
+    courseId?: string;
+    startDate?: string;
+    endDate?: string;
+  } = {}): Promise<DatabaseMeeting[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    let query = supabase
+      .from('meetings')
+      .select('*')
+      .or(`user_id.eq.${user.id},attendees.cs.["${user.email || ''}"]`);
+
+    if (options.status) {
+      query = query.eq('status', options.status);
+    }
+    if (options.courseId) {
+      query = query.eq('course_id', options.courseId);
+    }
+    if (options.startDate) {
+      query = query.gte('start_time', options.startDate);
+    }
+    if (options.endDate) {
+      query = query.lte('end_time', options.endDate);
+    }
+
+    query = query.order('start_time', { ascending: true });
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return data || [];
+  }
+
+  /**
+   * Logs analytics events for meetings
+   */
+  static async logAnalyticsEvent(
+    meetingId: string,
+    userId: string,
+    eventType: 'meeting_created' | 'meeting_joined' | 'meeting_left' | 'join_clicked' | 'chat_message_sent' | 'meeting_cancelled',
+    eventData: Record<string, any> = {}
+  ): Promise<void> {
+    try {
+      await supabase
+        .from('meeting_analytics')
+        .insert({
+          meeting_id: meetingId,
+          user_id: userId,
+          event_type: eventType,
+          event_data: eventData,
+        });
+    } catch (error) {
+      console.error('Failed to log analytics event:', error);
+      // Don't throw here as analytics failures shouldn't break the main flow
+    }
+  }
+
+  /**
+   * Validates Google Calendar access for the current user
+   */
+  static async validateGoogleCalendarAccess(): Promise<boolean> {
+    try {
+      return await googleCalendarService.validateAccess();
+    } catch (error) {
+      console.error('Google Calendar access validation failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Gets the Google Meet link for a meeting
+   */
+  static async getMeetLink(meetingId: string): Promise<string | null> {
+    const { data: meeting, error } = await supabase
+      .from('meetings')
+      .select('meet_link, calendar_event_id')
+      .eq('id', meetingId)
+      .single();
+
+    if (error || !meeting) {
+      return null;
+    }
+
+    // If we have a stored meet link, return it
+    if (meeting.meet_link) {
+      return meeting.meet_link;
+    }
+
+    // If we have a calendar event ID, try to fetch the meet link from Google Calendar
+    if (meeting.calendar_event_id) {
+      try {
+        const calendarEvent = await googleCalendarService.getEvent('primary', meeting.calendar_event_id);
+        const meetLink = calendarEvent.conferenceData?.entryPoints?.find(
+          ep => ep.entryPointType === 'video'
+        )?.uri || calendarEvent.hangoutLink;
+
+        // Update the database with the meet link if found
+        if (meetLink) {
+          await supabase
+            .from('meetings')
+            .update({ meet_link: meetLink })
+            .eq('id', meetingId);
+        }
+
+        return meetLink || null;
+      } catch (error) {
+        console.error('Failed to fetch meet link from Google Calendar:', error);
+        return null;
+      }
+    }
+
+    return null;
+  }
+}
+
+export default MeetingManager;
