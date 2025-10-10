@@ -9,7 +9,8 @@ import {
   TrendingUp,
   Settings,
   UserCheck,
-  Shield
+  Shield,
+  MessageCircle
 } from "lucide-react";
 
 // Coach Navigation Configuration
@@ -50,6 +51,7 @@ export const clientNavItems = [
   { label: "Dashboard", href: "/client" },
   { label: "Explore", href: "/client/courses" },
   { label: "My Courses", href: "/client/my-courses" },
+  { label: "Sessions", href: "/client/sessions" },
 ];
 
 export const clientSidebarSections = [
@@ -58,6 +60,12 @@ export const clientSidebarSections = [
     items: [
       { icon: <Search className="w-4 h-4" />, label: "Explore", href: "/client/courses" },
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/client/my-courses" },
+    ],
+  },
+  {
+    title: "Sessions",
+    items: [
+      { icon: <MessageCircle className="w-4 h-4" />, label: "My Sessions", href: "/client/sessions" },
     ],
   },
 ];

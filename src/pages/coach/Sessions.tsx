@@ -4,7 +4,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, Users, Video, Plus, ExternalLink, Copy, Trash2, Edit, RefreshCw, AlertCircle, Save, X } from "lucide-react";
+import { Calendar, Clock, Users, Video, Plus, ExternalLink, Copy, Trash2, Edit, RefreshCw, AlertCircle, Save, X, Eye } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -460,24 +460,15 @@ export default function Sessions() {
                             <Video className="mr-2 h-4 w-4" />
                             {getMeetingStatus(meeting) === "in_progress" ? "Join Now" : "Join"}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => copyMeetLink(meeting.meet_link!)}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
                         </>
                       )}
-                      {meeting.calendar_event_id && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => window.open(`https://calendar.google.com/calendar/event?eid=${meeting.calendar_event_id}`, "_blank")}
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(`/coach/sessions/${meeting.id}`)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                       {["scheduled", "starting_soon"].includes(getMeetingStatus(meeting)) && (
                         <>
                           <Button
