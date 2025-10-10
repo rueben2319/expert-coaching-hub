@@ -1,1 +1,7 @@
 project_id = "vbrxgaxjmpwusbbbzzgl"
+
+[functions.create-google-meet]
+verify_jwt = true
+
+[functions.cancel-google-meet]
+verify_jwt = true
