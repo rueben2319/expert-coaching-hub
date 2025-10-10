@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { googleCalendarService } from "@/integrations/google/calendar";
+import { cancelGoogleMeet } from "@/lib/supabaseFunctions";
 import type { Database } from "@/integrations/supabase/types";
 
 const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
@@ -97,6 +98,7 @@ export class MeetingManager {
 
   /**
    * Cancels a meeting in both Google Calendar and database
+   * Uses Edge Function for proper OAuth token handling
    */
   static async cancelMeeting(meetingId: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
@@ -116,9 +118,18 @@ export class MeetingManager {
     }
 
     try {
-      // Delete from Google Calendar if calendar_event_id exists
+      // Use Edge Function to cancel Google Meet if calendar_event_id exists
       if (existingMeeting.calendar_event_id) {
-        await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
+        try {
+          await cancelGoogleMeet({
+            meetingId: meetingId,
+            calendarEventId: existingMeeting.calendar_event_id
+          });
+        } catch (edgeFunctionError) {
+          console.warn('Edge function failed, falling back to direct API call:', edgeFunctionError);
+          // Fallback to direct API call if Edge Function fails
+          await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
+        }
       }
 
       // Update database status to cancelled

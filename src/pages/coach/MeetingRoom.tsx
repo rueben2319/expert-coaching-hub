@@ -453,38 +453,37 @@ export default function MeetingRoom() {
   const statusInfo = getMeetingStatus(meeting);
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col">
       {/* Compact Header */}
       <div className="flex-shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="container mx-auto px-4 sm:px-6 py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate('/coach/sessions')}
+                className="w-full sm:w-auto"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>
-              <div className="flex items-center gap-3">
-                <div>
-                  <h1 className="text-lg font-semibold">{meeting.summary}</h1>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>{format(new Date(meeting.start_time), 'MMM d, yyyy')}</span>
-                    <span>{format(new Date(meeting.start_time), 'h:mm a')} - {format(new Date(meeting.end_time), 'h:mm a')}</span>
-                    <span>{meeting.attendees?.length || 0} attendees</span>
-                  </div>
+              <div className="flex flex-col gap-2">
+                <h1 className="text-lg font-semibold text-center sm:text-left">{meeting.summary}</h1>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-1 text-sm text-muted-foreground">
+                  <span>{format(new Date(meeting.start_time), 'MMM d, yyyy')}</span>
+                  <span>{format(new Date(meeting.start_time), 'h:mm a')} - {format(new Date(meeting.end_time), 'h:mm a')}</span>
+                  <span>{meeting.attendees?.length || 0} attendees</span>
                 </div>
               </div>
             </div>
-            
-            <div className="flex items-center gap-3">
-              <Badge variant={statusInfo.color as any}>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <Badge variant={statusInfo.color as any} className="self-start sm:self-auto">
                 {statusInfo.label}
               </Badge>
               {meeting.meet_link && (
-                <Button onClick={joinMeeting} className="gap-2">
+                <Button onClick={joinMeeting} className="gap-2 w-full sm:w-auto">
                   <Video className="h-4 w-4" />
                   Join Meet
                   <ExternalLink className="h-4 w-4" />
@@ -497,11 +496,11 @@ export default function MeetingRoom() {
 
       {/* Main Content - Full Height */}
       <div className="flex-1 overflow-hidden">
-        <div className="container mx-auto px-6 py-4 h-full">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
+        <div className="container mx-auto px-4 sm:px-6 py-4 h-full">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-4 h-full">
             
             {/* Attendees Sidebar */}
-            <div className="lg:col-span-1">
+            <div className="order-2 lg:order-1 lg:col-span-1">
               <Card className="h-full flex flex-col">
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-base">
@@ -544,7 +543,7 @@ export default function MeetingRoom() {
             </div>
 
             {/* Chat Panel - Takes remaining space */}
-            <div className="lg:col-span-3">
+            <div className="order-1 lg:order-2 lg:col-span-3">
               <Card className="h-full flex flex-col">
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-base">
