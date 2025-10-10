@@ -14,9 +14,11 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, ChevronRight, GraduationCap, LogOut, Menu, User, Search, HelpCircle, Globe } from "lucide-react";
+import { ChevronLeft, ChevronRight, GraduationCap, LogOut, Menu, User, Search, HelpCircle, Globe, Shield } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TokenManagementDashboard } from "@/components/TokenManagementDashboard";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 interface NavItem {
   label: string;
   href: string;
@@ -183,6 +185,20 @@ export function DashboardLayout({
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
+            <Dialog>
+              <DialogTrigger asChild>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Token Management
+                </DropdownMenuItem>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>OAuth Token Management</DialogTitle>
+                </DialogHeader>
+                <TokenManagementDashboard />
+              </DialogContent>
+            </Dialog>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -299,6 +315,20 @@ export function DashboardLayout({
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <Shield className="mr-2 h-4 w-4" />
+                      Token Management
+                    </DropdownMenuItem>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>OAuth Token Management</DialogTitle>
+                    </DialogHeader>
+                    <TokenManagementDashboard />
+                  </DialogContent>
+                </Dialog>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>
                   <LogOut className="mr-2 h-4 w-4" />

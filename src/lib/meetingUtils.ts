@@ -2,12 +2,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { googleCalendarService } from "@/integrations/google/calendar";
 import type { Database } from "@/integrations/supabase/types";
 
+const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+
 export interface MeetingData {
   summary: string;
   description?: string;
   startTime: string;
   endTime: string;
   attendeeEmails: string[];
+  courseId?: string;
+}
+
+export interface UpdateMeetingData {
+  summary?: string;
+  description?: string;
+  startTime?: string;
+  endTime?: string;
+  attendeeEmails?: string[];
   courseId?: string;
 }
 
@@ -83,77 +94,6 @@ export class MeetingManager {
     }
   }
 
-  /**
-   * Updates a meeting in both Google Calendar and database
-   */
-  static async updateMeeting(
-    meetingId: string, 
-    updates: Partial<MeetingData>
-  ): Promise<DatabaseMeeting> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    // Get existing meeting
-    const { data: existingMeeting, error: fetchError } = await supabase
-      .from('meetings')
-      .select('*')
-      .eq('id', meetingId)
-      .single();
-
-    if (fetchError || !existingMeeting) {
-      throw new Error('Meeting not found');
-    }
-
-    try {
-      // Update Google Calendar event if calendar_event_id exists
-      if (existingMeeting.calendar_event_id && Object.keys(updates).length > 0) {
-        const calendarUpdates: any = {};
-        
-        if (updates.summary) calendarUpdates.summary = updates.summary;
-        if (updates.description) calendarUpdates.description = updates.description;
-        if (updates.startTime) {
-          calendarUpdates.start = { dateTime: updates.startTime };
-        }
-        if (updates.endTime) {
-          calendarUpdates.end = { dateTime: updates.endTime };
-        }
-        if (updates.attendeeEmails) {
-          calendarUpdates.attendees = updates.attendeeEmails.map(email => ({ email }));
-        }
-
-        await googleCalendarService.updateEvent(
-          'primary',
-          existingMeeting.calendar_event_id,
-          calendarUpdates
-        );
-      }
-
-      // Update database record
-      const dbUpdates: DatabaseMeetingUpdate = {};
-      if (updates.summary) dbUpdates.summary = updates.summary;
-      if (updates.description !== undefined) dbUpdates.description = updates.description || null;
-      if (updates.startTime) dbUpdates.start_time = updates.startTime;
-      if (updates.endTime) dbUpdates.end_time = updates.endTime;
-      if (updates.attendeeEmails) dbUpdates.attendees = updates.attendeeEmails;
-      if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
-
-      const { data: updatedMeeting, error } = await supabase
-        .from('meetings')
-        .update(dbUpdates)
-        .eq('id', meetingId)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      return updatedMeeting;
-    } catch (error) {
-      console.error('Failed to update meeting:', error);
-      throw error;
-    }
-  }
 
   /**
    * Cancels a meeting in both Google Calendar and database
@@ -193,6 +133,50 @@ export class MeetingManager {
       await this.logAnalyticsEvent(meetingId, user.id, 'meeting_cancelled');
     } catch (error) {
       console.error('Failed to cancel meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Updates a meeting using the Edge Function
+   */
+  static async updateMeeting(meetingId: string, updateData: UpdateMeetingData): Promise<DatabaseMeeting> {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/update-google-meet`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          meetingId,
+          summary: updateData.summary,
+          description: updateData.description,
+          startTime: updateData.startTime,
+          endTime: updateData.endTime,
+          attendees: updateData.attendeeEmails,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update meeting');
+      }
+
+      return result.meeting;
+    } catch (error) {
+      console.error('Failed to update meeting:', error);
       throw error;
     }
   }

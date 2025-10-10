@@ -12,12 +12,15 @@ import ClientDashboard from "./pages/client/ClientDashboard";
 import ClientCourses from "./pages/client/Courses";
 import MyCourses from "./pages/client/MyCourses";
 import CourseViewer from "./pages/client/CourseViewer";
+import ClientSessions from "./pages/client/Sessions";
+import ClientMeetingRoom from "./pages/client/MeetingRoom";
 import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
 import EditCourse from "./pages/coach/EditCourse";
 import Sessions from "./pages/coach/Sessions";
 import CreateSession from "./pages/coach/CreateSession";
+import MeetingRoom from "./pages/coach/MeetingRoom";
 import Students from "./pages/coach/Students";
 import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
@@ -72,6 +75,22 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+            <Route 
+              path="/client/sessions" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientSessions />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/client/sessions/:meetingId" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientMeetingRoom />
+                </ProtectedRoute>
+              } 
+            />
 
             {/* Coach Routes */}
             <Route 
@@ -119,6 +138,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <CreateSession />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/coach/sessions/:meetingId" 
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <MeetingRoom />
                 </ProtectedRoute>
               } 
             />
