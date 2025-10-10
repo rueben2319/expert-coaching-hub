@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { getValidatedGoogleToken, OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -109,70 +110,27 @@ serve(async (req: Request) => {
       throw new Error('Meeting is not linked to a Google Calendar event');
     }
 
-    // Get user's session to access provider tokens
-    const { data: session, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.session?.provider_token) {
-      throw new Error('No valid Google OAuth session found. Please sign in with Google again.');
+    // Get validated Google OAuth token (with automatic refresh)
+    const { accessToken, refreshToken, wasRefreshed } = await getValidatedGoogleToken(supabase);
+
+    if (wasRefreshed) {
+      console.log('Token was refreshed for user:', user.id);
     }
 
-    let accessToken = session.session.provider_token;
-    const refreshToken = session.session.provider_refresh_token;
-
-    // Helper function to refresh Google OAuth token
-    const refreshAccessToken = async (refreshToken: string): Promise<string> => {
-      const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-      const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-      
-      if (!clientId || !clientSecret) {
-        throw new Error('Google OAuth credentials not configured');
-      }
-
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token',
-        }),
-      });
-
-      if (!tokenResponse.ok) {
-        throw new Error('Failed to refresh Google OAuth token');
-      }
-
-      const tokenData: GoogleTokenResponse = await tokenResponse.json();
-      return tokenData.access_token;
-    };
-
-    // Helper function to make Google Calendar API requests
+    // Helper function to make Google Calendar API requests with automatic token handling
     const makeCalendarRequest = async (method: string, endpoint: string, body?: any): Promise<any> => {
-      let response = await fetch(`https://www.googleapis.com/calendar/v3${endpoint}`, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+      const response = await OAuthTokenManager.makeAuthenticatedRequest(
+        `https://www.googleapis.com/calendar/v3${endpoint}`,
+        {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: body ? JSON.stringify(body) : undefined,
         },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-
-      // If token expired, try to refresh and retry
-      if (response.status === 401 && refreshToken) {
-        try {
-          accessToken = await refreshAccessToken(refreshToken);
-          response = await fetch(`https://www.googleapis.com/calendar/v3${endpoint}`, {
-            method,
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: body ? JSON.stringify(body) : undefined,
-          });
-        } catch (refreshError) {
-          throw new Error('Failed to refresh access token. Please re-authenticate with Google.');
-        }
-      }
+        accessToken,
+        refreshToken
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
