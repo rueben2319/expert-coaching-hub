@@ -44,6 +44,18 @@ interface DashboardLayoutProps {
   brandName?: string;
 }
 
+const TokenManagementDialog = ({ children }: { children: ReactNode }) => (
+  <Dialog>
+    <DialogTrigger asChild>{children}</DialogTrigger>
+    <DialogContent className="max-w-2xl">
+      <DialogHeader>
+        <DialogTitle>OAuth Token Management</DialogTitle>
+      </DialogHeader>
+      <TokenManagementDashboard />
+    </DialogContent>
+  </Dialog>
+);
+
 export function DashboardLayout({
   children,
   navItems,
@@ -185,20 +197,12 @@ export function DashboardLayout({
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            <Dialog>
-              <DialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                  <Shield className="mr-2 h-4 w-4" />
-                  Token Management
-                </DropdownMenuItem>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>OAuth Token Management</DialogTitle>
-                </DialogHeader>
-                <TokenManagementDashboard />
-              </DialogContent>
-            </Dialog>
+            <TokenManagementDialog>
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                <Shield className="mr-2 h-4 w-4" />
+                Token Management
+              </DropdownMenuItem>
+            </TokenManagementDialog>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -315,20 +319,12 @@ export function DashboardLayout({
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                      <Shield className="mr-2 h-4 w-4" />
-                      Token Management
-                    </DropdownMenuItem>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>OAuth Token Management</DialogTitle>
-                    </DialogHeader>
-                    <TokenManagementDashboard />
-                  </DialogContent>
-                </Dialog>
+                <TokenManagementDialog>
+                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                    <Shield className="mr-2 h-4 w-4" />
+                    Token Management
+                  </DropdownMenuItem>
+                </TokenManagementDialog>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>
                   <LogOut className="mr-2 h-4 w-4" />

@@ -178,34 +178,34 @@ export default function Students() {
         ) : (
           <div className="grid gap-4">
             {filteredStudents.map((student) => (
-            <div key={student.id} className="bg-muted/30 rounded-lg p-6">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center font-semibold text-primary">
+            <div key={student.id} className="bg-muted/30 rounded-lg p-4 sm:p-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center font-semibold text-primary mx-auto sm:mx-0">
                     {student.avatar}
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-3">
+                  <div className="space-y-2 text-center sm:text-left">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                       <h3 className="text-lg font-semibold">{student.name}</h3>
                       <Badge className={getStatusColor(student.status)}>
                         {student.status}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">{student.email}</p>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-1 text-sm text-muted-foreground">
                       <span>Last active: {new Date(student.lastActive).toLocaleDateString()}</span>
                       <span>{student.enrolledCourses.length} courses</span>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span>Overall Progress</span>
                       <span className="font-medium">{student.progress}%</span>
                     </div>
-                    <div className="w-32 bg-gray-200 rounded-full h-2">
+                    <div className="w-full sm:w-32 bg-gray-200 rounded-full h-2">
                       <div
                         className={`h-2 rounded-full ${getProgressColor(student.progress)}`}
                         style={{ width: `${student.progress}%` }}
@@ -213,16 +213,16 @@ export default function Students() {
                     </div>
                   </div>
                   
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
                       <Mail className="h-4 w-4 mr-2" />
                       Email
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
                       <MessageCircle className="h-4 w-4 mr-2" />
                       Message
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
                       View Profile
                     </Button>
                   </div>

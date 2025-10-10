@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
+import { TokenStorage } from "../_shared/token-storage.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -14,23 +15,35 @@ declare const Deno: {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'OPTIONS, GET',
 };
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+  if (req.method !== 'GET') {
+    return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
+  }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Get user from auth header
+    // Get auth header first to forward it to the client
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('No authorization header provided');
     }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    // Create client with forwarded Authorization header
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
 
     const { data: { user }, error: userError } = await supabase.auth.getUser(
       authHeader.replace('Bearer ', '')
@@ -59,25 +72,72 @@ serve(async (req: Request) => {
       
       if (accessToken) {
         try {
-          // Get detailed token information
-          const tokenInfo = await OAuthTokenManager.getTokenInfo(accessToken);
-          const expiryInfo = OAuthTokenManager.calculateTokenExpiry(tokenInfo);
-          
-          // Validate token
+          let currentAccessToken = accessToken;
+          let tokenInfo: any | null = null;
+
+          try {
+            tokenInfo = await OAuthTokenManager.getTokenInfo(currentAccessToken);
+          } catch (infoError) {
+            console.warn('Could not fetch token info:', infoError);
+          }
+
           const validationResult = await OAuthTokenManager.validateAndRefreshToken(
-            accessToken, 
+            currentAccessToken,
             refreshToken
           );
 
+          if (!validationResult.isValid) {
+            throw new Error(validationResult.error || 'Google token validation failed');
+          }
+
+          currentAccessToken = validationResult.token;
+
+          if (validationResult.refreshed) {
+            try {
+              tokenInfo = await OAuthTokenManager.getTokenInfo(currentAccessToken);
+            } catch (refetchError) {
+              console.warn('Could not fetch refreshed token info:', refetchError);
+              tokenInfo = null;
+            }
+
+            const expiresInSeconds = tokenInfo?.exp
+              ? Math.max(tokenInfo.exp - Math.floor(Date.now() / 1000), 0)
+              : undefined;
+
+            const storeResult = await TokenStorage.storeTokens(
+              supabase,
+              user.id,
+              currentAccessToken,
+              refreshToken,
+              expiresInSeconds,
+              tokenInfo?.scope
+            );
+
+            if (!storeResult.success) {
+              console.error('Token storage failed:', storeResult.error);
+              throw new Error('Failed to persist refreshed Google token');
+            }
+
+            const refreshMetaResult = await TokenStorage.updateRefreshMetadata(supabase, user.id);
+            if (!refreshMetaResult.success) {
+              console.error('Refresh metadata update failed:', refreshMetaResult.error);
+              throw new Error('Failed to update token metadata');
+            }
+          }
+
+          const expiryInfo = tokenInfo
+            ? OAuthTokenManager.calculateTokenExpiry(tokenInfo)
+            : null;
+
           tokenStatus = {
             hasTokens: true,
-            isExpired: expiryInfo.isExpired,
-            expiresAt: expiryInfo.expiresAt,
-            refreshCount: 0, // Would need to get from metadata/database
-            lastRefresh: null, // Would need to get from metadata/database
-            scope: tokenInfo.scope,
+            isExpired: expiryInfo ? expiryInfo.isExpired : true,
+            expiresAt: expiryInfo ? expiryInfo.expiresAt : null,
+            refreshCount: 0,
+            lastRefresh: null,
+            scope: tokenInfo?.scope,
             isValid: validationResult.isValid,
-            expiresInMinutes: expiryInfo.expiresInMinutes,
+            expiresInMinutes: expiryInfo ? expiryInfo.expiresInMinutes : 0,
           };
 
           // Try to get additional metadata from user profile
@@ -96,7 +156,7 @@ serve(async (req: Request) => {
 
         } catch (tokenError) {
           console.error('Token validation error:', tokenError);
-          tokenStatus.hasTokens = true; // We have a token, but it might be invalid
+          tokenStatus.hasTokens = true;
           tokenStatus.isValid = false;
         }
       }

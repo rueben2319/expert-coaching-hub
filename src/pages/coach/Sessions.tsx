@@ -136,12 +136,46 @@ export default function Sessions() {
   const saveEdit = async () => {
     if (!editingMeeting) return;
 
+    // Client-side validation for date fields
+    const startDate = new Date(editForm.startTime);
+    const endDate = new Date(editForm.endTime);
+
+    // Validate start time
+    if (isNaN(startDate.getTime())) {
+      toast({
+        title: "Invalid Start Time",
+        description: "Please enter a valid start date and time",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate end time
+    if (isNaN(endDate.getTime())) {
+      toast({
+        title: "Invalid End Time",
+        description: "Please enter a valid end date and time",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate that start time is before end time
+    if (startDate >= endDate) {
+      toast({
+        title: "Invalid Time Range",
+        description: "Start time must be before end time",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await MeetingManager.updateMeeting(editingMeeting, {
         summary: editForm.summary,
         description: editForm.description,
-        startTime: new Date(editForm.startTime).toISOString(),
-        endTime: new Date(editForm.endTime).toISOString(),
+        startTime: startDate.toISOString(),
+        endTime: endDate.toISOString(),
       });
 
       toast({
@@ -217,12 +251,12 @@ export default function Sessions() {
       brandName="Experts Coaching Hub"
     >
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-center sm:text-left">
             <h1 className="text-3xl font-bold">Sessions</h1>
             <p className="text-muted-foreground mt-2">Manage your Google Meet sessions</p>
           </div>
-          <Button onClick={() => navigate("/coach/sessions/create")}>
+          <Button onClick={() => navigate("/coach/sessions/create")} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             Schedule New Session
           </Button>
@@ -287,8 +321,8 @@ export default function Sessions() {
             </Alert>
           )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant={filter === "all" ? "default" : "outline"}
                 size="sm"
@@ -323,6 +357,7 @@ export default function Sessions() {
               size="sm"
               onClick={handleRefreshMeetings}
               disabled={isRefreshing}
+              className="w-full sm:w-auto"
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh
@@ -354,37 +389,36 @@ export default function Sessions() {
               <Card key={meeting.id}>
                 <CardContent className="p-6">
                   {editingMeeting === meeting.id ? (
-                    // Edit Mode
-                    <div className="space-y-4 flex-1">
+                    <div className="space-y-4 sm:space-y-6">
                       <div className="space-y-2">
                         <Label htmlFor="edit-summary">Meeting Title</Label>
                         <Input
                           id="edit-summary"
                           value={editForm.summary}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, summary: e.target.value }))}
+                          onChange={(e) => setEditForm((prev) => ({ ...prev, summary: e.target.value }))}
                           placeholder="Meeting title"
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label htmlFor="edit-description">Description</Label>
                         <Textarea
                           id="edit-description"
                           value={editForm.description}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                          onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
                           placeholder="Meeting description (optional)"
                           rows={2}
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor="edit-start">Start Time</Label>
                           <Input
                             id="edit-start"
                             type="datetime-local"
                             value={editForm.startTime}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, startTime: e.target.value }))}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, startTime: e.target.value }))}
                           />
                         </div>
                         <div className="space-y-2">
@@ -393,35 +427,32 @@ export default function Sessions() {
                             id="edit-end"
                             type="datetime-local"
                             value={editForm.endTime}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, endTime: e.target.value }))}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, endTime: e.target.value }))}
                           />
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={saveEdit}>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button size="sm" onClick={saveEdit} className="w-full sm:w-auto">
                           <Save className="h-4 w-4 mr-1" />
                           Save
                         </Button>
-                        <Button size="sm" variant="outline" onClick={cancelEdit}>
+                        <Button size="sm" variant="outline" onClick={cancelEdit} className="w-full sm:w-auto">
                           <X className="h-4 w-4 mr-1" />
                           Cancel
                         </Button>
                       </div>
                     </div>
                   ) : (
-                    // Display Mode
-                    <div className="flex items-start justify-between">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="space-y-3 flex-1">
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                           <h3 className="text-lg font-semibold">{meeting.summary}</h3>
                           <Badge variant={getStatusColor(getMeetingStatus(meeting))}>
                             {getStatusLabel(getMeetingStatus(meeting))}
                           </Badge>
                           {meeting.courses?.title && (
-                            <Badge variant="secondary">
-                              {meeting.courses.title}
-                            </Badge>
+                            <Badge variant="secondary">{meeting.courses.title}</Badge>
                           )}
                         </div>
 
@@ -429,15 +460,14 @@ export default function Sessions() {
                           <p className="text-sm text-muted-foreground">{meeting.description}</p>
                         )}
 
-                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                        <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:gap-4">
                           <div className="flex items-center gap-1">
                             <Calendar className="h-4 w-4" />
                             {format(new Date(meeting.start_time), "MMM d, yyyy")}
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock className="h-4 w-4" />
-                            {format(new Date(meeting.start_time), "h:mm a")} -{" "}
-                            {format(new Date(meeting.end_time), "h:mm a")}
+                            {format(new Date(meeting.start_time), "h:mm a")} - {format(new Date(meeting.end_time), "h:mm a")}
                           </div>
                           <div className="flex items-center gap-1">
                             <Users className="h-4 w-4" />
@@ -446,9 +476,8 @@ export default function Sessions() {
                         </div>
                       </div>
 
-                    <div className="flex gap-2 ml-4">
-                      {meeting.meet_link && ["scheduled", "in_progress", "starting_soon"].includes(getMeetingStatus(meeting)) && (
-                        <>
+                      <div className="flex flex-col gap-2 w-full sm:flex-row sm:w-auto lg:ml-4">
+                        {meeting.meet_link && ["scheduled", "in_progress", "starting_soon"].includes(getMeetingStatus(meeting)) && (
                           <Button
                             size="sm"
                             variant={getMeetingStatus(meeting) === "in_progress" ? "default" : "outline"}
@@ -456,41 +485,46 @@ export default function Sessions() {
                               trackJoinClick(meeting.id);
                               window.open(meeting.meet_link!, "_blank");
                             }}
+                            className="w-full sm:w-auto"
                           >
                             <Video className="mr-2 h-4 w-4" />
                             {getMeetingStatus(meeting) === "in_progress" ? "Join Now" : "Join"}
                           </Button>
-                        </>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => navigate(`/coach/sessions/${meeting.id}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {["scheduled", "starting_soon"].includes(getMeetingStatus(meeting)) && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => startEditMeeting(meeting)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedMeeting(meeting.id);
-                              setDeleteDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                        )}
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/coach/sessions/${meeting.id}`)}
+                          className="w-full sm:w-auto"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+
+                        {["scheduled", "starting_soon"].includes(getMeetingStatus(meeting)) && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startEditMeeting(meeting)}
+                              className="w-full sm:w-auto"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedMeeting(meeting.id);
+                                setDeleteDialogOpen(true);
+                              }}
+                              className="w-full sm:w-auto"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
                 </CardContent>

@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { getValidatedGoogleToken, OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -13,6 +14,7 @@ declare const Deno: {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, DELETE',
 };
 
 serve(async (req) => {
@@ -21,14 +23,23 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    // Get auth header first to forward it to the client
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('No authorization header');
     }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    // Create client with forwarded Authorization header
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
 
     const { data: { user }, error: userError } = await supabase.auth.getUser(
       authHeader.replace('Bearer ', '')
@@ -52,72 +63,20 @@ serve(async (req) => {
       throw new Error('Meeting not found or unauthorized');
     }
 
-    // Get user's session to access provider tokens
-    const { data: session, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.session?.provider_token) {
-      throw new Error('No valid Google OAuth session found. Please sign in with Google again.');
-    }
+    // Get validated Google OAuth token (handles refresh automatically)
+    const { accessToken, refreshToken } = await getValidatedGoogleToken(supabase);
 
-    let accessToken = session.session.provider_token;
-    const refreshToken = session.session.provider_refresh_token;
-
-    // Helper function to refresh Google OAuth token
-    const refreshAccessToken = async (refreshToken: string): Promise<string> => {
-      const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-      const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-      
-      if (!clientId || !clientSecret) {
-        throw new Error('Google OAuth credentials not configured');
-      }
-
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token',
-        }),
-      });
-
-      if (!tokenResponse.ok) {
-        throw new Error('Failed to refresh Google OAuth token');
-      }
-
-      const tokenData = await tokenResponse.json();
-      return tokenData.access_token;
-    };
-
-    // Cancel Google Calendar event with retry logic
-    let calendarResponse = await fetch(
+    // Cancel Google Calendar event using shared OAuth manager (handles 401 retry)
+    const calendarResponse = await OAuthTokenManager.makeAuthenticatedRequest(
       `https://www.googleapis.com/calendar/v3/calendars/primary/events/${meeting.calendar_event_id}?sendUpdates=all`,
       {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      }
+      },
+      accessToken,
+      refreshToken
     );
 
-    // If token expired, try to refresh and retry
-    if (calendarResponse.status === 401 && refreshToken) {
-      try {
-        accessToken = await refreshAccessToken(refreshToken);
-        calendarResponse = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${meeting.calendar_event_id}?sendUpdates=all`,
-          {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-            },
-          }
-        );
-      } catch (refreshError) {
-        throw new Error('Failed to refresh access token. Please re-authenticate with Google.');
-      }
-    }
-
+    // Allow 404/410 (already deleted) as success cases
     if (!calendarResponse.ok && calendarResponse.status !== 410 && calendarResponse.status !== 404) {
       const errorText = await calendarResponse.text();
       console.error('Failed to cancel calendar event:', calendarResponse.status, errorText);
@@ -128,7 +87,8 @@ serve(async (req) => {
     const { error: updateError } = await supabase
       .from('meetings')
       .update({ status: 'cancelled' })
-      .eq('id', meetingId);
+      .eq('id', meetingId)
+      .eq('user_id', user.id);
 
     if (updateError) {
       throw updateError;

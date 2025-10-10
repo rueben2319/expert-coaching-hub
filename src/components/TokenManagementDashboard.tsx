@@ -25,13 +25,26 @@ interface TokenStatus {
   lastRefresh?: Date;
   scope?: string;
   isValid?: boolean;
-  expiresInMinutes?: number;
 }
 
-export const TokenManagementDashboard: React.FC<{
+// Helper function to safely parse ISO date strings
+const parseISODate = (isoString: string | null | undefined): Date | undefined => {
+  if (!isoString) return undefined;
+  try {
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? undefined : date;
+  } catch {
+    return undefined;
+  }
+};
+
+export function TokenManagementDashboard({
+  compact = false,
+  onTokenRefresh,
+}: {
   compact?: boolean;
   onTokenRefresh?: () => void;
-}> = ({ compact = false, onTokenRefresh }) => {
+}) {
   const [tokenStatus, setTokenStatus] = useState<TokenStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -47,7 +60,7 @@ export const TokenManagementDashboard: React.FC<{
         throw new Error('No session found');
       }
 
-      const response = await fetch(`https://vbrxgaxjmpwusbbbzzgl.supabase.co/functions/v1/get-token-status`, {
+      const response = await fetch(`/functions/v1/get-token-status`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -60,7 +73,15 @@ export const TokenManagementDashboard: React.FC<{
       }
 
       const result = await response.json();
-      setTokenStatus(result.tokenStatus);
+      
+      // Convert ISO date strings to Date objects
+      const normalizedTokenStatus: TokenStatus = {
+        ...result.tokenStatus,
+        expiresAt: parseISODate(result.tokenStatus.expiresAt),
+        lastRefresh: parseISODate(result.tokenStatus.lastRefresh),
+      };
+      
+      setTokenStatus(normalizedTokenStatus);
     } catch (error: any) {
       console.error('Token status fetch error:', error);
       toast({
@@ -82,7 +103,7 @@ export const TokenManagementDashboard: React.FC<{
         throw new Error('No session found');
       }
 
-      const response = await fetch(`https://vbrxgaxjmpwusbbbzzgl.supabase.co/functions/v1/refresh-google-token`, {
+      const response = await fetch(`/functions/v1/refresh-google-token`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -159,7 +180,7 @@ export const TokenManagementDashboard: React.FC<{
     return 'Token valid';
   };
 
-  const getStatusColor = () => {
+  const getStatusColor = (): 'default' | 'secondary' | 'destructive' => {
     if (!tokenStatus.hasTokens) return 'destructive';
     if (tokenStatus.isExpired) return 'secondary';
     return 'default';
@@ -173,7 +194,7 @@ export const TokenManagementDashboard: React.FC<{
             <div className="flex items-center gap-2">
               {getStatusIcon()}
               <span className="text-sm font-medium">{getStatusText()}</span>
-              <Badge variant={getStatusColor() as any}>
+              <Badge variant={getStatusColor()}>
                 {tokenStatus.hasTokens && tokenStatus.expiresAt && !tokenStatus.isExpired
                   ? `Expires ${formatDistanceToNow(tokenStatus.expiresAt, { addSuffix: true })}`
                   : 'Needs attention'
@@ -224,7 +245,7 @@ export const TokenManagementDashboard: React.FC<{
             </div>
           </div>
           
-          <Badge variant={getStatusColor() as any}>
+          <Badge variant={getStatusColor()}>
             {tokenStatus.hasTokens ? 'Connected' : 'Disconnected'}
           </Badge>
         </div>
