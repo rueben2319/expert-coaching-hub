@@ -38,9 +38,13 @@ export default function Auth() {
   useEffect(() => {
     if (user && !role) {
       // Only show role dialog for OAuth users (not traditional signup/login)
-      const isOAuthUser = user.app_metadata?.provider === 'google' || 
-                         user.user_metadata?.provider === 'google';
-      
+      // Detect OAuth provider robustly via identities as well as metadata
+      const identityProvider = Array.isArray((user as any).identities)
+        ? (user as any).identities.find((i: any) => i.provider === 'google')
+        : null;
+
+      const isOAuthUser = Boolean(identityProvider) || user.app_metadata?.provider === 'google' || user.user_metadata?.provider === 'google';
+
       if (isOAuthUser) {
         setShowRoleDialog(true);
       } else {
