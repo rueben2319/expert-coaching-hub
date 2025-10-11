@@ -229,6 +229,23 @@ export default function CourseViewer() {
         })) || [],
     })) || [];
 
+  // Calculate overall course progress based on module averages
+  const calculateOverallProgress = () => {
+    if (modules.length === 0) return 0;
+
+    const moduleProgresses = modules.map(module => {
+      const completedLessons = module.lessons.filter((l: any) => l.isCompleted).length;
+      return module.lessons.length > 0
+        ? (completedLessons / module.lessons.length) * 100
+        : 0;
+    });
+
+    const averageProgress = moduleProgresses.reduce((sum, progress) => sum + progress, 0) / modules.length;
+    return Math.round(averageProgress);
+  };
+
+  const overallProgress = calculateOverallProgress();
+
   // Get all lessons in order for navigation
   const allLessons = modules.flatMap((module: any) =>
     module.lessons.map((lesson: any) => ({
@@ -342,13 +359,16 @@ export default function CourseViewer() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="text-2xl font-bold">
-                      {enrollment.progress_percentage}%
+                      {overallProgress}%
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {modules.reduce((acc, module) => acc + module.lessons.filter((l: any) => l.isCompleted).length, 0)} of {allLessons.length} lessons
+                      {modules.filter(m => m.lessons.some(l => l.isCompleted)).length} of {modules.length}
                     </span>
                   </div>
-                  <Progress value={enrollment.progress_percentage} className="h-2" />
+                  <Progress
+                    value={Math.max(overallProgress, 5)}
+                    className="h-3"
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Course completion
@@ -391,23 +411,28 @@ export default function CourseViewer() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Overall Course Progress Summary */}
-              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-medium">Overall Progress</h4>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {enrollment.progress_percentage}%
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      ({modules.reduce((acc, module) => acc + module.lessons.filter((l: any) => l.isCompleted).length, 0)}/{allLessons.length})
-                    </span>
+              {enrollment && (
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium">Overall Progress</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {overallProgress}%
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({modules.filter(m => m.lessons.some(l => l.isCompleted)).length}/{modules.length})
+                      </span>
+                    </div>
                   </div>
+                  <Progress
+                    value={Math.max(overallProgress, 5)}
+                    className="h-3"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Complete all lessons to finish this course
+                  </p>
                 </div>
-                <Progress value={enrollment.progress_percentage} className="h-2" />
-                <p className="text-xs text-muted-foreground">
-                  Complete all lessons to finish this course
-                </p>
-              </div>
+              )}
 
               {modules.map((module: any) => {
                 const completedLessons = module.lessons.filter(
@@ -473,7 +498,7 @@ export default function CourseViewer() {
               }}
             >
               <PlayCircle className="mr-2 h-5 w-5" />
-              {enrollment.progress_percentage > 0
+              {overallProgress > 0
                 ? "Continue Learning"
                 : "Start Learning"}
             </Button>

@@ -25,6 +25,7 @@ export default function Auth() {
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [pendingRole, setPendingRole] = useState<"client" | "coach">("client");
   const [submittingRole, setSubmittingRole] = useState(false);
+  const [isFromOAuth, setIsFromOAuth] = useState(false);
   const navigate = useNavigate();
   const { user, role, refreshRole, signOut } = useAuth();
 
@@ -35,14 +36,20 @@ export default function Auth() {
   }, [user, role, navigate]);
 
   useEffect(() => {
-    if (user) {
-      setOauthLoading(false);
-    }
-
     if (user && !role) {
-      setShowRoleDialog(true);
+      // Only show role dialog for OAuth users (not traditional signup/login)
+      const isOAuthUser = user.app_metadata?.provider === 'google' || 
+                         user.user_metadata?.provider === 'google';
+      
+      if (isOAuthUser) {
+        setShowRoleDialog(true);
+      } else {
+        // For traditional users without roles, redirect to client dashboard
+        // (they should have gotten their role during signup)
+        navigate('/client');
+      }
     }
-  }, [user, role]);
+  }, [user, role, navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +106,7 @@ export default function Auth() {
   const handleGoogleAuth = async () => {
     try {
       setOauthLoading(true);
+      setIsFromOAuth(true);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -122,6 +130,7 @@ export default function Auth() {
       console.error(error);
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
+      setIsFromOAuth(false);
     }
   };
 
