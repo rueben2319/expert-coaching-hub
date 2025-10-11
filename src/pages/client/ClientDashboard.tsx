@@ -122,10 +122,18 @@ export default function ClientDashboard() {
       .sort((a, b) => a.calculatedProgress - b.calculatedProgress)[0];
   }, [enrichedEnrollments]);
 
-  const coursesInProgress: EnrichedEnrollment[] = enrichedEnrollments?.filter((e) => e.calculatedProgress > 0 && e.calculatedProgress < 100) ?? [];
-  const coursesCompleted: EnrichedEnrollment[] = enrichedEnrollments?.filter((e) => e.calculatedProgress >= 100) ?? [];
   const totalCourses = enrichedEnrollments?.length ?? 0;
   const lessonsCompleted = lessonProgress?.filter((l) => l.is_completed).length ?? 0;
+
+  // Calculate overall progress across all courses
+  const overallProgress = useMemo(() => {
+    if (!enrichedEnrollments || enrichedEnrollments.length === 0) return 0;
+    const totalProgress = enrichedEnrollments.reduce((sum, enrollment) => sum + enrollment.calculatedProgress, 0);
+    return Math.round(totalProgress / enrichedEnrollments.length);
+  }, [enrichedEnrollments]);
+
+  const coursesInProgress: EnrichedEnrollment[] = enrichedEnrollments?.filter((e) => e.calculatedProgress > 0 && e.calculatedProgress < 100) ?? [];
+  const coursesCompleted: EnrichedEnrollment[] = enrichedEnrollments?.filter((e) => e.calculatedProgress >= 100) ?? [];
 
   const progressSegments = useMemo(() => {
     if (!totalCourses) return [];
@@ -295,25 +303,21 @@ export default function ClientDashboard() {
             <CardContent className="space-y-6">
               {totalCourses > 0 ? (
                 <div className="space-y-3">
-                  <div className="flex h-2 overflow-hidden rounded-full bg-muted">
-                    {progressSegments.length === 0 ? (
-                      <div className="w-full bg-primary" />
-                    ) : (
-                      progressSegments.map((segment) => {
-                        const width = Math.round((segment.value / totalCourses) * 100);
-                        if (!width) return null;
-                        return (
-                          <div
-                            key={segment.label}
-                            className={`${segment.color}`}
-                            style={{ width: `${width}%` }}
-                            aria-label={`${segment.label} ${segment.value}`}
-                          />
-                        );
-                      })
-                    )}
+                  {/* Overall Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">Overall Progress</span>
+                      <span className="text-muted-foreground">{overallProgress}%</span>
+                    </div>
+                    <Progress value={Math.max(overallProgress, 5)} className="h-3" />
                   </div>
+
+                  {/* Course Statistics */}
                   <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Total Courses</span>
+                      <span>{totalCourses}</span>
+                    </div>
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Courses in progress</span>
                       <span>{coursesInProgress.length}</span>
