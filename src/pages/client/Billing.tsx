@@ -6,6 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { usePayments } from "@/hooks/usePayments";
 import { toast } from "sonner";
+import { isBuilderPreview } from "@/lib/builderPreview";
+
+const MOCK_HISTORY = {
+  invoices: [
+    { id: "inv_1", invoice_number: "INV-2001", amount: 25, currency: "USD", status: "paid", invoice_date: new Date().toISOString(), description: "Course: React Basics" },
+  ],
+  orders: [
+    { id: "ord_1", client_id: "client_1", coach_id: "coach_1", type: "one_time", amount: 25, currency: "USD", status: "paid", transaction_id: "tx_1", course_id: "course_1", created_at: new Date().toISOString() },
+  ],
+  subscriptions: [],
+  transactions: [
+    { id: "tx_1", transaction_ref: "txref_1", amount: 25, currency: "USD", status: "success", created_at: new Date().toISOString(), order_id: "ord_1", subscription_id: null },
+  ],
+};
 
 const ClientBilling = () => {
   const { getPurchaseHistory, createClientOneTimeOrder } = usePayments();
@@ -13,9 +27,13 @@ const ClientBilling = () => {
   const [courseId, setCourseId] = useState("");
   const [amount, setAmount] = useState("");
 
+  const builder = isBuilderPreview();
+
   const { data: history } = useQuery({
     queryKey: ["purchase_history"],
     queryFn: getPurchaseHistory,
+    enabled: !builder,
+    initialData: builder ? MOCK_HISTORY : undefined,
   });
 
   const startOneTimePayment = async () => {
@@ -23,6 +41,10 @@ const ClientBilling = () => {
       const amt = Number(amount);
       if (!coachId || !courseId || !amt) {
         toast.error("Coach, course and amount are required");
+        return;
+      }
+      if (builder) {
+        toast.success("Builder preview: simulated payment successful");
         return;
       }
       const { checkout_url } = await createClientOneTimeOrder(coachId, courseId, amt);
