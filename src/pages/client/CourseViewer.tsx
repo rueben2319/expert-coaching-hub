@@ -9,7 +9,7 @@ import { ContentRenderer } from "@/components/content/ContentRenderer";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
-import { CheckCircle2, Clock, BookOpen, PlayCircle } from "lucide-react";
+import { CheckCircle2, Clock, BookOpen, PlayCircle, Progress } from "lucide-react";
 
 type ViewType = "overview" | "lesson";
 
@@ -61,6 +61,22 @@ export default function CourseViewer() {
     enabled: !!courseId && !!user?.id,
   });
 
+  // Fetch content interactions
+  const { data: contentInteractions } = useQuery({
+    queryKey: ["content-interactions", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("content_interactions")
+        .select("*")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   // Fetch lesson progress
   const { data: lessonProgress } = useQuery({
     queryKey: ["lesson-progress", user?.id],
@@ -94,6 +110,83 @@ export default function CourseViewer() {
     },
     enabled: !!currentLessonId && currentView === "lesson",
   });
+
+  // Auto-complete lesson when all required content is completed
+  useEffect(() => {
+    const checkAndCompleteLesson = async () => {
+      if (!currentLessonId || !currentLesson || !user) return;
+
+      const lessonContent = currentLesson?.lesson_content || [];
+      const requiredContent = lessonContent.filter((content: any) => content.is_required);
+
+      if (requiredContent.length === 0) return;
+
+      // Check if all required content is completed
+      const allRequiredCompleted = requiredContent.every((content: any) => {
+        return contentInteractions?.some(
+          (interaction: any) =>
+            interaction.content_id === content.id && interaction.is_completed
+        );
+      });
+
+      if (allRequiredCompleted) {
+        // Check if lesson is already completed
+        const isLessonAlreadyCompleted = lessonProgress?.some(
+          (p: any) => p.lesson_id === currentLessonId && p.is_completed
+        );
+
+        if (!isLessonAlreadyCompleted) {
+          // Use the database function to mark lesson complete
+          const { error } = await supabase.rpc("mark_lesson_complete", {
+            _user_id: user.id,
+            _lesson_id: currentLessonId,
+          });
+
+          if (!error) {
+            // Refresh progress data
+            queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+            queryClient.invalidateQueries({ queryKey: ["enrollment"] });
+            toast({ title: "Lesson completed!", description: "Great progress!" });
+          }
+        }
+      }
+    };
+
+    if (contentInteractions && currentLesson) {
+      checkAndCompleteLesson();
+    }
+  }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient]);
+
+  // Auto-create lesson progress when lesson is opened
+  useEffect(() => {
+    const createLessonProgress = async () => {
+      if (!user || !currentLessonId) return;
+
+      // Check if progress record already exists
+      const { data: existingProgress } = await supabase
+        .from("lesson_progress")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("lesson_id", currentLessonId)
+        .single();
+
+      // Create progress record if it doesn't exist
+      if (!existingProgress) {
+        await supabase
+          .from("lesson_progress")
+          .insert({
+            user_id: user.id,
+            lesson_id: currentLessonId,
+            is_completed: false,
+          });
+
+        // Invalidate queries to refresh progress data
+        queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+      }
+    };
+
+    createLessonProgress();
+  }, [currentLessonId, user, queryClient]);
 
   // Mark lesson as complete
   const completeLessonMutation = useMutation({
