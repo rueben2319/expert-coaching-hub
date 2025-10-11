@@ -195,7 +195,7 @@ export default function ClientDashboard() {
                       {upNextCourse.courses.description || "Stay engaged and complete your course milestones."}
                     </p>
                     <div className="max-w-md">
-                      <Progress value={upNextCourse.calculatedProgress} />
+                      <Progress value={Math.max(upNextCourse.calculatedProgress, 5)} />
                       <p className="text-xs text-muted-foreground mt-1">
                         {Math.round(upNextCourse.calculatedProgress)}% complete
                       </p>
