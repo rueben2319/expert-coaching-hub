@@ -85,13 +85,21 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/client/sessions/:meetingId" 
+            <Route
+              path="/client/sessions/:meetingId"
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <ClientMeetingRoom />
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/client/billing"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientBilling />
+                </ProtectedRoute>
+              }
             />
 
             {/* Coach Routes */}
@@ -167,13 +175,21 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/coach/analytics" 
+            <Route
+              path="/coach/analytics"
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <Analytics />
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/coach/billing"
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CoachBilling />
+                </ProtectedRoute>
+              }
             />
 
             {/* Profile Route - Available to all authenticated users */}
