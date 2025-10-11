@@ -56,10 +56,28 @@ serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+    // Fetch user role server-side to enforce permissions
+    const { data: roleRow, error: roleErr } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
+    const userRole = roleRow?.role || null;
+
     const body = (await req.json()) as CreatePaymentRequest;
     const mode = body.mode;
 
     if (!mode) throw new Error("mode is required");
+
+    // For coach subscription, ensure the user is a coach (or admin)
+    if (mode === "coach_subscription") {
+      if (userRole !== "coach" && userRole !== "admin") {
+        return new Response(JSON.stringify({ error: "Forbidden: user must be a coach to subscribe to coach plans" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
+    // For client modes, ensure user is a client (or admin)
+    if (mode === "client_one_time" || mode === "client_subscription") {
+      if (userRole !== "client" && userRole !== "admin") {
+        return new Response(JSON.stringify({ error: "Forbidden: user must be a client to purchase courses" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
 
     // Fetch profile for payer details
     const { data: profile } = await supabase.from("profiles").select("email, full_name").eq("id", user.id).single();
