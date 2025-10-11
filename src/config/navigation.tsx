@@ -21,6 +21,7 @@ export const coachNavItems = [
   { label: "Sessions", href: "/coach/sessions" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Analytics", href: "/coach/analytics" },
+  { label: "Billing", href: "/coach/billing" },
 ];
 
 export const coachSidebarSections = [
