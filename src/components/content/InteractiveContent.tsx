@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Maximize2, Minimize2 } from "lucide-react";
+import { ExternalLink, Maximize2, Minimize2, CheckCircle2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface InteractiveContentProps {
   content: {
@@ -12,12 +14,64 @@ interface InteractiveContentProps {
     allowFullscreen?: boolean;
   };
   contentId: string;
+  onComplete?: () => void;
 }
 
-export function InteractiveContent({ content, contentId }: InteractiveContentProps) {
+export function InteractiveContent({ content, contentId, onComplete }: InteractiveContentProps) {
+  const { user } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeHeight, setIframeHeight] = useState(content.height || 600);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [interactionTime, setInteractionTime] = useState(0);
+  const [hasInteracted, setHasInteracted] = useState(false);
+  const interactionStartTime = useRef<number | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Check completion status on mount
+  useEffect(() => {
+    const checkCompletionStatus = async () => {
+      if (!user || !contentId) return;
+
+      const { data } = await supabase
+        .from("content_interactions")
+        .select("is_completed, interaction_data")
+        .eq("user_id", user.id)
+        .eq("content_id", contentId)
+        .single();
+
+      if (data?.is_completed) {
+        setIsCompleted(true);
+      }
+    };
+
+    checkCompletionStatus();
+  }, [user, contentId]);
+
+  // Track interaction time
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (hasInteracted && !isCompleted) {
+      interactionStartTime.current = Date.now();
+      interval = setInterval(() => {
+        if (interactionStartTime.current) {
+          const currentInteractionTime = (Date.now() - interactionStartTime.current) / 1000; // in seconds
+          setInteractionTime(currentInteractionTime);
+
+          // Mark as complete after 5 minutes of interaction (adjustable)
+          if (currentInteractionTime >= 300 && !isCompleted) { // 5 minutes
+            handleContentComplete();
+          }
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [hasInteracted, isCompleted]);
+
+  // Handle fullscreen changes
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -38,6 +92,53 @@ export function InteractiveContent({ content, contentId }: InteractiveContentPro
     } else {
       document.exitFullscreen();
     }
+  };
+
+  const handleInteraction = () => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+      // Record initial interaction
+      recordInteraction({ type: "interaction_started" });
+    }
+  };
+
+  const recordInteraction = async (interactionData: any) => {
+    if (!user) return;
+
+    await supabase
+      .from("content_interactions")
+      .upsert({
+        user_id: user.id,
+        content_id: contentId,
+        is_completed: isCompleted,
+        interaction_data: {
+          ...interactionData,
+          interaction_time: interactionTime,
+          started_at: interactionStartTime.current ? new Date(interactionStartTime.current).toISOString() : null,
+        },
+      });
+  };
+
+  const handleContentComplete = async () => {
+    if (!user || isCompleted) return;
+
+    setIsCompleted(true);
+
+    await supabase
+      .from("content_interactions")
+      .upsert({
+        user_id: user.id,
+        content_id: contentId,
+        is_completed: true,
+        interaction_data: {
+          type: "completed",
+          interaction_time: interactionTime,
+          completed_at: new Date().toISOString(),
+          started_at: interactionStartTime.current ? new Date(interactionStartTime.current).toISOString() : null,
+        },
+      });
+
+    if (onComplete) onComplete();
   };
 
   const openInNewTab = () => {
@@ -72,27 +173,64 @@ export function InteractiveContent({ content, contentId }: InteractiveContentPro
                 )}
               </Button>
             )}
+            {!isCompleted && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleContentComplete}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Mark Complete
+              </Button>
+            )}
           </div>
         </div>
       )}
-      
+
       <div
         id={`interactive-${contentId}`}
         className="relative bg-muted rounded-lg overflow-hidden"
         style={{ height: isFullscreen ? "100vh" : `${iframeHeight}px` }}
+        onClick={handleInteraction}
+        onFocus={handleInteraction}
       >
         <iframe
+          ref={iframeRef}
           src={content.url}
           className="w-full h-full border-0"
           title={content.title || "Interactive Content"}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen={content.allowFullscreen !== false}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+          onLoad={handleInteraction}
         />
       </div>
-      <p className="text-xs text-muted-foreground">
-        Interactive content loaded from: {new URL(content.url).hostname}
-      </p>
+
+      {/* Status and Info */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            Interactive content
+            {hasInteracted && !isCompleted && (
+              <span className="ml-2">
+                • Interacted: {Math.floor(interactionTime / 60)}:{(interactionTime % 60).toFixed(0).padStart(2, '0')}
+              </span>
+            )}
+          </span>
+        </div>
+        {isCompleted && (
+          <div className="flex items-center gap-2 text-green-600 bg-green-50 dark:bg-green-950 px-3 py-1 rounded-lg">
+            <CheckCircle2 className="h-4 w-4" />
+            <span className="text-sm font-medium">Completed</span>
+          </div>
+        )}
+      </div>
+
+      {!isCompleted && (
+        <p className="text-xs text-muted-foreground">
+          💡 Interact with the content above. It will be marked complete after 5 minutes of interaction, or click "Mark Complete" when done.
+        </p>
+      )}
     </div>
   );
 }

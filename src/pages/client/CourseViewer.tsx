@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { CheckCircle2, Clock, BookOpen, PlayCircle } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 
 type ViewType = "overview" | "lesson";
 
@@ -61,6 +62,22 @@ export default function CourseViewer() {
     enabled: !!courseId && !!user?.id,
   });
 
+  // Fetch content interactions
+  const { data: contentInteractions } = useQuery({
+    queryKey: ["content-interactions", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("content_interactions")
+        .select("*")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   // Fetch lesson progress
   const { data: lessonProgress } = useQuery({
     queryKey: ["lesson-progress", user?.id],
@@ -94,6 +111,83 @@ export default function CourseViewer() {
     },
     enabled: !!currentLessonId && currentView === "lesson",
   });
+
+  // Auto-complete lesson when all required content is completed
+  useEffect(() => {
+    const checkAndCompleteLesson = async () => {
+      if (!currentLessonId || !currentLesson || !user) return;
+
+      const lessonContent = currentLesson?.lesson_content || [];
+      const requiredContent = lessonContent.filter((content: any) => content.is_required);
+
+      if (requiredContent.length === 0) return;
+
+      // Check if all required content is completed
+      const allRequiredCompleted = requiredContent.every((content: any) => {
+        return contentInteractions?.some(
+          (interaction: any) =>
+            interaction.content_id === content.id && interaction.is_completed
+        );
+      });
+
+      if (allRequiredCompleted) {
+        // Check if lesson is already completed
+        const isLessonAlreadyCompleted = lessonProgress?.some(
+          (p: any) => p.lesson_id === currentLessonId && p.is_completed
+        );
+
+        if (!isLessonAlreadyCompleted) {
+          // Use the database function to mark lesson complete
+          const { error } = await supabase.rpc("mark_lesson_complete", {
+            _user_id: user.id,
+            _lesson_id: currentLessonId,
+          });
+
+          if (!error) {
+            // Refresh progress data
+            queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+            queryClient.invalidateQueries({ queryKey: ["enrollment"] });
+            toast({ title: "Lesson completed!", description: "Great progress!" });
+          }
+        }
+      }
+    };
+
+    if (contentInteractions && currentLesson) {
+      checkAndCompleteLesson();
+    }
+  }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient]);
+
+  // Auto-create lesson progress when lesson is opened
+  useEffect(() => {
+    const createLessonProgress = async () => {
+      if (!user || !currentLessonId) return;
+
+      // Check if progress record already exists
+      const { data: existingProgress } = await supabase
+        .from("lesson_progress")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("lesson_id", currentLessonId)
+        .single();
+
+      // Create progress record if it doesn't exist
+      if (!existingProgress) {
+        await supabase
+          .from("lesson_progress")
+          .insert({
+            user_id: user.id,
+            lesson_id: currentLessonId,
+            is_completed: false,
+          });
+
+        // Invalidate queries to refresh progress data
+        queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+      }
+    };
+
+    createLessonProgress();
+  }, [currentLessonId, user, queryClient]);
 
   // Mark lesson as complete
   const completeLessonMutation = useMutation({
@@ -134,6 +228,23 @@ export default function CourseViewer() {
           ) || false,
         })) || [],
     })) || [];
+
+  // Calculate overall course progress based on module averages
+  const calculateOverallProgress = () => {
+    if (modules.length === 0) return 0;
+
+    const moduleProgresses = modules.map(module => {
+      const completedLessons = module.lessons.filter((l: any) => l.isCompleted).length;
+      return module.lessons.length > 0
+        ? (completedLessons / module.lessons.length) * 100
+        : 0;
+    });
+
+    const averageProgress = moduleProgresses.reduce((sum, progress) => sum + progress, 0) / modules.length;
+    return Math.round(averageProgress);
+  };
+
+  const overallProgress = calculateOverallProgress();
 
   // Get all lessons in order for navigation
   const allLessons = modules.flatMap((module: any) =>
@@ -245,8 +356,19 @@ export default function CourseViewer() {
                 <CardTitle className="text-sm font-medium">Progress</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {enrollment.progress_percentage}%
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-2xl font-bold">
+                      {overallProgress}%
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {modules.filter(m => m.lessons.some(l => l.isCompleted)).length} of {modules.length}
+                    </span>
+                  </div>
+                  <Progress
+                    value={Math.max(overallProgress, 5)}
+                    className="h-3"
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Course completion
@@ -288,40 +410,76 @@ export default function CourseViewer() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Overall Course Progress Summary */}
+              {enrollment && (
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium">Overall Progress</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {overallProgress}%
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({modules.filter(m => m.lessons.some(l => l.isCompleted)).length}/{modules.length})
+                      </span>
+                    </div>
+                  </div>
+                  <Progress
+                    value={Math.max(overallProgress, 5)}
+                    className="h-3"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Complete all lessons to finish this course
+                  </p>
+                </div>
+              )}
+
               {modules.map((module: any) => {
                 const completedLessons = module.lessons.filter(
                   (l: any) => l.isCompleted
                 ).length;
+                const moduleProgress = module.lessons.length > 0
+                  ? Math.round((completedLessons / module.lessons.length) * 100)
+                  : 0;
+
                 return (
                   <div key={module.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between mb-3">
                       <h3 className="font-semibold">{module.title}</h3>
-                      <Badge variant="secondary">
-                        {completedLessons}/{module.lessons.length}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">
+                          {completedLessons}/{module.lessons.length}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {moduleProgress}%
+                        </span>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {module.lessons.map((lesson: any) => (
-                        <div
-                          key={lesson.id}
-                          className="flex items-center gap-2 text-sm"
-                        >
-                          {lesson.isCompleted ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <PlayCircle className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          <span
-                            className={
-                              lesson.isCompleted
-                                ? "text-muted-foreground"
-                                : ""
-                            }
+                    <div className="space-y-3">
+                      <Progress value={moduleProgress} className="h-1.5" />
+                      <div className="space-y-2">
+                        {module.lessons.map((lesson: any) => (
+                          <div
+                            key={lesson.id}
+                            className="flex items-center gap-2 text-sm"
                           >
-                            {lesson.title}
-                          </span>
-                        </div>
-                      ))}
+                            {lesson.isCompleted ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                            ) : (
+                              <PlayCircle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            )}
+                            <span
+                              className={
+                                lesson.isCompleted
+                                  ? "text-muted-foreground"
+                                  : ""
+                              }
+                            >
+                              {lesson.title}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 );
@@ -340,7 +498,7 @@ export default function CourseViewer() {
               }}
             >
               <PlayCircle className="mr-2 h-5 w-5" />
-              {enrollment.progress_percentage > 0
+              {overallProgress > 0
                 ? "Continue Learning"
                 : "Start Learning"}
             </Button>
@@ -363,6 +521,35 @@ export default function CourseViewer() {
                 <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   <span>{currentLesson.estimated_duration} minutes</span>
+                </div>
+              )}
+              {/* Lesson Progress */}
+              {currentLesson?.lesson_content && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Lesson Progress</span>
+                    <span className="font-medium">
+                      {currentLesson.lesson_content.filter((content: any) =>
+                        contentInteractions?.some(
+                          (interaction: any) =>
+                            interaction.content_id === content.id && interaction.is_completed
+                        )
+                      ).length} of {currentLesson.lesson_content.length} items completed
+                    </span>
+                  </div>
+                  <Progress
+                    value={
+                      currentLesson.lesson_content.length > 0
+                        ? (currentLesson.lesson_content.filter((content: any) =>
+                            contentInteractions?.some(
+                              (interaction: any) =>
+                                interaction.content_id === content.id && interaction.is_completed
+                            )
+                          ).length / currentLesson.lesson_content.length) * 100
+                        : 0
+                    }
+                    className="h-2"
+                  />
                 </div>
               )}
             </div>
@@ -389,13 +576,35 @@ export default function CourseViewer() {
             <div className="space-y-6">
               {currentLesson.lesson_content
                 .sort((a: any, b: any) => a.order_index - b.order_index)
-                .map((content: any) => (
-                  <ContentRenderer
-                    key={content.id}
-                    content={content}
-                    onComplete={handleMarkComplete}
-                  />
-                ))}
+                .map((content: any) => {
+                  const isContentCompleted = contentInteractions?.some(
+                    (interaction: any) =>
+                      interaction.content_id === content.id && interaction.is_completed
+                  );
+
+                  return (
+                    <div key={content.id} className="relative">
+                      {/* Content completion indicator */}
+                      <div className="absolute -left-8 top-2 z-10">
+                        {isContentCompleted ? (
+                          <div className="flex items-center justify-center w-6 h-6 bg-green-600 rounded-full">
+                            <CheckCircle2 className="h-3 w-3 text-white" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center w-6 h-6 border-2 border-muted-foreground rounded-full">
+                            <div className="w-2 h-2 bg-muted-foreground rounded-full opacity-50"></div>
+                          </div>
+                        )}
+                      </div>
+
+                      <ContentRenderer
+                        key={content.id}
+                        content={content}
+                        onComplete={handleMarkComplete}
+                      />
+                    </div>
+                  );
+                })}
             </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">

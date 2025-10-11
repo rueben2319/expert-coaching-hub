@@ -19,7 +19,7 @@ interface ContentRendererProps {
 export function ContentRenderer({ content, onProgress, onComplete }: ContentRendererProps) {
   switch (content.content_type) {
     case "text":
-      return <TextContent content={content.content_data} />;
+      return <TextContent content={content.content_data} contentId={content.id} onComplete={onComplete} />;
 
     case "video":
       return (
@@ -27,6 +27,7 @@ export function ContentRenderer({ content, onProgress, onComplete }: ContentRend
           content={content.content_data}
           contentId={content.id}
           onProgress={onProgress}
+          onComplete={onComplete}
         />
       );
 
@@ -40,7 +41,7 @@ export function ContentRenderer({ content, onProgress, onComplete }: ContentRend
       );
 
     case "interactive":
-      return <InteractiveContent content={content.content_data} contentId={content.id} />;
+      return <InteractiveContent content={content.content_data} contentId={content.id} onComplete={onComplete} />;
 
     case "file":
       return (

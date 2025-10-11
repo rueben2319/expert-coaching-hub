@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, Users, BarChart3, Calendar, Video, Search, Filter, MoreHorizontal, TrendingUp, Clock, CheckCircle, Plus, Mail, MessageCircle } from "lucide-react";
 import { coachNavItems, coachSidebarSections } from "@/config/navigation";
@@ -25,7 +26,11 @@ export default function Students() {
           courses!inner(
             id,
             title,
-            coach_id
+            coach_id,
+            course_modules(
+              id,
+              lessons(id)
+            )
           )
         `)
         .eq("courses.coach_id", user?.id);
@@ -95,6 +100,7 @@ export default function Students() {
         email: profile?.email || "",
         avatar: (profile?.full_name || "U").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
         enrolledCourses: [],
+        enrollments: [], // Store full enrollment data for progress calculation
         enrolledAt: enrollment.enrolled_at,
         lastActive: profile?.updated_at,
         totalLessons: 0,
@@ -102,27 +108,54 @@ export default function Students() {
       };
 
       student.enrolledCourses.push(enrollment.courses.title);
+      student.enrollments.push(enrollment);
       studentMap.set(studentId, student);
     });
 
-    // Calculate progress for each student
-    if (progressData) {
-      progressData.forEach((progress) => {
-        const student = studentMap.get(progress.user_id);
-        if (student) {
-          student.totalLessons = (student.totalLessons || 0) + 1;
-          if (progress.is_completed) {
-            student.completedLessons = (student.completedLessons || 0) + 1;
-          }
+    // Calculate module-based progress for each student
+    progressData?.forEach((progress) => {
+      const student = studentMap.get(progress.user_id);
+      if (student) {
+        student.totalLessons = (student.totalLessons || 0) + 1;
+        if (progress.is_completed) {
+          student.completedLessons = (student.completedLessons || 0) + 1;
         }
-      });
-    }
+      }
+    });
 
-    return Array.from(studentMap.values()).map(student => ({
-      ...student,
-      progress: student.totalLessons > 0 ? Math.round((student.completedLessons / student.totalLessons) * 100) : 0,
-      status: new Date(student.lastActive) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) ? "active" : "inactive"
-    }));
+    return Array.from(studentMap.values()).map(student => {
+      // Calculate module-based progress across all enrolled courses
+      const courseProgresses = student.enrollments.map(enrollment => {
+        const modules = enrollment.courses?.course_modules || [];
+        if (modules.length === 0) return 0;
+
+        const moduleProgresses = modules.map(module => {
+          const completedLessons = module.lessons?.filter((lesson: any) =>
+            progressData?.some((progress) =>
+              progress.lesson_id === lesson.id && progress.user_id === student.id && progress.is_completed
+            )
+          ).length || 0;
+
+          return module.lessons?.length > 0
+            ? (completedLessons / module.lessons.length) * 100
+            : 0;
+        });
+
+        return moduleProgresses.length > 0
+          ? moduleProgresses.reduce((sum, progress) => sum + progress, 0) / moduleProgresses.length
+          : 0;
+      });
+
+      const overallProgress = courseProgresses.length > 0
+        ? Math.round(courseProgresses.reduce((sum, progress) => sum + progress, 0) / courseProgresses.length)
+        : 0;
+
+      return {
+        ...student,
+        progress: overallProgress,
+        status: new Date(student.lastActive) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) ? "active" : "inactive"
+      };
+    });
   }, [enrollments, progressData]);
 
   const filteredStudents = students.filter(student =>
@@ -136,13 +169,6 @@ export default function Students() {
       case "inactive": return "bg-gray-100 text-gray-800";
       default: return "bg-gray-100 text-gray-800";
     }
-  };
-
-  const getProgressColor = (progress: number) => {
-    if (progress >= 80) return "bg-green-500";
-    if (progress >= 60) return "bg-blue-500";
-    if (progress >= 40) return "bg-yellow-500";
-    return "bg-red-500";
   };
 
   return (
@@ -205,12 +231,7 @@ export default function Students() {
                       <span>Overall Progress</span>
                       <span className="font-medium">{student.progress}%</span>
                     </div>
-                    <div className="w-full sm:w-32 bg-gray-200 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${getProgressColor(student.progress)}`}
-                        style={{ width: `${student.progress}%` }}
-                      />
-                    </div>
+                    <Progress value={Math.max(student.progress, 5)} className="w-full sm:w-32 h-2" />
                   </div>
                   
                   <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">

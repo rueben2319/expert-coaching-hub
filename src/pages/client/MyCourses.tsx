@@ -20,7 +20,13 @@ export default function MyCourses() {
         .from("course_enrollments")
         .select(`
           *,
-          courses(*)
+          courses(
+            *,
+            course_modules(
+              *,
+              lessons(*)
+            )
+          )
         `)
         .eq("user_id", user!.id)
         .order("enrolled_at", { ascending: false });
@@ -30,6 +36,42 @@ export default function MyCourses() {
     },
     enabled: !!user?.id,
   });
+
+  // Fetch lesson progress for all enrolled courses
+  const { data: allLessonProgress } = useQuery({
+    queryKey: ["all-lesson-progress", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("lesson_progress")
+        .select("*")
+        .eq("user_id", user!.id);
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Calculate module-based progress for each enrollment
+  const calculateCourseProgress = (enrollment: any) => {
+    const modules = enrollment.courses?.course_modules || [];
+    if (modules.length === 0) return 0;
+
+    const moduleProgresses = modules.map((module: any) => {
+      const completedLessons = module.lessons?.filter((lesson: any) =>
+        allLessonProgress?.some((progress: any) =>
+          progress.lesson_id === lesson.id && progress.is_completed
+        )
+      ).length || 0;
+
+      return module.lessons?.length > 0
+        ? (completedLessons / module.lessons.length) * 100
+        : 0;
+    });
+
+    const averageProgress = moduleProgresses.reduce((sum: number, progress: number) => sum + progress, 0) / modules.length;
+    return Math.round(averageProgress);
+  };
 
   return (
     <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
@@ -45,33 +87,37 @@ export default function MyCourses() {
           <div className="text-center py-12">Loading your courses...</div>
         ) : enrollments && enrollments.length > 0 ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {enrollments.map((enrollment) => (
-              <Card key={enrollment.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <CardTitle className="line-clamp-2">{enrollment.courses.title}</CardTitle>
-                  <CardDescription className="line-clamp-2">
-                    {enrollment.courses.description}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm mb-2">
-                        <span>Progress</span>
-                        <span className="font-medium">{enrollment.progress_percentage}%</span>
+            {enrollments.map((enrollment) => {
+              const courseProgress = calculateCourseProgress(enrollment);
+
+              return (
+                <Card key={enrollment.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <CardTitle className="line-clamp-2">{enrollment.courses.title}</CardTitle>
+                    <CardDescription className="line-clamp-2">
+                      {enrollment.courses.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between text-sm mb-2">
+                          <span>Progress</span>
+                          <span className="font-medium">{courseProgress}%</span>
+                        </div>
+                        <Progress value={Math.max(courseProgress, 5)} />
                       </div>
-                      <Progress value={enrollment.progress_percentage} />
+                      <Button
+                        className="w-full"
+                        onClick={() => navigate(`/client/course/${enrollment.courses.id}`)}
+                      >
+                        {courseProgress === 100 ? "Review" : "Continue"}
+                      </Button>
                     </div>
-                    <Button
-                      className="w-full"
-                      onClick={() => navigate(`/client/course/${enrollment.courses.id}`)}
-                    >
-                      {enrollment.progress_percentage === 100 ? "Review" : "Continue"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         ) : (
           <Card className="text-center py-12">
