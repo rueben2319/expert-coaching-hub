@@ -24,6 +24,8 @@ import MeetingRoom from "./pages/coach/MeetingRoom";
 import Students from "./pages/coach/Students";
 import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
+import CoachBilling from "./pages/coach/Billing";
+import ClientBilling from "./pages/client/Billing";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
