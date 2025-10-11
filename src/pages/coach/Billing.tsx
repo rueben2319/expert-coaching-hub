@@ -9,24 +9,42 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { toast } from "sonner";
+import { isBuilderPreview } from "@/lib/builderPreview";
+
+const MOCK_TIERS = [
+  { id: "tier_starter", name: "Starter", description: "Basic features", price_monthly: 10, price_yearly: 100, features: ["1 course", "Basic analytics"], is_active: true },
+  { id: "tier_pro", name: "Pro", description: "Most popular", price_monthly: 30, price_yearly: 300, features: ["10 courses", "Advanced analytics"], is_active: true },
+  { id: "tier_premium", name: "Premium", description: "All features", price_monthly: 100, price_yearly: 1000, features: ["Unlimited courses", "Priority support"], is_active: true },
+];
+
+const MOCK_INVOICES = [
+  { id: "inv_1", invoice_number: "INV-1001", amount: 30, currency: "USD", status: "paid", invoice_date: new Date().toISOString(), description: "Pro plan" },
+  { id: "inv_2", invoice_number: "INV-1002", amount: 100, currency: "USD", status: "paid", invoice_date: new Date().toISOString(), description: "Premium plan" },
+];
+
+const MOCK_SUB = { id: "sub_1", status: "active", tier_id: "tier_pro", billing_cycle: "monthly", start_date: new Date().toISOString(), renewal_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString() };
 
 const CoachBilling = () => {
   const { user } = useAuth();
   const { createCoachSubscription } = usePayments();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
 
+  const builder = isBuilderPreview();
+
   const { data: tiers } = useQuery({
     queryKey: ["tiers"],
+    enabled: !builder,
     queryFn: async () => {
       const { data, error } = await supabase.from("tiers").select("id, name, description, price_monthly, price_yearly, features, is_active").eq("is_active", true).order("price_monthly");
       if (error) throw error;
       return data || [];
     },
+    initialData: builder ? MOCK_TIERS : undefined,
   });
 
   const { data: currentSub } = useQuery({
     queryKey: ["coach_subscription", user?.id],
-    enabled: !!user?.id,
+    enabled: !builder && !!user?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("coach_subscriptions")
@@ -38,11 +56,12 @@ const CoachBilling = () => {
       if (error) throw error;
       return data;
     },
+    initialData: builder ? MOCK_SUB : undefined,
   });
 
   const { data: invoices } = useQuery({
     queryKey: ["invoices", user?.id],
-    enabled: !!user?.id,
+    enabled: !builder && !!user?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
@@ -52,10 +71,15 @@ const CoachBilling = () => {
       if (error) throw error;
       return data || [];
     },
+    initialData: builder ? MOCK_INVOICES : undefined,
   });
 
   const handleSubscribe = async (tierId: string) => {
     try {
+      if (builder) {
+        toast.success("Builder preview: simulated checkout started");
+        return;
+      }
       const { checkout_url } = await createCoachSubscription(tierId, billingCycle);
       window.location.href = checkout_url;
     } catch (e: any) {
