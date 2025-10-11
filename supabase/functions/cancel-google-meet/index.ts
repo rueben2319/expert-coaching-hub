@@ -52,8 +52,8 @@ serve(async (req) => {
     const { meetingId } = await req.json();
 
     // Get meeting details
-    const { data: meeting, error: meetingError } = await supabase
-      .from('meetings')
+    const { data: meeting, error: meetingError} = await (supabase
+      .from('meetings') as any)
       .select('*')
       .eq('id', meetingId)
       .eq('user_id', user.id)
@@ -84,8 +84,8 @@ serve(async (req) => {
     }
 
     // Update meeting status
-    const { error: updateError } = await supabase
-      .from('meetings')
+    const { error: updateError } = await (supabase
+      .from('meetings') as any)
       .update({ status: 'cancelled' })
       .eq('id', meetingId)
       .eq('user_id', user.id);

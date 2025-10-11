@@ -98,7 +98,7 @@ export class OAuthTokenManager {
       
       const tokenScopes = tokenInfo.scope?.split(' ') || [];
       const hasRequiredScopes = requiredScopes.some(scope => 
-        tokenScopes.some(tokenScope => tokenScope.includes('calendar'))
+        tokenScopes.some((tokenScope: string) => tokenScope.includes('calendar'))
       );
 
       return hasRequiredScopes && tokenInfo.exp > Math.floor(Date.now() / 1000);

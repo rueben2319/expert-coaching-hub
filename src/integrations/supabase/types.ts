@@ -14,6 +14,115 @@ export type Database = {
   }
   public: {
     Tables: {
+      client_orders: {
+        Row: {
+          amount: number
+          client_id: string
+          coach_id: string
+          course_id: string | null
+          created_at: string
+          currency: string
+          end_date: string | null
+          id: string
+          start_date: string | null
+          status: string
+          transaction_id: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          client_id: string
+          coach_id: string
+          course_id?: string | null
+          created_at?: string
+          currency?: string
+          end_date?: string | null
+          id?: string
+          start_date?: string | null
+          status?: string
+          transaction_id?: string | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          client_id?: string
+          coach_id?: string
+          course_id?: string | null
+          created_at?: string
+          currency?: string
+          end_date?: string | null
+          id?: string
+          start_date?: string | null
+          status?: string
+          transaction_id?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_orders_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_subscriptions: {
+        Row: {
+          billing_cycle: string
+          coach_id: string
+          created_at: string
+          end_date: string | null
+          id: string
+          payment_method: string | null
+          renewal_date: string | null
+          start_date: string
+          status: string
+          tier_id: string
+          transaction_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          billing_cycle: string
+          coach_id: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          payment_method?: string | null
+          renewal_date?: string | null
+          start_date?: string
+          status?: string
+          tier_id: string
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          billing_cycle?: string
+          coach_id?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          payment_method?: string | null
+          renewal_date?: string | null
+          start_date?: string
+          status?: string
+          tier_id?: string
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_subscriptions_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_interactions: {
         Row: {
           content_id: string
@@ -161,6 +270,69 @@ export type Database = {
         }
         Relationships: []
       }
+      invoices: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          description: string | null
+          id: string
+          invoice_date: string
+          invoice_number: string
+          order_id: string | null
+          payment_method: string | null
+          pdf_url: string | null
+          status: string
+          subscription_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          description?: string | null
+          id?: string
+          invoice_date?: string
+          invoice_number: string
+          order_id?: string | null
+          payment_method?: string | null
+          pdf_url?: string | null
+          status?: string
+          subscription_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          description?: string | null
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          order_id?: string | null
+          payment_method?: string | null
+          pdf_url?: string | null
+          status?: string
+          subscription_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "client_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "coach_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lesson_content: {
         Row: {
           content_data: Json
@@ -278,6 +450,129 @@ export type Database = {
           },
         ]
       }
+      meeting_analytics: {
+        Row: {
+          created_at: string | null
+          event_data: Json | null
+          event_type: string
+          id: string
+          meeting_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          meeting_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          meeting_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_analytics_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meeting_chat: {
+        Row: {
+          created_at: string | null
+          id: string
+          meeting_id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          meeting_id: string
+          message: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          meeting_id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_chat_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meetings: {
+        Row: {
+          attendees: Json | null
+          calendar_event_id: string | null
+          course_id: string | null
+          created_at: string | null
+          description: string | null
+          end_time: string
+          id: string
+          meet_link: string | null
+          start_time: string
+          status: string | null
+          summary: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          attendees?: Json | null
+          calendar_event_id?: string | null
+          course_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          end_time: string
+          id?: string
+          meet_link?: string | null
+          start_time: string
+          status?: string | null
+          summary: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          attendees?: Json | null
+          calendar_event_id?: string | null
+          course_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          end_time?: string
+          id?: string
+          meet_link?: string | null
+          start_time?: string
+          status?: string | null
+          summary?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meetings_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -305,6 +600,105 @@ export type Database = {
         }
         Relationships: []
       }
+      tiers: {
+        Row: {
+          created_at: string
+          description: string | null
+          features: Json
+          id: string
+          is_active: boolean
+          max_courses: number | null
+          max_students: number | null
+          name: string
+          price_monthly: number
+          price_yearly: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean
+          max_courses?: number | null
+          max_students?: number | null
+          name: string
+          price_monthly: number
+          price_yearly: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean
+          max_courses?: number | null
+          max_students?: number | null
+          name?: string
+          price_monthly?: number
+          price_yearly?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          gateway_response: Json | null
+          id: string
+          order_id: string | null
+          status: string
+          subscription_id: string | null
+          transaction_ref: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          gateway_response?: Json | null
+          id?: string
+          order_id?: string | null
+          status?: string
+          subscription_id?: string | null
+          transaction_ref: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          gateway_response?: Json | null
+          id?: string
+          order_id?: string | null
+          status?: string
+          subscription_id?: string | null
+          transaction_ref?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "client_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "coach_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -326,129 +720,6 @@ export type Database = {
         }
         Relationships: []
       }
-      meeting_analytics: {
-        Row: {
-          created_at: string
-          event_data: Json
-          event_type: string
-          id: string
-          meeting_id: string | null
-          user_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          event_data?: Json
-          event_type: string
-          id?: string
-          meeting_id?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          event_data?: Json
-          event_type?: string
-          id?: string
-          meeting_id?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "meeting_analytics_meeting_id_fkey"
-            columns: ["meeting_id"]
-            isOneToOne: false
-            referencedRelation: "meetings"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      meeting_chat: {
-        Row: {
-          created_at: string
-          id: string
-          meeting_id: string
-          message: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          meeting_id: string
-          message: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          meeting_id?: string
-          message?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "meeting_chat_meeting_id_fkey"
-            columns: ["meeting_id"]
-            isOneToOne: false
-            referencedRelation: "meetings"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      meetings: {
-        Row: {
-          attendees: Json
-          calendar_event_id: string | null
-          course_id: string | null
-          created_at: string
-          description: string | null
-          end_time: string
-          id: string
-          meet_link: string | null
-          start_time: string
-          status: string
-          summary: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          attendees?: Json
-          calendar_event_id?: string | null
-          course_id?: string | null
-          created_at?: string
-          description?: string | null
-          end_time: string
-          id?: string
-          meet_link?: string | null
-          start_time: string
-          status?: string
-          summary: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          attendees?: Json
-          calendar_event_id?: string | null
-          course_id?: string | null
-          created_at?: string
-          description?: string | null
-          end_time?: string
-          id?: string
-          meet_link?: string | null
-          start_time?: string
-          status?: string
-          summary?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "meetings_course_id_fkey"
-            columns: ["course_id"]
-            isOneToOne: false
-            referencedRelation: "courses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
@@ -457,6 +728,10 @@ export type Database = {
       calculate_course_progress: {
         Args: { _course_id: string; _user_id: string }
         Returns: number
+      }
+      generate_invoice_number: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       get_next_lesson: {
         Args: { _course_id: string; _user_id: string }

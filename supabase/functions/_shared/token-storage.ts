@@ -1,5 +1,3 @@
-/// <reference path="../create-google-meet/types.d.ts" />
-
 /**
  * Token Storage and Metadata Management
  * Handles persistent storage of OAuth tokens and user metadata
@@ -122,11 +120,11 @@ export class TokenStorage {
     try {
       const { data: user, error } = await supabase.auth.admin.getUserById(userId);
       
-      if (error || !user) {
+      if (error || !user || !user.user) {
         throw new Error('User not found');
       }
 
-      return user.user_metadata as UserTokenMetadata;
+      return (user.user as any).user_metadata as UserTokenMetadata;
     } catch (error: any) {
       console.error('Token retrieval error:', error);
       return null;
@@ -326,8 +324,7 @@ export class DatabaseTokenStorage {
         ? new Date(Date.now() + (expiresIn * 1000)).toISOString()
         : null;
 
-      const { error } = await supabase
-        .from('oauth_tokens')
+      const { error } = await (supabase.from('oauth_tokens') as any)
         .upsert({
           user_id: userId,
           provider,
@@ -361,8 +358,7 @@ export class DatabaseTokenStorage {
     provider: string
   ): Promise<TokenRecord | null> {
     try {
-      const { data, error } = await supabase
-        .from('oauth_tokens')
+      const { data, error } = await (supabase.from('oauth_tokens') as any)
         .select('*')
         .eq('user_id', userId)
         .eq('provider', provider)
@@ -423,8 +419,7 @@ export class DatabaseTokenStorage {
     const record = await this.getTokenRecord(supabase, userId, provider);
     const newCount = (record?.refresh_count ?? 0) + 1;
 
-    await supabase
-      .from('oauth_tokens')
+    await (supabase.from('oauth_tokens') as any)
       .update({
         refresh_count: newCount,
         updated_at: new Date().toISOString(),
