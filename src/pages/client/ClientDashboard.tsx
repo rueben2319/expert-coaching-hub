@@ -20,7 +20,15 @@ type Enrollment = {
     title: string;
     description: string | null;
     status: string;
+    course_modules?: {
+      id: string;
+      lessons?: any[];
+    }[];
   };
+};
+
+type EnrichedEnrollment = Enrollment & {
+  calculatedProgress: number;
 };
 
 type LessonProgress = {
@@ -41,9 +49,16 @@ export default function ClientDashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("course_enrollments")
-        .select(
-          `id, progress_percentage, enrolled_at, courses ( id, title, description, status )`
-        )
+        .select(`
+          id, progress_percentage, enrolled_at,
+          courses (
+            id, title, description, status,
+            course_modules (
+              id,
+              lessons (id)
+            )
+          )
+        `)
         .eq("user_id", user!.id)
         .order("enrolled_at", { ascending: false });
 
@@ -70,16 +85,46 @@ export default function ClientDashboard() {
     enabled: !!user?.id,
   });
 
-  const upNextCourse = useMemo(() => {
-    if (!enrollments) return undefined;
-    return enrollments
-      .filter((enrollment) => enrollment.progress_percentage < 100)
-      .sort((a, b) => a.progress_percentage - b.progress_percentage)[0];
-  }, [enrollments]);
+  // Calculate module-based progress for each enrollment
+  const calculateCourseProgress = (enrollment: Enrollment) => {
+    const modules = enrollment.courses?.course_modules || [];
+    if (modules.length === 0) return 0;
 
-  const coursesInProgress = enrollments?.filter((e) => e.progress_percentage > 0 && e.progress_percentage < 100) ?? [];
-  const coursesCompleted = enrollments?.filter((e) => e.progress_percentage >= 100) ?? [];
-  const totalCourses = enrollments?.length ?? 0;
+    const moduleProgresses = modules.map((module) => {
+      const completedLessons = module.lessons?.filter((lesson: any) =>
+        lessonProgress?.some((progress) =>
+          progress.lesson_id === lesson.id && progress.is_completed
+        )
+      ).length || 0;
+
+      return module.lessons?.length > 0
+        ? (completedLessons / module.lessons.length) * 100
+        : 0;
+    });
+
+    const averageProgress = moduleProgresses.reduce((sum, progress) => sum + progress, 0) / modules.length;
+    return Math.round(averageProgress);
+  };
+
+  // Create enriched enrollments with calculated progress
+  const enrichedEnrollments = useMemo((): EnrichedEnrollment[] => {
+    if (!enrollments || !lessonProgress) return [];
+    return enrollments.map(enrollment => ({
+      ...enrollment,
+      calculatedProgress: calculateCourseProgress(enrollment)
+    }));
+  }, [enrollments, lessonProgress]);
+
+  const upNextCourse = useMemo((): EnrichedEnrollment | undefined => {
+    if (!enrichedEnrollments) return undefined;
+    return enrichedEnrollments
+      .filter((enrollment) => enrollment.calculatedProgress < 100)
+      .sort((a, b) => a.calculatedProgress - b.calculatedProgress)[0];
+  }, [enrichedEnrollments]);
+
+  const coursesInProgress: EnrichedEnrollment[] = enrichedEnrollments?.filter((e) => e.calculatedProgress > 0 && e.calculatedProgress < 100) ?? [];
+  const coursesCompleted: EnrichedEnrollment[] = enrichedEnrollments?.filter((e) => e.calculatedProgress >= 100) ?? [];
+  const totalCourses = enrichedEnrollments?.length ?? 0;
   const lessonsCompleted = lessonProgress?.filter((l) => l.is_completed).length ?? 0;
 
   const progressSegments = useMemo(() => {
@@ -97,7 +142,7 @@ export default function ClientDashboard() {
   }, [totalCourses, coursesInProgress.length, coursesCompleted.length]);
 
   const isLoading = enrollmentsLoading || lessonProgressLoading;
-  const hasCourses = !!enrollments && enrollments.length > 0;
+  const hasCourses = !!enrichedEnrollments && enrichedEnrollments.length > 0;
 
   return (
     <DashboardLayout
@@ -150,9 +195,9 @@ export default function ClientDashboard() {
                       {upNextCourse.courses.description || "Stay engaged and complete your course milestones."}
                     </p>
                     <div className="max-w-md">
-                      <Progress value={upNextCourse.progress_percentage} />
+                      <Progress value={upNextCourse.calculatedProgress} />
                       <p className="text-xs text-muted-foreground mt-1">
-                        {Math.round(upNextCourse.progress_percentage)}% complete
+                        {Math.round(upNextCourse.calculatedProgress)}% complete
                       </p>
                     </div>
                   </div>
@@ -199,7 +244,7 @@ export default function ClientDashboard() {
               </div>
             ) : hasCourses ? (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {enrollments!.map((enrollment) => (
+                {enrichedEnrollments!.map((enrollment) => (
                   <Card key={enrollment.id} className="hover:shadow-lg transition-shadow">
                     <CardHeader>
                       <CardTitle className="text-base line-clamp-2">
@@ -210,9 +255,9 @@ export default function ClientDashboard() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <Progress value={enrollment.progress_percentage} />
+                      <Progress value={Math.max(enrollment.calculatedProgress, 5)} />
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{Math.round(enrollment.progress_percentage)}% complete</span>
+                        <span>{Math.round(enrollment.calculatedProgress)}% complete</span>
                         <Button
                           variant="ghost"
                           size="sm"
