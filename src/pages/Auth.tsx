@@ -37,21 +37,37 @@ export default function Auth() {
 
   useEffect(() => {
     if (user && !role) {
-      // Only show role dialog for OAuth users (not traditional signup/login)
-      // Detect OAuth provider robustly via identities as well as metadata
-      const identityProvider = Array.isArray((user as any).identities)
-        ? (user as any).identities.find((i: any) => i.provider === 'google')
-        : null;
+      (async () => {
+        try {
+          // Obtain session and identities to determine if this was an OAuth (Google) sign-in
+          const { data: { session } } = await supabase.auth.getSession();
 
-      const isOAuthUser = Boolean(identityProvider) || user.app_metadata?.provider === 'google' || user.user_metadata?.provider === 'google';
+          const sessionProvider = (session as any)?.provider || null;
+          const hasProviderToken = Boolean((session as any)?.provider_token);
 
-      if (isOAuthUser) {
-        setShowRoleDialog(true);
-      } else {
-        // For traditional users without roles, redirect to client dashboard
-        // (they should have gotten their role during signup)
-        navigate('/client');
-      }
+          const identityProvider = Array.isArray((user as any).identities)
+            ? (user as any).identities.find((i: any) => i.provider === 'google')
+            : null;
+
+          const isOAuthUser = Boolean(
+            sessionProvider === 'google' ||
+            identityProvider ||
+            user.app_metadata?.provider === 'google' ||
+            user.user_metadata?.provider === 'google' ||
+            (hasProviderToken && !!identityProvider)
+          );
+
+          if (isOAuthUser) {
+            setShowRoleDialog(true);
+          } else {
+            // For traditional users without roles, redirect to client dashboard
+            navigate('/client');
+          }
+        } catch (e) {
+          console.error('Error detecting auth provider for role flow:', e);
+          navigate('/client');
+        }
+      })();
     }
   }, [user, role, navigate]);
 
