@@ -1,5 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 
+// Supabase anon key for function calls
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZicnhnYXhqbXB3dXNiYmJ6emdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5NDEwNzEsImV4cCI6MjA3NTUxNzA3MX0.maRLFsi1sb9DneLCSPtw4N8_w2jjms75c_lu0K375lQ";
+
 /**
  * Utility functions for calling Supabase Edge Functions with proper authorization
  */
@@ -70,41 +73,40 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
     }
 
     if (!session?.access_token) {
+      console.log('No session found, current session state:', session);
       throw new Error('No valid session found. Please sign in again.');
     }
 
-    // Call the Edge Function with authorization
-    const invokeWithToken = async (accessToken: string) => {
-      return await supabase.functions.invoke(functionName, {
-        body: params,
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-    };
+    console.log('Session token present:', !!session.access_token);
 
-    let { data, error } = await invokeWithToken(session.access_token);
+    // Use direct fetch instead of supabase.functions.invoke
+    const functionUrl = `https://vbrxgaxjmpwusbbbzzgl.supabase.co/functions/v1/${functionName}`;
+    console.log(`Calling function '${functionName}' with params:`, JSON.stringify(params, null, 2));
+    console.log(`Function URL: ${functionUrl}`);
 
-    // If we got an auth error (possibly expired token), attempt to refresh session once and retry
-    if (error && (error.status === 401 || error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('expired'))) {
-      try {
-        // Attempt to refresh by calling getSession again (supabase-js auto-refreshes when possible)
-        const refreshed = await supabase.auth.getSession();
-        const refreshedToken = (refreshed as any)?.data?.session?.access_token || session.access_token;
-        const retry = await invokeWithToken(refreshedToken);
-        data = retry.data;
-        error = retry.error;
-      } catch (refreshErr) {
-        console.error('Failed to refresh session:', refreshErr);
-      }
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY, // Add the anon key
+      },
+      body: JSON.stringify(params),
+    });
+
+    console.log('Request headers:', {
+      'Authorization': `Bearer ${session.access_token ? 'present' : 'missing'}`,
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY ? 'present' : 'missing',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Function call failed with status ${response.status}:`, errorText);
+      throw new Error(`Function call failed: ${response.status} ${response.statusText}`);
     }
 
-    if (error) {
-      console.error(`Edge function '${functionName}' error:`, error);
-      throw new Error(`Function call failed: ${error.message}`);
-    }
-
+    const data = await response.json();
     return data as TResponse;
   } catch (error) {
     console.error(`Error calling function '${functionName}':`, error);

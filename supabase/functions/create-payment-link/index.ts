@@ -3,6 +3,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+// Deno global type declaration for IDE
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -37,30 +44,79 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    console.log("Starting payment link creation");
+
+    console.log("Checking environment variables");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) throw new Error("Missing Supabase environment configuration");
+    console.log("Supabase env vars OK");
 
     const paychanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
-    if (!paychanguSecret) throw new Error("Missing PAYCHANGU_SECRET_KEY env var");
+    console.log("PAYCHANGU_SECRET_KEY present:", !!paychanguSecret);
+    if (!paychanguSecret) {
+      console.log("PAYCHANGU_SECRET_KEY is missing");
+      throw new Error("Missing PAYCHANGU_SECRET_KEY env var");
+    }
+    console.log("PayChangu env var OK");
 
     const defaultCurrency = Deno.env.get("PAYCHANGU_DEFAULT_CURRENCY") || "MWK";
     const appBaseUrl = Deno.env.get("APP_BASE_URL");
+    console.log("APP_BASE_URL:", appBaseUrl);
 
     const supabase = createClient(supabaseUrl, supabaseKey);
+    console.log("Supabase client created");
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return new Response(JSON.stringify({ error: "No authorization header" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!authHeader) {
+      console.log("No authorization header found");
+      return new Response(JSON.stringify({ error: "No authorization header" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    console.log("Authorization header present");
 
     const token = authHeader.replace("Bearer ", "");
+    console.log("Getting user from token");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (userError || !user) {
+      console.error("User auth error:", userError);
+      return new Response(JSON.stringify({ error: "Unauthorized", details: userError?.message }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    console.log("User authenticated:", user.id);
 
     // Fetch user role server-side to enforce permissions
     const { data: roleRow, error: roleErr } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
     const userRole = roleRow?.role || null;
+    console.log("User role:", userRole);
 
-    const body = (await req.json()) as CreatePaymentRequest;
+    console.log("Parsing request body");
+    console.log("Request method:", req.method);
+    console.log("Content-Type:", req.headers.get("Content-Type"));
+
+    // Log the raw body text before parsing
+    let rawBody;
+    try {
+      rawBody = await req.text();
+      console.log("Raw request body:", rawBody);
+    } catch (textError) {
+      console.error("Failed to read request as text:", textError);
+      throw new Error(`Cannot read request body: ${textError.message}`);
+    }
+
+    if (!rawBody || rawBody.trim() === "") {
+      console.log("Request body is empty!");
+      throw new Error("Request body is empty");
+    }
+
+    let body;
+    try {
+      body = JSON.parse(rawBody);
+      console.log("Request body parsed successfully");
+    } catch (parseError) {
+      console.error("Failed to parse request body:", parseError);
+      throw new Error(`Invalid JSON in request body: ${parseError.message}`);
+    }
+    console.log("Request body:", JSON.stringify(body, null, 2));
     const mode = body.mode;
 
     if (!mode) throw new Error("mode is required");
@@ -93,17 +149,20 @@ serve(async (req: Request) => {
     if (mode === "coach_subscription") {
       if (!body.tier_id) throw new Error("tier_id is required for coach_subscription");
       const cycle: BillingCycle = body.billing_cycle || "monthly";
+      console.log("Looking up tier:", body.tier_id);
       const { data: tier, error: tierErr } = await supabase
         .from("tiers")
         .select("id, name, price_monthly, price_yearly")
         .eq("id", body.tier_id)
         .single();
+      console.log("Tier lookup result:", { tier, tierErr });
       if (tierErr || !tier) throw new Error("Tier not found");
 
       amount = cycle === "yearly" ? tier.price_yearly : tier.price_monthly;
       description = `Coach subscription: ${tier.name} (${cycle})`;
 
       const startDate = new Date().toISOString();
+      console.log("Creating subscription record");
       const { data: sub, error: subErr } = await supabase
         .from("coach_subscriptions")
         .insert({
@@ -119,6 +178,7 @@ serve(async (req: Request) => {
         })
         .select()
         .single();
+      console.log("Subscription creation result:", { sub, subErr });
       if (subErr || !sub) throw new Error("Failed to create subscription record");
       subscriptionId = sub.id;
 
@@ -196,7 +256,18 @@ serve(async (req: Request) => {
     if (txErr || !tx) throw new Error("Failed to create transaction record");
 
     const callbackUrl = Deno.env.get("PAYCHANGU_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/paychangu-webhook`;
-    const returnUrl = body.return_url || (appBaseUrl ? `${appBaseUrl}/billing/return` : `${supabaseUrl}/functions/v1/paychangu-webhook`);
+
+    // Set return URL based on mode
+    let returnUrl = body.return_url;
+    if (!returnUrl && appBaseUrl) {
+      if (mode === "coach_subscription") {
+        returnUrl = `${appBaseUrl}/coach/billing/success`;
+      } else {
+        returnUrl = `${appBaseUrl}/client/billing/success`; // For future client success page
+      }
+    }
+    returnUrl = returnUrl || `${supabaseUrl}/functions/v1/paychangu-webhook`;
+    console.log("Final return_url:", returnUrl);
 
     const first_name = profile?.full_name?.split(" ")[0] || "";
     const last_name = profile?.full_name?.split(" ").slice(1).join(" ") || "";

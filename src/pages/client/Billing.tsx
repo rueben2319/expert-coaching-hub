@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import DashboardLayout from "@/components/DashboardLayout";
+import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { usePayments } from "@/hooks/usePayments";
 import { toast } from "sonner";
 import { isBuilderPreview } from "@/lib/builderPreview";
+import { clientNavItems, clientSidebarSections } from "@/config/navigation";
 
 const MOCK_HISTORY = {
   invoices: [
@@ -55,7 +56,7 @@ const ClientBilling = () => {
   };
 
   return (
-    <DashboardLayout>
+    <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold">Billing & Payments</h1>
 
