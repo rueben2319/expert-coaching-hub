@@ -1,5 +1,3 @@
-/// <reference path="./types.d.ts" />
-
 // @ts-ignore: Deno imports work at runtime
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime  
@@ -207,7 +205,7 @@ serve(async (req: Request) => {
     }
 
     // Log analytics event
-    const { error: analyticsError } = await supabase.from('meeting_analytics').insert({
+    const { error: analyticsError } = await (supabase.from('meeting_analytics') as any).insert({
       meeting_id: meeting.id,
       user_id: user.id,
       event_type: 'meeting_created',
