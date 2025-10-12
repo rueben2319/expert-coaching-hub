@@ -14,6 +14,7 @@ import MyCourses from "./pages/client/MyCourses";
 import CourseViewer from "./pages/client/CourseViewer";
 import ClientSessions from "./pages/client/Sessions";
 import ClientMeetingRoom from "./pages/client/MeetingRoom";
+import ClientAnalytics from "./pages/client/ClientAnalytics";
 import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
@@ -84,10 +85,10 @@ const App = () => (
               } 
             />
             <Route 
-              path="/client/sessions/:meetingId" 
+              path="/client/analytics" 
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientMeetingRoom />
+                  <ClientAnalytics />
                 </ProtectedRoute>
               } 
             />
