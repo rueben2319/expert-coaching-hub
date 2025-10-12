@@ -66,14 +66,26 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
   const queryClient = useQueryClient();
   const isEditing = !!editContent;
 
-  const { data: contentCount } = useQuery({
-    queryKey: ["content-count", lessonId],
+  const { data: nextOrderIndex } = useQuery({
+    queryKey: ["next-order-index", lessonId],
     queryFn: async () => {
-      const { count } = await supabase
+      console.log('🔍 Finding next order index for lesson:', lessonId);
+      const { data, error } = await supabase
         .from("lesson_content")
-        .select("*", { count: "exact", head: true })
-        .eq("lesson_id", lessonId);
-      return count || 0;
+        .select("order_index")
+        .eq("lesson_id", lessonId)
+        .order("order_index", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Error fetching order index:', error);
+        return 0;
+      }
+
+      console.log('📊 Order index data:', data);
+      const nextIndex = (data && data.length > 0) ? data[0].order_index + 1 : 0;
+      console.log('🎯 Next order index:', nextIndex);
+      return nextIndex;
     },
     enabled: !isEditing,
   });
@@ -196,10 +208,14 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         content_type: data.content_type,
         content_data: contentData,
         is_required: data.is_required,
-        order_index: contentCount || 0,
+        order_index: nextOrderIndex || 0,
       };
 
+      console.log('💾 Final insert data:', insertData);
+      console.log('🎯 Using order_index:', nextOrderIndex);
+
       if (isEditing) {
+        console.log('✏️ Updating existing content:', editContent.id);
         const { error } = await supabase
           .from("lesson_content")
           .update({
@@ -208,10 +224,25 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
             is_required: data.is_required,
           })
           .eq("id", editContent.id);
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Update error:', error);
+          throw error;
+        }
+        console.log('✅ Content updated successfully');
       } else {
-        const { error } = await supabase.from("lesson_content").insert(insertData);
-        if (error) throw error;
+        console.log('➕ Inserting new content');
+        const { error, data: insertedData } = await supabase.from("lesson_content").insert(insertData).select();
+        if (error) {
+          console.error('❌ Insert error:', error);
+          console.error('❌ Insert error details:', {
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            message: error.message
+          });
+          throw error;
+        }
+        console.log('✅ Content inserted successfully:', insertedData);
       }
     },
     onSuccess: () => {
