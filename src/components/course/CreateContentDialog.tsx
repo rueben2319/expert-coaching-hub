@@ -14,7 +14,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 
 const quizQuestionSchema = z.object({
   question: z.string().trim().min(1).max(500),
@@ -27,11 +27,30 @@ const contentSchema = z.object({
   content_type: z.enum(["text", "video", "quiz", "interactive", "file"]),
   is_required: z.boolean().default(true),
   text_content: z.string().trim().max(50000).optional(),
-  video_url: z.string().url().optional().or(z.literal("")),
-  quiz_questions: z.array(quizQuestionSchema).min(1).max(10).optional(),
+  video_url: z.string().optional().or(z.literal("")),
+  quiz_questions: z.array(quizQuestionSchema).optional(),
   quiz_title: z.string().trim().max(200).optional(),
   quiz_description: z.string().trim().max(1000).optional(),
   passing_score: z.number().min(0).max(100).optional(),
+}).refine((data) => {
+  // Validate required fields based on content type
+  switch (data.content_type) {
+    case "text":
+      return data.text_content && data.text_content.trim().length > 0;
+    case "video":
+    case "interactive":
+    case "file":
+      return data.video_url && data.video_url.trim().length > 0;
+    case "quiz":
+      return data.quiz_questions && Array.isArray(data.quiz_questions) && data.quiz_questions.length > 0 &&
+             data.quiz_questions.every(q => q && q.question && q.question.trim().length > 0 && 
+             q.options && Array.isArray(q.options) && q.options.length >= 2);
+    default:
+      return true;
+  }
+}, {
+  message: "Please fill in all required fields for the selected content type",
+  path: ["content_type"],
 });
 
 type ContentFormData = z.infer<typeof contentSchema>;
@@ -46,9 +65,6 @@ interface CreateContentDialogProps {
 export function CreateContentDialog({ lessonId, open, onOpenChange, editContent }: CreateContentDialogProps) {
   const queryClient = useQueryClient();
   const isEditing = !!editContent;
-  const [contentType, setContentType] = useState<"text" | "video" | "quiz" | "interactive" | "file">(
-    editContent?.content_type || "text"
-  );
 
   const { data: contentCount } = useQuery({
     queryKey: ["content-count", lessonId],
@@ -69,26 +85,20 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       is_required: editContent?.is_required ?? true,
       text_content: editContent?.content_data?.text || editContent?.content_data?.html || "",
       video_url: editContent?.content_data?.url || "",
-      quiz_questions: editContent?.content_data?.questions || [{
-        question: "",
-        options: ["", ""],
-        correct_answer: 0,
-        explanation: "",
-      }],
+      quiz_questions: editContent?.content_data?.questions || undefined, // Don't set default empty quiz
       quiz_title: editContent?.content_data?.title || "",
       quiz_description: editContent?.content_data?.description || "",
       passing_score: editContent?.content_data?.passingScore || 70,
     },
   });
 
-  // Update contentType state and form when dialog opens with edit data
+  const contentType = form.watch("content_type");
+
+  // Update form when dialog opens with edit data
   useEffect(() => {
     if (!open) return;
     
     if (editContent && editContent.id && editContent.content_type) {
-      const contentType = editContent.content_type;
-      setContentType(contentType);
-      
       // Extract content based on type
       let textContent = "";
       let videoUrl = "";
@@ -102,11 +112,11 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       let quizDescription = "";
       let passingScore = 70;
       
-      if (contentType === "text") {
+      if (editContent.content_type === "text") {
         textContent = editContent.content_data?.text || editContent.content_data?.html || "";
-      } else if (contentType === "video" || contentType === "interactive" || contentType === "file") {
+      } else if (editContent.content_type === "video" || editContent.content_type === "interactive" || editContent.content_type === "file") {
         videoUrl = editContent.content_data?.url || "";
-      } else if (contentType === "quiz") {
+      } else if (editContent.content_type === "quiz") {
         // Handle both old and new quiz formats
         if (editContent.content_data?.questions) {
           // New format with multiple questions
@@ -128,7 +138,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       // Use setTimeout to ensure the form is ready
       setTimeout(() => {
         form.reset({
-          content_type: contentType,
+          content_type: editContent.content_type,
           is_required: editContent.is_required ?? true,
           text_content: textContent,
           video_url: videoUrl,
@@ -140,18 +150,12 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       }, 100);
     } else {
       // Reset to defaults when creating new content
-      setContentType("text");
       form.reset({
         content_type: "text",
         is_required: true,
         text_content: "",
         video_url: "",
-        quiz_questions: [{
-          question: "",
-          options: ["", ""],
-          correct_answer: 0,
-          explanation: "",
-        }],
+        quiz_questions: undefined, // Don't set empty quiz questions
         quiz_title: "",
         quiz_description: "",
         passing_score: 70,
@@ -187,6 +191,14 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         contentData = { url: data.video_url || "", filename: "File" };
       }
 
+      const insertData = {
+        lesson_id: lessonId,
+        content_type: data.content_type,
+        content_data: contentData,
+        is_required: data.is_required,
+        order_index: contentCount || 0,
+      };
+
       if (isEditing) {
         const { error } = await supabase
           .from("lesson_content")
@@ -198,13 +210,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
           .eq("id", editContent.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("lesson_content").insert({
-          lesson_id: lessonId,
-          content_type: data.content_type,
-          content_data: contentData,
-          is_required: data.is_required,
-          order_index: contentCount || 0,
-        });
+        const { error } = await supabase.from("lesson_content").insert(insertData);
         if (error) throw error;
       }
     },
@@ -214,8 +220,12 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       form.reset();
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: isEditing ? "Failed to update content" : "Failed to add content", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ 
+        title: isEditing ? "Failed to update content" : "Failed to add content", 
+        variant: "destructive",
+        description: error?.message || "Please check your form and try again."
+      });
     },
   });
 
@@ -228,7 +238,11 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4 px-1">
+          <form onSubmit={form.handleSubmit((data) => {
+            createMutation.mutate(data);
+          }, (errors) => {
+            console.error('Form validation errors:', errors);
+          })} className="space-y-4 px-1">
             <FormField
               control={form.control}
               name="content_type"
@@ -238,7 +252,6 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                   <Select
                     onValueChange={(value) => {
                       field.onChange(value);
-                      setContentType(value as any);
                     }}
                     value={field.value}
                   >

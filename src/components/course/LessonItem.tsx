@@ -56,13 +56,14 @@ export function LessonItem({ lesson, moduleId }: LessonItemProps) {
               </div>
             </CollapsibleTrigger>
             <div className="flex gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setShowCreateContent(true)}>
+              <Button size="sm" variant="outline" onClick={() => setShowCreateContent(true)} className="flex items-center gap-1">
                 <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Content</span>
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowEditLesson(true)}>
+              <Button size="sm" variant="ghost" onClick={() => setShowEditLesson(true)} title="Edit Lesson">
                 <Edit className="h-4 w-4" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate()}>
+              <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate()} title="Delete Lesson">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
