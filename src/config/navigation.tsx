@@ -53,6 +53,7 @@ export const clientNavItems = [
   { label: "Dashboard", href: "/client" },
   { label: "Explore", href: "/client/courses" },
   { label: "My Courses", href: "/client/my-courses" },
+  { label: "Analytics", href: "/client/analytics" },
   { label: "Sessions", href: "/client/sessions" },
   { label: "Billing", href: "/client/billing" },
 ];
@@ -63,6 +64,7 @@ export const clientSidebarSections = [
     items: [
       { icon: <Search className="w-4 h-4" />, label: "Explore", href: "/client/courses" },
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/client/my-courses" },
+      { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", href: "/client/analytics" },
     ],
   },
   {
