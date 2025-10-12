@@ -210,29 +210,30 @@ serve(async (req: Request) => {
 
     } else if (mode === "client_subscription") {
       if (!body.coach_id) throw new Error("coach_id is required for client_subscription");
+      if (!body.package_id) throw new Error("package_id is required for client_subscription");
       const cycle: BillingCycle = body.billing_cycle || "monthly";
       if (typeof body.amount !== "number" || body.amount <= 0) throw new Error("valid amount is required for client_subscription");
       amount = body.amount;
-      description = `Client subscription to coach ${body.coach_id} (${cycle})`;
+      description = `Subscription to coach package (${cycle})`;
 
-      const { data: ord, error: ordErr } = await supabase
-        .from("client_orders")
+      // Create client subscription record
+      const { data: sub, error: subErr } = await supabase
+        .from("client_subscriptions")
         .insert({
           client_id: user.id,
           coach_id: body.coach_id,
-          type: cycle,
-          amount,
-          currency,
-          status: "pending",
-          transaction_id: null,
-          course_id: null,
+          package_id: body.package_id,
+          billing_cycle: cycle,
           start_date: new Date().toISOString(),
           end_date: null,
+          renewal_date: null, // Will be set on activation
+          transaction_id: null,
+          payment_method: "paychangu",
         })
         .select()
         .single();
-      if (ordErr || !ord) throw new Error("Failed to create order record");
-      orderId = ord.id;
+      if (subErr || !sub) throw new Error("Failed to create subscription record");
+      subscriptionId = sub.id;
     } else {
       throw new Error("Unsupported mode");
     }

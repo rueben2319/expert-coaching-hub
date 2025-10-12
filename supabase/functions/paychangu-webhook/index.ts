@@ -223,6 +223,77 @@ serve(async (req: Request) => {
           subscription_id: null,
         });
       }
+
+      if (tx.subscription_id && !tx.order_id) {
+        // Handle client subscription to coach package
+        console.log("Activating client subscription:", tx.subscription_id);
+        const now = new Date();
+
+        // Get subscription details
+        const { data: sub, error: subErr } = await supabase
+          .from("client_subscriptions")
+          .select("billing_cycle")
+          .eq("id", tx.subscription_id)
+          .single();
+
+        if (!subErr && sub) {
+          const renewal = new Date(now);
+          if (sub.billing_cycle === "yearly") {
+            renewal.setFullYear(now.getFullYear() + 1);
+          } else {
+            renewal.setMonth(now.getMonth() + 1);
+          }
+
+          const updateData = {
+            status: "active",
+            renewal_date: renewal.toISOString(),
+            transaction_id: tx.id,
+            start_date: now.toISOString()
+          };
+          console.log("Updating client subscription with:", updateData);
+
+          const { error: updateErr } = await supabase
+            .from("client_subscriptions")
+            .update(updateData)
+            .eq("id", tx.subscription_id);
+
+          if (updateErr) {
+            console.error("Error updating client subscription:", updateErr);
+            throw new Error("Failed to update client subscription status");
+          } else {
+            console.log("Successfully activated client subscription");
+          }
+
+          // Create invoice
+          const { data: invNum } = await supabase.rpc("generate_invoice_number");
+          const invoiceData = {
+            user_id: tx.user_id,
+            amount: tx.amount,
+            currency: tx.currency,
+            invoice_number: invNum ?? `INV-${Date.now()}`,
+            invoice_date: now.toISOString(),
+            payment_method: "paychangu",
+            description: "Coach package subscription",
+            status: "paid",
+            order_id: null,
+            subscription_id: tx.subscription_id,
+          };
+          console.log("Creating invoice for client subscription:", invoiceData);
+
+          const { error: invErr } = await supabase
+            .from("invoices")
+            .insert(invoiceData);
+
+          if (invErr) {
+            console.error("Error creating invoice for client subscription:", invErr);
+            // Don't throw here as subscription is already updated
+          } else {
+            console.log("Successfully created invoice for client subscription");
+          }
+        } else {
+          console.error("Client subscription not found or error:", subErr);
+        }
+      }
     }
 
     // For successful payments, return HTTP redirect instead of HTML page

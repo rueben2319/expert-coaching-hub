@@ -15,6 +15,8 @@ import CourseViewer from "./pages/client/CourseViewer";
 import ClientSessions from "./pages/client/Sessions";
 import ClientMeetingRoom from "./pages/client/MeetingRoom";
 import ClientAnalytics from "./pages/client/ClientAnalytics";
+import ClientBilling from "./pages/client/Billing";
+import ClientPackages from "./pages/client/ClientPackages";
 import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
@@ -27,7 +29,7 @@ import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
 import CoachBilling from "./pages/coach/Billing";
 import BillingSuccess from "./pages/coach/BillingSuccess";
-import ClientBilling from "./pages/client/Billing";
+import CoachPackages from "./pages/coach/CoachPackages";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
@@ -108,6 +110,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <ClientBilling />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/client/packages"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientPackages />
                 </ProtectedRoute>
               }
             />
@@ -206,6 +216,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <BillingSuccess />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/coach/packages"
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CoachPackages />
                 </ProtectedRoute>
               }
             />
