@@ -21,6 +21,7 @@ export const coachNavItems = [
   { label: "Sessions", href: "/coach/sessions" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Analytics", href: "/coach/analytics" },
+  { label: "Billing", href: "/coach/billing" },
 ];
 
 export const coachSidebarSections = [
@@ -39,9 +40,10 @@ export const coachSidebarSections = [
     ],
   },
   {
-    title: "Analytics",
+    title: "Analytics & Billing",
     items: [
       { icon: <BarChart3 className="w-4 h-4" />, label: "Performance", href: "/coach/analytics" },
+      { icon: <Shield className="w-4 h-4" />, label: "Billing", href: "/coach/billing" },
     ],
   },
 ];
@@ -53,6 +55,7 @@ export const clientNavItems = [
   { label: "My Courses", href: "/client/my-courses" },
   { label: "Analytics", href: "/client/analytics" },
   { label: "Sessions", href: "/client/sessions" },
+  { label: "Billing", href: "/client/billing" },
 ];
 
 export const clientSidebarSections = [
@@ -65,9 +68,10 @@ export const clientSidebarSections = [
     ],
   },
   {
-    title: "Sessions",
+    title: "Sessions & Billing",
     items: [
       { icon: <MessageCircle className="w-4 h-4" />, label: "My Sessions", href: "/client/sessions" },
+      { icon: <Shield className="w-4 h-4" />, label: "Billing", href: "/client/billing" },
     ],
   },
 ];

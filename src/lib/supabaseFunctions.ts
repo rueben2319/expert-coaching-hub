@@ -64,23 +64,41 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
   try {
     // Get the current session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
+
     if (sessionError) {
       throw new Error(`Session error: ${sessionError.message}`);
     }
-    
+
     if (!session?.access_token) {
       throw new Error('No valid session found. Please sign in again.');
     }
 
     // Call the Edge Function with authorization
-    const { data, error } = await supabase.functions.invoke(functionName, {
-      body: params,
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    const invokeWithToken = async (accessToken: string) => {
+      return await supabase.functions.invoke(functionName, {
+        body: params,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+    };
+
+    let { data, error } = await invokeWithToken(session.access_token);
+
+    // If we got an auth error (possibly expired token), attempt to refresh session once and retry
+    if (error && (error.status === 401 || error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('expired'))) {
+      try {
+        // Attempt to refresh by calling getSession again (supabase-js auto-refreshes when possible)
+        const refreshed = await supabase.auth.getSession();
+        const refreshedToken = (refreshed as any)?.data?.session?.access_token || session.access_token;
+        const retry = await invokeWithToken(refreshedToken);
+        data = retry.data;
+        error = retry.error;
+      } catch (refreshErr) {
+        console.error('Failed to refresh session:', refreshErr);
+      }
+    }
 
     if (error) {
       console.error(`Edge function '${functionName}' error:`, error);

@@ -25,6 +25,8 @@ import MeetingRoom from "./pages/coach/MeetingRoom";
 import Students from "./pages/coach/Students";
 import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
+import CoachBilling from "./pages/coach/Billing";
+import ClientBilling from "./pages/client/Billing";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
@@ -84,13 +86,29 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+<Route
+  path="/client/sessions/:meetingId"
+  element={
+    <ProtectedRoute allowedRoles={["client"]}>
+      <ClientMeetingRoom />
+    </ProtectedRoute>
+  }
+/>
             <Route 
               path="/client/analytics" 
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <ClientAnalytics />
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/client/billing"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientBilling />
+                </ProtectedRoute>
+              }
             />
 
             {/* Coach Routes */}
@@ -166,13 +184,21 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/coach/analytics" 
+            <Route
+              path="/coach/analytics"
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <Analytics />
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/coach/billing"
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CoachBilling />
+                </ProtectedRoute>
+              }
             />
 
             {/* Profile Route - Available to all authenticated users */}
