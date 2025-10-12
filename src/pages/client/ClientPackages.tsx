@@ -85,7 +85,6 @@ const ClientPackages = () => {
           mode: "client_subscription",
           coach_id: selectedPackage.coach_id,
           billing_cycle: billingCycle,
-          amount: billingCycle === "monthly" ? selectedPackage.price_monthly : selectedPackage.price_yearly,
           package_id: packageId,
         },
       });

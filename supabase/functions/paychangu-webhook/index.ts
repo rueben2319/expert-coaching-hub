@@ -120,7 +120,7 @@ serve(async (req: Request) => {
     // Find transaction
     const { data: tx, error: txErr } = await supabase
       .from("transactions")
-      .select("id, user_id, amount, currency, status, order_id, subscription_id")
+      .select("id, user_id, amount, currency, status, order_id, subscription_id, client_subscription_id")
       .eq("transaction_ref", tx_ref)
       .single();
     if (txErr || !tx) throw new Error("Transaction not found");
@@ -224,16 +224,16 @@ serve(async (req: Request) => {
         });
       }
 
-      if (tx.subscription_id && !tx.order_id) {
+      if (tx.client_subscription_id) {
         // Handle client subscription to coach package
-        console.log("Activating client subscription:", tx.subscription_id);
+        console.log("Activating client subscription:", tx.client_subscription_id);
         const now = new Date();
 
         // Get subscription details
         const { data: sub, error: subErr } = await supabase
           .from("client_subscriptions")
           .select("billing_cycle")
-          .eq("id", tx.subscription_id)
+          .eq("id", tx.client_subscription_id)
           .single();
 
         if (!subErr && sub) {
@@ -255,7 +255,7 @@ serve(async (req: Request) => {
           const { error: updateErr } = await supabase
             .from("client_subscriptions")
             .update(updateData)
-            .eq("id", tx.subscription_id);
+            .eq("id", tx.client_subscription_id);
 
           if (updateErr) {
             console.error("Error updating client subscription:", updateErr);
@@ -276,7 +276,7 @@ serve(async (req: Request) => {
             description: "Coach package subscription",
             status: "paid",
             order_id: null,
-            subscription_id: tx.subscription_id,
+            subscription_id: tx.client_subscription_id,
           };
           console.log("Creating invoice for client subscription:", invoiceData);
 
@@ -300,7 +300,16 @@ serve(async (req: Request) => {
     if (success) {
       const appBaseUrl = Deno.env.get("APP_BASE_URL");
       if (appBaseUrl) {
-        const redirectUrl = `${appBaseUrl}/coach/billing/success?tx_ref=${tx_ref}&status=successful`;
+        // Determine redirect URL based on subscription type
+        let redirectUrl;
+        if (tx.client_subscription_id) {
+          // Client subscription - redirect to client success page
+          redirectUrl = `${appBaseUrl}/client/billing/success?tx_ref=${tx_ref}&status=successful`;
+        } else {
+          // Coach subscription or other - redirect to coach success page
+          redirectUrl = `${appBaseUrl}/coach/billing/success?tx_ref=${tx_ref}&status=successful`;
+        }
+
         console.log("Redirecting to:", redirectUrl);
 
         // Return HTTP 302 redirect instead of HTML page

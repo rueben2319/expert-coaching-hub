@@ -24,6 +24,7 @@ export const coachNavItems = [
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Analytics", href: "/coach/analytics" },
   { label: "Billing", href: "/coach/billing" },
+  { label: "Settings", href: "/coach/settings" },
 ];
 
 export const coachSidebarSections = [
@@ -47,6 +48,7 @@ export const coachSidebarSections = [
     items: [
       { icon: <BarChart3 className="w-4 h-4" />, label: "Performance", href: "/coach/analytics" },
       { icon: <Shield className="w-4 h-4" />, label: "Billing", href: "/coach/billing" },
+      { icon: <Settings className="w-4 h-4" />, label: "Settings", href: "/coach/settings" },
     ],
   },
 ];

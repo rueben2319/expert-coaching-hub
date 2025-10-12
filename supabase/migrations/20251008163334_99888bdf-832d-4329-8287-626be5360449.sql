@@ -53,6 +53,18 @@ CREATE POLICY "Admins can view all profiles"
   ON public.profiles FOR SELECT
   USING (public.has_role(auth.uid(), 'admin'));
 
+-- Allow clients to view coach profiles for billing/coaching purposes
+CREATE POLICY "Clients can view coach profiles"
+  ON public.profiles FOR SELECT
+  USING (
+    public.has_role(auth.uid(), 'client') AND
+    EXISTS (
+      SELECT 1 FROM public.coach_packages
+      WHERE coach_packages.coach_id = profiles.id
+      AND coach_packages.is_active = true
+    )
+  );
+
 -- User roles policies
 CREATE POLICY "Users can view their own roles"
   ON public.user_roles FOR SELECT
