@@ -62,14 +62,10 @@ export default function AdminUsers() {
     mutation.mutate({ user_id: userId, role });
   };
 
-  const navItems = [
-    { label: 'Dashboard', href: '/admin' },
-    { label: 'Users', href: '/admin/users' },
-    { label: 'Courses', href: '/admin/courses' },
-    { label: 'Settings', href: '/admin/settings' },
-  ];
+  import { adminNavItems, adminSidebarSections } from '@/config/navigation';
 
-  const sidebarSections = [];
+  const navItems = adminNavItems;
+  const sidebarSections = adminSidebarSections;
 
   return (
     <DashboardLayout navItems={navItems} sidebarSections={sidebarSections} brandName="Admin Panel">
