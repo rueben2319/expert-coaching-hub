@@ -42,55 +42,67 @@ export default function Auth() {
   const { user, role, refreshRole, signOut } = useAuth();
 
   useEffect(() => {
-    if (user && role) {
+    if (!user) return;
+
+    // If role already set, navigate immediately
+    if (role) {
       navigate(`/${role}`);
+      return;
     }
-  }, [user, role, navigate]);
 
-  useEffect(() => {
-    if (user && !role) {
-      (async () => {
-        try {
-          // Obtain session and identities to determine if this was an OAuth (Google) sign-in
-          const { data: { session } } = await supabase.auth.getSession();
+    (async () => {
+      try {
+        // Ensure we refresh the role from DB first to avoid race conditions
+        await refreshRole();
 
-          const sessionProvider = (session as any)?.provider || null;
-          const hasProviderToken = Boolean((session as any)?.provider_token);
+        // Re-check role directly from DB to avoid stale closure values
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
 
-          const identityProvider = Array.isArray((user as any).identities)
-            ? (user as any).identities.find((i: any) => i.provider === 'google')
-            : null;
+        if (roleData && roleData.role) {
+          navigate(`/${roleData.role}`);
+          return;
+        }
 
-          // Only consider showing the role dialog if we initiated an OAuth flow (flag in localStorage)
-          const oauthFlag = (() => {
-            try { return localStorage.getItem('oauth_provider'); } catch (e) { return null; }
-          })();
+        // No role found after refresh -> only show role dialog for OAuth flows (flag + provider detection)
+        const oauthFlag = (() => {
+          try { return localStorage.getItem('oauth_provider'); } catch (e) { return null; }
+        })();
 
-          const isOAuthUserDetected = Boolean(
-            sessionProvider === 'google' ||
-            identityProvider ||
-            user.app_metadata?.provider === 'google' ||
-            user.user_metadata?.provider === 'google' ||
-            (hasProviderToken && !!identityProvider)
-          );
+        const { data: { session } } = await supabase.auth.getSession();
+        const sessionProvider = (session as any)?.provider || null;
+        const hasProviderToken = Boolean((session as any)?.provider_token);
 
-          const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
+        const identityProvider = Array.isArray((user as any).identities)
+          ? (user as any).identities.find((i: any) => i.provider === 'google')
+          : null;
 
-          if (shouldShowRoleDialog) {
-            setShowRoleDialog(true);
-            // clear the oauth flag after using it
-            try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
-          } else {
-            // For traditional users without roles, redirect to client dashboard
-            navigate('/client');
-          }
-        } catch (e) {
-          console.error('Error detecting auth provider for role flow:', e);
+        const isOAuthUserDetected = Boolean(
+          sessionProvider === 'google' ||
+          identityProvider ||
+          user.app_metadata?.provider === 'google' ||
+          user.user_metadata?.provider === 'google' ||
+          (hasProviderToken && !!identityProvider)
+        );
+
+        const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
+
+        if (shouldShowRoleDialog) {
+          setShowRoleDialog(true);
+          try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
+        } else {
+          // default for users with no role is client
           navigate('/client');
         }
-      })();
-    }
-  }, [user, role, navigate]);
+      } catch (e) {
+        console.error('Error during role resolution flow:', e);
+        navigate('/client');
+      }
+    })();
+  }, [user, navigate, refreshRole]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
