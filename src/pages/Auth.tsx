@@ -304,7 +304,7 @@ export default function Auth() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={8}
+                  minLength={isLogin ? undefined : 8}
                 />
                 <button
                   type="button"
