@@ -92,8 +92,32 @@ export default function Auth() {
         const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
 
         if (shouldShowRoleDialog) {
-          setShowRoleDialog(true);
-          try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
+          // If we have a preselected role saved from before redirect, assign it automatically
+          let desiredRole: string | null = null;
+          try { desiredRole = localStorage.getItem('oauth_role'); } catch (e) { desiredRole = null; }
+
+          if (desiredRole === 'client' || desiredRole === 'coach') {
+            try {
+              // upsert user role server-side
+              const { error: roleError } = await supabase
+                .from('user_roles')
+                .upsert({ user_id: user.id, role: desiredRole }, { onConflict: 'user_id' });
+
+              if (roleError) throw roleError;
+
+              await supabase.auth.updateUser({ data: { role: desiredRole } });
+              await refreshRole();
+              try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
+              navigate(`/${desiredRole}`);
+            } catch (e) {
+              console.error('Failed to auto-assign OAuth role:', e);
+              // fallback to showing the dialog
+              setShowRoleDialog(true);
+            }
+          } else {
+            setShowRoleDialog(true);
+            try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
+          }
         } else {
           // default for users with no role is client
           navigate('/client');
