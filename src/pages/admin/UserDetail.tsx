@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { callSupabaseFunction } from '@/lib/supabaseFunctions';
 import { toast } from 'sonner';
+import { adminNavItems, adminSidebarSections } from '@/config/navigation';
 
 export default function UserDetail() {
   const { id } = useParams();
