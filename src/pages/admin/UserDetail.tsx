@@ -65,15 +65,12 @@ export default function UserDetail() {
     mutation.mutate({ user_id: id, role: newRole });
   };
 
-  const navItems = [
-    { label: 'Dashboard', href: '/admin' },
-    { label: 'Users', href: '/admin/users' },
-    { label: 'Courses', href: '/admin/courses' },
-    { label: 'Settings', href: '/admin/settings' },
-  ];
+  import { adminNavItems, adminSidebarSections } from '@/config/navigation';
+
+  const navItems = adminNavItems;
 
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={[]} brandName="Admin Panel">
+    <DashboardLayout navItems={navItems} sidebarSections={adminSidebarSections} brandName="Admin Panel">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">User Detail</h1>
