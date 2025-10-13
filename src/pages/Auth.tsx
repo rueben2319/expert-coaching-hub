@@ -363,7 +363,7 @@ export default function Auth() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder="•••••••���"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -453,6 +453,55 @@ export default function Auth() {
         </CardContent>
       </Card>
 
+      {/* Pre-OAuth role prompt (shown before redirect) */}
+      <Dialog open={oauthRolePromptOpen} onOpenChange={setOauthRolePromptOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Before you continue</DialogTitle>
+            <DialogDescription>Pick a role so we can create your account correctly after Google sign-in.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Label htmlFor="pre-oauth-role">I want to join as a</Label>
+            <Select value={pendingRole} onValueChange={(value: "client" | "coach") => setPendingRole(value)}>
+              <SelectTrigger id="pre-oauth-role">
+                <SelectValue placeholder="Select your role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Student</div>
+                      <div className="text-xs text-muted-foreground">Learn from expert coaches</div>
+                    </div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="coach">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Coach</div>
+                      <div className="text-xs text-muted-foreground">Create and teach courses</div>
+                    </div>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter className="mt-4 gap-2">
+            <Button type="button" variant="ghost" onClick={() => setOauthRolePromptOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => startOAuthWithRole(pendingRole)}>
+              Continue with Google
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post-OAuth role dialog (fallback if no preselected role) */}
       <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
