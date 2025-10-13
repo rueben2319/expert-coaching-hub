@@ -1,12 +1,17 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, Users, Shield, Settings, BarChart3, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const [totalUsers, setTotalUsers] = useState<number | null>(null);
+  const [totalCourses, setTotalCourses] = useState<number | null>(null);
+  const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const navItems = [
     { label: "Dashboard", href: "/admin" },
@@ -58,6 +63,38 @@ export default function AdminDashboard() {
     },
   ];
 
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        // total users from profiles
+        const usersCountRes = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+        if (mounted) setTotalUsers(usersCountRes.count ?? 0);
+
+        // total courses
+        const coursesCountRes = await supabase.from('courses').select('*', { count: 'exact', head: true });
+        if (mounted) setTotalCourses(coursesCountRes.count ?? 0);
+
+        // recent users
+        const { data: recent, error: recentErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, created_at')
+          .order('created_at', { ascending: false })
+          .limit(6);
+        if (recentErr) console.error('Error loading recent users', recentErr);
+        if (mounted) setRecentUsers(recent || []);
+      } catch (e) {
+        console.error('Error loading admin stats', e);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+    return () => { mounted = false; };
+  }, []);
+
   return (
     <DashboardLayout
       navItems={navItems}
@@ -81,7 +118,7 @@ export default function AdminDashboard() {
             <CardDescription>Registered platform users</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-primary">0</div>
+            <div className="text-3xl font-bold mb-2 text-primary">{loading ? '...' : totalUsers ?? 0}</div>
             <p className="text-sm text-muted-foreground">Active users</p>
           </CardContent>
         </Card>
@@ -95,7 +132,7 @@ export default function AdminDashboard() {
             <CardDescription>Published courses</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-accent">0</div>
+            <div className="text-3xl font-bold mb-2 text-accent">{loading ? '...' : totalCourses ?? 0}</div>
             <p className="text-sm text-muted-foreground">Courses available</p>
           </CardContent>
         </Card>
@@ -109,9 +146,31 @@ export default function AdminDashboard() {
             <CardDescription>Manage user roles and access</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="outline" className="w-full">Manage Users</Button>
+            <Button variant="outline" className="w-full" onClick={() => window.location.href = '/admin/users'}>Manage Users</Button>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Recent Users */}
+      <div className="mt-8">
+        <h2 className="text-xl font-semibold mb-4">Recent Users</h2>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {recentUsers.length === 0 ? (
+            <div className="text-muted-foreground">No recent users</div>
+          ) : (
+            recentUsers.map((u) => (
+              <Card key={u.id} className="hover:shadow transition-shadow">
+                <CardHeader>
+                  <CardTitle className="text-base">{u.full_name || 'Unnamed'}</CardTitle>
+                  <CardDescription className="line-clamp-2">{u.email}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground">Joined {new Date(u.created_at).toLocaleDateString()}</div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
       </div>
     </DashboardLayout>
   );
