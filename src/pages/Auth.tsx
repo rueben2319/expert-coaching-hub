@@ -27,6 +27,8 @@ export default function Auth() {
   const [pendingRole, setPendingRole] = useState<"client" | "coach">("client");
   const [submittingRole, setSubmittingRole] = useState(false);
   const [isFromOAuth, setIsFromOAuth] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const { user, role, refreshRole, signOut } = useAuth();
 
