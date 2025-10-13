@@ -98,13 +98,33 @@ export default function Auth() {
         if (error) throw error;
         toast.success("Welcome back!");
       } else {
+        // Client-side validation
+        if (!fullName || fullName.trim().length < 2) {
+          toast.error("Please provide your full name.");
+          setLoading(false);
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          toast.error("Passwords do not match.");
+          setLoading(false);
+          return;
+        }
+
+        const strength = passwordStrength(password);
+        if (strength < 60) {
+          toast.error("Password is too weak. Use at least 8 chars, include a number and a symbol.");
+          setLoading(false);
+          return;
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { 
+            data: {
               full_name: fullName,
-              role: selectedRole 
+              role: selectedRole
             },
             emailRedirectTo: `${window.location.origin}/`,
           },
