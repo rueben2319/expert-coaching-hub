@@ -43,7 +43,7 @@ export default function AdminUsers() {
     return { data: enriched, total: enriched.length };
   };
 
-  const { data, isLoading, refetch } = useQuery(['admin-users', page, search], fetchUsers, { keepPreviousData: true });
+  const { data, isLoading, refetch } = useQuery({ queryKey: ['admin-users', page, search], queryFn: fetchUsers, keepPreviousData: true });
 
   const mutation = useMutation((payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload), {
     onSuccess: async () => {
