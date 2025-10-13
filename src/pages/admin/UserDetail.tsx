@@ -110,9 +110,9 @@ export default function UserDetail() {
             {loadingRole ? (
               <div>Loading...</div>
             ) : (
-              <div className="space-y-3">
-                <div><strong>Current Role:</strong> {currentRoleRow?.role ?? 'client'}</div>
-                <div className="flex gap-2">
+              <div className="space-y-3 max-w-full">
+                <div className="w-full break-words"><strong>Current Role:</strong> <span className="font-medium">{currentRoleRow?.role ?? 'client'}</span></div>
+                <div className="flex flex-wrap gap-2">
                   <Button variant="ghost" onClick={() => handleChangeRole('client')}>Make Client</Button>
                   <Button variant="ghost" onClick={() => handleChangeRole('coach')}>Make Coach</Button>
                   <Button variant="destructive" onClick={() => handleChangeRole('admin')}>Make Admin</Button>
