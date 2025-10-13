@@ -13,23 +13,35 @@ export default function UserDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: profile, isLoading: loadingProfile } = useQuery(['admin-user', id], async () => {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-    if (error) throw error;
-    return data;
-  }, { enabled: !!id });
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ['admin-user', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
 
-  const { data: currentRoleRow, isLoading: loadingRole } = useQuery(['admin-user-role', id], async () => {
-    const { data, error } = await supabase.from('user_roles').select('role, created_at').eq('user_id', id).maybeSingle();
-    if (error) throw error;
-    return data;
-  }, { enabled: !!id });
+  const { data: currentRoleRow, isLoading: loadingRole } = useQuery({
+    queryKey: ['admin-user-role', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('user_roles').select('role, created_at').eq('user_id', id).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
 
-  const { data: roleHistory, isLoading: loadingHistory } = useQuery(['admin-user-role-history', id], async () => {
-    const { data, error } = await supabase.from('user_role_changes').select('role, changed_by, created_at').eq('user_id', id).order('created_at', { ascending: false }).limit(50);
-    if (error) throw error;
-    return data || [];
-  }, { enabled: !!id });
+  const { data: roleHistory, isLoading: loadingHistory } = useQuery({
+    queryKey: ['admin-user-role-history', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('user_role_changes').select('role, changed_by, created_at').eq('user_id', id).order('created_at', { ascending: false }).limit(50);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!id,
+  });
 
   const mutation = useMutation((payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload), {
     onSuccess: async () => {
