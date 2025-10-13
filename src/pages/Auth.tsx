@@ -15,6 +15,16 @@ import { GraduationCap, Users, BookOpen, Mail, Loader2 } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
+const passwordStrength = (pwd: string) => {
+  if (!pwd) return 0;
+  let score = 0;
+  if (pwd.length >= 8) score += 40;
+  if (/[A-Z]/.test(pwd)) score += 15;
+  if (/\d/.test(pwd)) score += 20;
+  if (/[^A-Za-z0-9]/.test(pwd)) score += 25;
+  return Math.min(100, score);
+};
+
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
