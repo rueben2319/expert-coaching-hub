@@ -63,8 +63,6 @@ export default function AdminUsers() {
     mutation.mutate({ user_id: userId, role });
   };
 
-  import { adminNavItems, adminSidebarSections } from '@/config/navigation';
-
   const navItems = adminNavItems;
   const sidebarSections = adminSidebarSections;
 
