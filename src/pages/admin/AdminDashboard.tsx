@@ -83,7 +83,25 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(6);
         if (recentErr) console.error('Error loading recent users', recentErr);
-        if (mounted) setRecentUsers(recent || []);
+
+        if (recent && recent.length > 0) {
+          // fetch roles for those users
+          const ids = recent.map((r: any) => r.id);
+          const { data: roleRows, error: roleErr } = await supabase
+            .from('user_roles')
+            .select('user_id, role')
+            .in('user_id', ids as string[]);
+          if (roleErr) console.error('Error fetching roles for recent users', roleErr);
+          const roleMap: Record<string, string> = {};
+          (roleRows || []).forEach((row: any) => {
+            roleMap[row.user_id] = row.role;
+          });
+
+          const enriched = recent.map((r: any) => ({ ...r, role: roleMap[r.id] || 'client' }));
+          if (mounted) setRecentUsers(enriched);
+        } else {
+          if (mounted) setRecentUsers([]);
+        }
       } catch (e) {
         console.error('Error loading admin stats', e);
       } finally {
