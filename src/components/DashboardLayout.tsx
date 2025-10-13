@@ -203,6 +203,17 @@ export function DashboardLayout({
                 Token Management
               </DropdownMenuItem>
             </TokenManagementDialog>
+
+            {role === 'admin' && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/admin')}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Admin Dashboard
+                </DropdownMenuItem>
+              </>
+            )}
+
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -331,12 +342,23 @@ export function DashboardLayout({
                   Profile
                 </DropdownMenuItem>
                 <TokenManagementDialog>
-                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    <Shield className="mr-2 h-4 w-4" />
-                    Token Management
-                  </DropdownMenuItem>
-                </TokenManagementDialog>
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                <Shield className="mr-2 h-4 w-4" />
+                Token Management
+              </DropdownMenuItem>
+            </TokenManagementDialog>
+
+            {role === 'admin' && (
+              <>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/admin')}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Admin Dashboard
+                </DropdownMenuItem>
+              </>
+            )}
+
+            <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign Out
