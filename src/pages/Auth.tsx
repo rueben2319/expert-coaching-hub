@@ -36,6 +36,7 @@ export default function Auth() {
   const [pendingRole, setPendingRole] = useState<"client" | "coach">("client");
   const [submittingRole, setSubmittingRole] = useState(false);
   const [isFromOAuth, setIsFromOAuth] = useState(false);
+  const [oauthRolePromptOpen, setOauthRolePromptOpen] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
@@ -324,7 +325,7 @@ export default function Auth() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder="•���••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
