@@ -29,6 +29,8 @@ import CoachBilling from "./pages/coach/Billing";
 import BillingSuccess from "./pages/coach/BillingSuccess";
 import ClientBilling from "./pages/client/Billing";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminUsers from "./pages/admin/Users";
+import UserDetail from "./pages/admin/UserDetail";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
 
@@ -221,13 +223,31 @@ const App = () => (
             />
 
             {/* Admin Routes */}
-            <Route 
-              path="/admin" 
+            <Route
+              path="/admin"
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
                   <AdminDashboard />
                 </ProtectedRoute>
-              } 
+              }
+            />
+
+            <Route
+              path="/admin/users"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AdminUsers />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/users/:id"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <UserDetail />
+                </ProtectedRoute>
+              }
             />
 
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,6 +14,16 @@ import { GraduationCap, Users, BookOpen, Mail, Loader2 } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
+const passwordStrength = (pwd: string) => {
+  if (!pwd) return 0;
+  let score = 0;
+  if (pwd.length >= 8) score += 40;
+  if (/[A-Z]/.test(pwd)) score += 15;
+  if (/\d/.test(pwd)) score += 20;
+  if (/[^A-Za-z0-9]/.test(pwd)) score += 25;
+  return Math.min(100, score);
+};
+
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
@@ -26,50 +36,98 @@ export default function Auth() {
   const [pendingRole, setPendingRole] = useState<"client" | "coach">("client");
   const [submittingRole, setSubmittingRole] = useState(false);
   const [isFromOAuth, setIsFromOAuth] = useState(false);
+  const [oauthRolePromptOpen, setOauthRolePromptOpen] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const { user, role, refreshRole, signOut } = useAuth();
 
   useEffect(() => {
-    if (user && role) {
+    if (!user) return;
+
+    // If role already set, navigate immediately
+    if (role) {
       navigate(`/${role}`);
+      return;
     }
-  }, [user, role, navigate]);
 
-  useEffect(() => {
-    if (user && !role) {
-      (async () => {
-        try {
-          // Obtain session and identities to determine if this was an OAuth (Google) sign-in
-          const { data: { session } } = await supabase.auth.getSession();
+    (async () => {
+      try {
+        // Ensure we refresh the role from DB first to avoid race conditions
+        await refreshRole();
 
-          const sessionProvider = (session as any)?.provider || null;
-          const hasProviderToken = Boolean((session as any)?.provider_token);
+        // Re-check role directly from DB to avoid stale closure values
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
 
-          const identityProvider = Array.isArray((user as any).identities)
-            ? (user as any).identities.find((i: any) => i.provider === 'google')
-            : null;
+        if (roleData && roleData.role) {
+          navigate(`/${roleData.role}`);
+          return;
+        }
 
-          const isOAuthUser = Boolean(
-            sessionProvider === 'google' ||
-            identityProvider ||
-            user.app_metadata?.provider === 'google' ||
-            user.user_metadata?.provider === 'google' ||
-            (hasProviderToken && !!identityProvider)
-          );
+        // No role found after refresh -> only show role dialog for OAuth flows (flag + provider detection)
+        const oauthFlag = (() => {
+          try { return localStorage.getItem('oauth_provider'); } catch (e) { return null; }
+        })();
 
-          if (isOAuthUser) {
-            setShowRoleDialog(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        const sessionProvider = (session as any)?.provider || null;
+        const hasProviderToken = Boolean((session as any)?.provider_token);
+
+        const identityProvider = Array.isArray((user as any).identities)
+          ? (user as any).identities.find((i: any) => i.provider === 'google')
+          : null;
+
+        const isOAuthUserDetected = Boolean(
+          sessionProvider === 'google' ||
+          identityProvider ||
+          user.app_metadata?.provider === 'google' ||
+          user.user_metadata?.provider === 'google' ||
+          (hasProviderToken && !!identityProvider)
+        );
+
+        const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
+
+        if (shouldShowRoleDialog) {
+          // If we have a preselected role saved from before redirect, assign it automatically
+          let desiredRole: string | null = null;
+          try { desiredRole = localStorage.getItem('oauth_role'); } catch (e) { desiredRole = null; }
+
+          if (desiredRole === 'client' || desiredRole === 'coach') {
+            try {
+              // upsert user role server-side
+              const { error: roleError } = await supabase
+                .from('user_roles')
+                .upsert({ user_id: user.id, role: desiredRole }, { onConflict: 'user_id' });
+
+              if (roleError) throw roleError;
+
+              await supabase.auth.updateUser({ data: { role: desiredRole } });
+              await refreshRole();
+              try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
+              navigate(`/${desiredRole}`);
+            } catch (e) {
+              console.error('Failed to auto-assign OAuth role:', e);
+              // fallback to showing the dialog
+              setShowRoleDialog(true);
+            }
           } else {
-            // For traditional users without roles, redirect to client dashboard
-            navigate('/client');
+            setShowRoleDialog(true);
+            try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
           }
-        } catch (e) {
-          console.error('Error detecting auth provider for role flow:', e);
+        } else {
+          // default for users with no role is client
           navigate('/client');
         }
-      })();
-    }
-  }, [user, role, navigate]);
+      } catch (e) {
+        console.error('Error during role resolution flow:', e);
+        navigate('/client');
+      }
+    })();
+  }, [user, navigate, refreshRole]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,13 +143,33 @@ export default function Auth() {
         if (error) throw error;
         toast.success("Welcome back!");
       } else {
+        // Client-side validation
+        if (!fullName || fullName.trim().length < 2) {
+          toast.error("Please provide your full name.");
+          setLoading(false);
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          toast.error("Passwords do not match.");
+          setLoading(false);
+          return;
+        }
+
+        const strength = passwordStrength(password);
+        if (strength < 60) {
+          toast.error("Password is too weak. Use at least 8 chars, include a number and a symbol.");
+          setLoading(false);
+          return;
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { 
+            data: {
               full_name: fullName,
-              role: selectedRole 
+              role: selectedRole
             },
             emailRedirectTo: `${window.location.origin}/`,
           },
@@ -123,10 +201,13 @@ export default function Auth() {
     }
   };
 
-  const handleGoogleAuth = async () => {
+  const startOAuthWithRole = async (roleChoice: "client" | "coach") => {
     try {
-      setOauthLoading(true);
+      // store desired role and provider flag so on return we can auto-assign
+      try { localStorage.setItem('oauth_provider', 'google'); localStorage.setItem('oauth_role', roleChoice); } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
+      setOauthRolePromptOpen(false);
+      setOauthLoading(true);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -151,7 +232,21 @@ export default function Auth() {
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
       setIsFromOAuth(false);
+      try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
     }
+  };
+
+  const handleGoogleAuth = async () => {
+    // If user already picked a desired OAuth role before, start immediately
+    let desired: string | null = null;
+    try { desired = localStorage.getItem('oauth_role'); } catch (e) { desired = null; }
+    if (desired === 'client' || desired === 'coach') {
+      await startOAuthWithRole(desired as "client" | "coach");
+      return;
+    }
+
+    // Otherwise prompt user to pick role first
+    setOauthRolePromptOpen(true);
   };
 
   const handleRoleSubmit = async () => {
@@ -264,16 +359,56 @@ export default function Auth() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="•••••••���"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={isLogin ? undefined : 8}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+              { !isLogin && (
+                <div className="text-xs text-muted-foreground">Use at least 8 characters including a number and a symbol.</div>
+              ) }
             </div>
+
+            {!isLogin && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+
+                <div className="mt-2">
+                  <div className="h-2 w-full bg-muted-foreground/10 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full bg-gradient-to-r from-yellow-400 to-green-400 transition-all`}
+                      style={{ width: `${passwordStrength(password)}%` }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity"
@@ -318,6 +453,55 @@ export default function Auth() {
         </CardContent>
       </Card>
 
+      {/* Pre-OAuth role prompt (shown before redirect) */}
+      <Dialog open={oauthRolePromptOpen} onOpenChange={setOauthRolePromptOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Before you continue</DialogTitle>
+            <DialogDescription>Pick a role so we can create your account correctly after Google sign-in.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Label htmlFor="pre-oauth-role">I want to join as a</Label>
+            <Select value={pendingRole} onValueChange={(value: "client" | "coach") => setPendingRole(value)}>
+              <SelectTrigger id="pre-oauth-role">
+                <SelectValue placeholder="Select your role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Student</div>
+                      <div className="text-xs text-muted-foreground">Learn from expert coaches</div>
+                    </div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="coach">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Coach</div>
+                      <div className="text-xs text-muted-foreground">Create and teach courses</div>
+                    </div>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter className="mt-4 gap-2">
+            <Button type="button" variant="ghost" onClick={() => setOauthRolePromptOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => startOAuthWithRole(pendingRole)}>
+              Continue with Google
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post-OAuth role dialog (fallback if no preselected role) */}
       <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
