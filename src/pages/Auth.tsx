@@ -158,6 +158,8 @@ export default function Auth() {
   const handleGoogleAuth = async () => {
     try {
       setOauthLoading(true);
+      // Mark that we're initiating an OAuth flow so we can detect it after redirect
+      try { localStorage.setItem('oauth_provider', 'google'); } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -183,6 +185,7 @@ export default function Auth() {
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
       setIsFromOAuth(false);
+      try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
     }
   };
 
