@@ -43,7 +43,8 @@ export default function UserDetail() {
     enabled: !!id,
   });
 
-  const mutation = useMutation((payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload), {
+  const mutation = useMutation({
+    mutationFn: (payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload),
     onSuccess: async () => {
       toast.success('Role updated');
       queryClient.invalidateQueries(['admin-user-role', 'admin-user-role-history', 'admin-users']);
