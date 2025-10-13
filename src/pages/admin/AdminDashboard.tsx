@@ -1,9 +1,9 @@
-import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, Users, Shield, Settings, BarChart3, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+
 
 export default function AdminDashboard() {
   const { user } = useAuth();
