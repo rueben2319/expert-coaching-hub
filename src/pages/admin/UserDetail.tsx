@@ -90,10 +90,10 @@ export default function UserDetail() {
             {loadingProfile ? (
               <div>Loading...</div>
             ) : profile ? (
-              <div className="space-y-2">
-                <div><strong>Name:</strong> {profile.full_name || 'Unnamed'}</div>
-                <div><strong>Email:</strong> {profile.email}</div>
-                <div><strong>Joined:</strong> {new Date(profile.created_at).toLocaleString()}</div>
+              <div className="space-y-2 max-w-full">
+                <div className="w-full break-words"><strong>Name:</strong> <span className="font-medium">{profile.full_name || 'Unnamed'}</span></div>
+                <div className="w-full text-sm text-muted-foreground break-all"><strong>Email:</strong> <span className="font-mono">{profile.email}</span></div>
+                <div className="w-full text-sm text-muted-foreground"><strong>Joined:</strong> {new Date(profile.created_at).toLocaleString()}</div>
               </div>
             ) : (
               <div>No profile found</div>
