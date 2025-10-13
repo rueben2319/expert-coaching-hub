@@ -61,6 +61,13 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Insert into role changes audit table
+    try {
+      await supabase.from('user_role_changes').insert({ user_id, role, changed_by: user.id });
+    } catch (e) {
+      console.warn('Failed to write role change audit:', e);
+    }
+
     // Optionally update auth metadata
     await supabase.auth.admin.updateUserById(user_id, { user_metadata: { role } }).catch(() => {});
 
