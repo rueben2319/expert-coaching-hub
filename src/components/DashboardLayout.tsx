@@ -62,7 +62,7 @@ export function DashboardLayout({
   sidebarSections = [],
   brandName = "Experts Coaching Hub",
 }: DashboardLayoutProps) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, role } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
