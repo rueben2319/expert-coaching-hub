@@ -66,8 +66,6 @@ export default function UserDetail() {
     mutation.mutate({ user_id: id, role: newRole });
   };
 
-  import { adminNavItems, adminSidebarSections } from '@/config/navigation';
-
   const navItems = adminNavItems;
 
   return (
