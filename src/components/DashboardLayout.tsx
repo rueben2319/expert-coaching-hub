@@ -271,6 +271,17 @@ export function DashboardLayout({
                 {item.label}
               </Button>
             ))}
+
+            {/* Admin quick link */}
+            {role === 'admin' && (
+              <Button
+                variant="ghost"
+                className="text-sm font-medium ml-2 text-primary"
+                onClick={() => navigate('/admin')}
+              >
+                Admin
+              </Button>
+            )}
           </nav>
 
           {/* Right Side Actions */}
