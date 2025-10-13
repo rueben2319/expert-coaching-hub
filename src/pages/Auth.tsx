@@ -61,7 +61,12 @@ export default function Auth() {
             ? (user as any).identities.find((i: any) => i.provider === 'google')
             : null;
 
-          const isOAuthUser = Boolean(
+          // Only consider showing the role dialog if we initiated an OAuth flow (flag in localStorage)
+          const oauthFlag = (() => {
+            try { return localStorage.getItem('oauth_provider'); } catch (e) { return null; }
+          })();
+
+          const isOAuthUserDetected = Boolean(
             sessionProvider === 'google' ||
             identityProvider ||
             user.app_metadata?.provider === 'google' ||
@@ -69,8 +74,12 @@ export default function Auth() {
             (hasProviderToken && !!identityProvider)
           );
 
-          if (isOAuthUser) {
+          const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
+
+          if (shouldShowRoleDialog) {
             setShowRoleDialog(true);
+            // clear the oauth flag after using it
+            try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
           } else {
             // For traditional users without roles, redirect to client dashboard
             navigate('/client');
