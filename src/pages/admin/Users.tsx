@@ -44,7 +44,8 @@ export default function AdminUsers() {
 
   const { data, isLoading, refetch } = useQuery({ queryKey: ['admin-users', page, search], queryFn: fetchUsers, keepPreviousData: true });
 
-  const mutation = useMutation((payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload), {
+  const mutation = useMutation({
+    mutationFn: (payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload),
     onSuccess: async () => {
       toast.success('Role updated');
       queryClient.invalidateQueries(['admin-users']);
