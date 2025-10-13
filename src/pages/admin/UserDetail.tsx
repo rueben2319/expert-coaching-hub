@@ -131,24 +131,26 @@ export default function UserDetail() {
             {loadingHistory ? (
               <div>Loading...</div>
             ) : roleHistory && roleHistory.length > 0 ? (
-              <table className="w-full table-auto border-collapse">
-                <thead>
-                  <tr className="text-left text-sm text-muted-foreground border-b">
-                    <th className="py-2 px-3">Role</th>
-                    <th className="py-2 px-3">Changed By</th>
-                    <th className="py-2 px-3">When</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {roleHistory.map((r: any) => (
-                    <tr key={`${r.role}-${r.created_at}`} className="hover:bg-muted-foreground/5">
-                      <td className="py-2 px-3">{r.role}</td>
-                      <td className="py-2 px-3 text-sm text-muted-foreground">{r.changed_by || 'system'}</td>
-                      <td className="py-2 px-3 text-sm text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full table-auto border-collapse">
+                  <thead>
+                    <tr className="text-left text-sm text-muted-foreground border-b">
+                      <th className="py-2 px-3">Role</th>
+                      <th className="py-2 px-3">Changed By</th>
+                      <th className="py-2 px-3">When</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {roleHistory.map((r: any) => (
+                      <tr key={`${r.role}-${r.created_at}`} className="hover:bg-muted-foreground/5">
+                        <td className="py-2 px-3 break-words">{r.role}</td>
+                        <td className="py-2 px-3 text-sm text-muted-foreground break-all">{r.changed_by || 'system'}</td>
+                        <td className="py-2 px-3 text-sm text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <div className="text-muted-foreground">No role changes recorded</div>
             )}
