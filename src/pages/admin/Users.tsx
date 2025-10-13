@@ -19,27 +19,33 @@ export default function AdminUsers() {
     const [_key, page, search] = queryKey;
     const offset = page * pageSize;
 
-    let query = supabase
+    // First, get all user_ids that have role = 'coach'
+    const { data: coachRows, error: coachErr } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .eq('role', 'coach');
+    if (coachErr) throw coachErr;
+
+    const coachIds = (coachRows || []).map((r: any) => r.user_id);
+    if (coachIds.length === 0) return { data: [], total: 0 };
+
+    // Fetch profiles for those coach IDs, with optional search and pagination
+    let profilesQuery = supabase
       .from('profiles')
       .select('id, full_name, email, created_at')
+      .in('id', coachIds as string[])
       .order('created_at', { ascending: false })
       .range(offset, offset + pageSize - 1);
 
     if (search && search.trim()) {
-      query = query.ilike('full_name', `%${search}%`).or(`email.ilike.%${search}%`);
+      profilesQuery = profilesQuery.ilike('full_name', `%${search}%`).or(`email.ilike.%${search}%`);
     }
 
-    const { data, error } = await query;
+    const { data, error } = await profilesQuery;
     if (error) throw error;
 
-    const ids = (data || []).map((d: any) => d.id);
-    if (ids.length === 0) return { data: [], total: 0 };
-
-    const { data: roles } = await supabase.from('user_roles').select('user_id, role').in('user_id', ids as string[]);
-    const roleMap: Record<string, string> = {};
-    (roles || []).forEach((r: any) => { roleMap[r.user_id] = r.role; });
-
-    const enriched = (data || []).map((d: any) => ({ ...d, role: roleMap[d.id] || 'client' }));
+    // Enrich results: all are coaches
+    const enriched = (data || []).map((d: any) => ({ ...d, role: 'coach' }));
     return { data: enriched, total: enriched.length };
   };
 
