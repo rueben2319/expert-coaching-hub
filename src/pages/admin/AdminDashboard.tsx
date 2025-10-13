@@ -172,21 +172,36 @@ export default function AdminDashboard() {
       {/* Recent Users */}
       <div className="mt-8">
         <h2 className="text-xl font-semibold mb-4">Recent Users</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="overflow-x-auto">
           {recentUsers.length === 0 ? (
             <div className="text-muted-foreground">No recent users</div>
           ) : (
-            recentUsers.map((u) => (
-              <Card key={u.id} className="hover:shadow transition-shadow">
-                <CardHeader>
-                  <CardTitle className="text-base">{u.full_name || 'Unnamed'}</CardTitle>
-                  <CardDescription className="line-clamp-2">{u.email}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground">Joined {new Date(u.created_at).toLocaleDateString()}</div>
-                </CardContent>
-              </Card>
-            ))
+            <table className="w-full table-auto border-collapse">
+              <thead>
+                <tr className="text-left text-sm text-muted-foreground border-b">
+                  <th className="py-3 px-4">Name</th>
+                  <th className="py-3 px-4">Email</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Joined</th>
+                  <th className="py-3 px-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentUsers.map((u) => (
+                  <tr key={u.id} className="hover:bg-muted-foreground/5">
+                    <td className="py-3 px-4 align-top">{u.full_name || 'Unnamed'}</td>
+                    <td className="py-3 px-4 align-top text-sm text-muted-foreground">{u.email}</td>
+                    <td className="py-3 px-4 align-top text-sm">{u.role}</td>
+                    <td className="py-3 px-4 align-top text-sm text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 px-4 align-top text-sm">
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/users/${u.id}`)}>
+                        View
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>
