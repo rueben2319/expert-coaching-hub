@@ -177,12 +177,13 @@ export default function Auth() {
     }
   };
 
-  const handleGoogleAuth = async () => {
+  const startOAuthWithRole = async (roleChoice: "client" | "coach") => {
     try {
-      setOauthLoading(true);
-      // Mark that we're initiating an OAuth flow so we can detect it after redirect
-      try { localStorage.setItem('oauth_provider', 'google'); } catch (e) { /* ignore */ }
+      // store desired role and provider flag so on return we can auto-assign
+      try { localStorage.setItem('oauth_provider', 'google'); localStorage.setItem('oauth_role', roleChoice); } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
+      setOauthRolePromptOpen(false);
+      setOauthLoading(true);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -207,8 +208,21 @@ export default function Auth() {
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
       setIsFromOAuth(false);
-      try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
+      try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
     }
+  };
+
+  const handleGoogleAuth = async () => {
+    // If user already picked a desired OAuth role before, start immediately
+    let desired: string | null = null;
+    try { desired = localStorage.getItem('oauth_role'); } catch (e) { desired = null; }
+    if (desired === 'client' || desired === 'coach') {
+      await startOAuthWithRole(desired as "client" | "coach");
+      return;
+    }
+
+    // Otherwise prompt user to pick role first
+    setOauthRolePromptOpen(true);
   };
 
   const handleRoleSubmit = async () => {
@@ -325,7 +339,7 @@ export default function Auth() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="•���••••••"
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
