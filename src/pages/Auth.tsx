@@ -315,7 +315,9 @@ export default function Auth() {
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
-              <div className="text-xs text-muted-foreground">Use at least 8 characters including a number and a symbol.</div>
+              { !isLogin && (
+                <div className="text-xs text-muted-foreground">Use at least 8 characters including a number and a symbol.</div>
+              ) }
             </div>
 
             {!isLogin && (
