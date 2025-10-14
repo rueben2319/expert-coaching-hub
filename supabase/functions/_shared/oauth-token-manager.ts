@@ -88,8 +88,8 @@ export class OAuthTokenManager {
         return false;
       }
 
-      const tokenInfo = await response.json();
-      
+      const tokenInfo: any = await response.json();
+
       // Check if token has required scopes for calendar access
       const requiredScopes = [
         'https://www.googleapis.com/auth/calendar',
@@ -101,7 +101,24 @@ export class OAuthTokenManager {
         tokenScopes.some((tokenScope: string) => tokenScope.includes('calendar'))
       );
 
-      return hasRequiredScopes && tokenInfo.exp > Math.floor(Date.now() / 1000);
+      // Determine expiry using either exp (epoch seconds) or expires_in (seconds from now)
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      let expiresAtSeconds: number | null = null;
+
+      if (typeof tokenInfo.exp === 'number') {
+        expiresAtSeconds = tokenInfo.exp;
+      } else if (typeof tokenInfo.exp === 'string' && /^\d+$/.test(tokenInfo.exp)) {
+        expiresAtSeconds = parseInt(tokenInfo.exp, 10);
+      } else if (typeof tokenInfo.expires_in === 'number') {
+        expiresAtSeconds = nowSeconds + tokenInfo.expires_in;
+      } else if (typeof tokenInfo.expires_in === 'string' && /^\d+$/.test(tokenInfo.expires_in)) {
+        expiresAtSeconds = nowSeconds + parseInt(tokenInfo.expires_in, 10);
+      }
+
+      // 30s buffer to avoid near-expiry tokens
+      const isNotExpired = typeof expiresAtSeconds === 'number' ? (expiresAtSeconds - nowSeconds) > 30 : false;
+
+      return hasRequiredScopes && isNotExpired;
     } catch (error) {
       console.error('Token validation error:', error);
       return false;
@@ -242,16 +259,33 @@ export class OAuthTokenManager {
     isExpired: boolean;
     expiresInMinutes: number;
   } {
-    const expiresAt = new Date(tokenInfo.exp * 1000);
-    const now = new Date();
-    const isExpired = expiresAt <= now;
-    const expiresInMinutes = Math.floor((expiresAt.getTime() - now.getTime()) / (1000 * 60));
+    const nowMs = Date.now();
+    const nowSeconds = Math.floor(nowMs / 1000);
+    let expiresAtSeconds: number;
 
-    return {
-      expiresAt,
-      isExpired,
-      expiresInMinutes,
-    };
+    if (typeof tokenInfo.exp === 'number') {
+      expiresAtSeconds = tokenInfo.exp;
+    } else if (typeof tokenInfo.exp === 'string' && /^\d+$/.test(tokenInfo.exp)) {
+      expiresAtSeconds = parseInt(tokenInfo.exp, 10);
+    } else if (typeof tokenInfo.expires_in === 'number') {
+      expiresAtSeconds = nowSeconds + tokenInfo.expires_in;
+    } else if (typeof tokenInfo.expires_in === 'string' && /^\d+$/.test(tokenInfo.expires_in)) {
+      expiresAtSeconds = nowSeconds + parseInt(tokenInfo.expires_in, 10);
+    } else {
+      // Fallback: mark as already expired
+      const expiredDate = new Date(nowMs - 1000);
+      return {
+        expiresAt: expiredDate,
+        isExpired: true,
+        expiresInMinutes: 0,
+      };
+    }
+
+    const expiresAt = new Date(expiresAtSeconds * 1000);
+    const isExpired = expiresAt.getTime() <= nowMs;
+    const expiresInMinutes = Math.max(0, Math.floor((expiresAt.getTime() - nowMs) / (1000 * 60)));
+
+    return { expiresAt, isExpired, expiresInMinutes };
   }
 }
 
