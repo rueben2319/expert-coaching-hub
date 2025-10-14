@@ -81,13 +81,109 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
     }
   };
 
+  // Basic HTML escaping for non-HTML formats
+  const escapeHtml = (input: string) =>
+    input
+      .replaceAll(/&/g, "&amp;")
+      .replaceAll(/</g, "&lt;")
+      .replaceAll(/>/g, "&gt;")
+      .replaceAll(/"/g, "&quot;")
+      .replaceAll(/'/g, "&#39;");
+
+  // Very small, conservative sanitizer for HTML content
+  const sanitizeHtml = (unsafeHtml: string) => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(unsafeHtml, "text/html");
+      const disallowedTags = new Set([
+        "script",
+        "style",
+        "iframe",
+        "object",
+        "embed",
+        "link",
+        "meta",
+        "form",
+      ]);
+
+      const walk = (node: Node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+
+          // Drop disallowed elements entirely
+          if (disallowedTags.has(el.tagName.toLowerCase())) {
+            el.remove();
+            return;
+          }
+
+          // Remove event handlers and javascript/data URLs
+          // Clone array because attributes is live
+          Array.from(el.attributes).forEach((attr) => {
+            const name = attr.name.toLowerCase();
+            const value = attr.value.trim();
+            const isEventHandler = name.startsWith("on");
+            const isUriAttr = name === "src" || name === "href" || name === "xlink:href";
+            const lowerValue = value.toLowerCase();
+            const hasJsProtocol = lowerValue.startsWith("javascript:");
+            const hasDataProtocol = lowerValue.startsWith("data:");
+            if (isEventHandler || (isUriAttr && (hasJsProtocol || hasDataProtocol))) {
+              el.removeAttribute(attr.name);
+            }
+          });
+
+          // Safe defaults for links
+          if (el.tagName.toLowerCase() === "a") {
+            if (!el.getAttribute("rel")) el.setAttribute("rel", "noopener noreferrer");
+            // Do not force target; allow default behavior
+          }
+
+          // Recurse
+          Array.from(el.childNodes).forEach(walk);
+        }
+      };
+
+      Array.from(doc.body.childNodes).forEach(walk);
+      return doc.body.innerHTML;
+    } catch {
+      // Fallback to escaped text if DOMParser fails
+      return escapeHtml(unsafeHtml);
+    }
+  };
+
+  // Lightweight markdown to HTML (very conservative)
+  const markdownToHtml = (md: string) => {
+    const escaped = escapeHtml(md);
+    // Bold **text** and italic *text*
+    const formatted = escaped
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/`([^`]+?)`/g, "<code>$1</code>");
+
+    // Paragraphs: split on blank lines, join with <p>
+    const paragraphs = formatted
+      .split(/\n{2,}/)
+      .map((p) => `<p>${p.replaceAll("\n", "<br/>")}</p>`) // single newlines -> <br/>
+      .join("");
+
+    return paragraphs;
+  };
+
+  const getRenderedHtml = () => {
+    const text = content?.text ?? "";
+    const format = content?.format ?? "plain";
+    if (format === "html") return sanitizeHtml(text);
+    if (format === "markdown") return sanitizeHtml(markdownToHtml(text));
+    // plain
+    return sanitizeHtml(`<p>${escapeHtml(text).replaceAll("\n", "<br/>")}</p>`);
+  };
+
   return (
     <div className="space-y-4">
       <div
         ref={contentRef}
         onScroll={handleScroll}
         className="prose prose-sm max-w-none dark:prose-invert max-h-96 overflow-y-auto border rounded-lg p-4"
-        dangerouslySetInnerHTML={{ __html: content.text }}
+        dangerouslySetInnerHTML={{ __html: getRenderedHtml() }}
       />
 
       {hasScrolledToBottom && !isCompleted && (
