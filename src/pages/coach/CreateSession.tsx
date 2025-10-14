@@ -101,8 +101,6 @@ const CreateSession = () => {
       setAttendeeError("Please select at least one attendee");
       return;
     }
-
-    setAttendeeError("");
     setIsCreating(true);
     try {
 

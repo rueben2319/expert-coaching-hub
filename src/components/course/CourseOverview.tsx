@@ -9,11 +9,15 @@ import { toast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 
 const courseSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
   description: z.string().trim().min(1, "Description is required").max(2000),
+  level: z.enum(["introduction", "intermediate", "advanced"]).optional(),
+  tag: z.string().trim().max(100, "Tag must be less than 100 characters").optional(),
+  category: z.string().trim().max(100, "Category must be less than 100 characters").optional(),
 });
 
 type CourseFormData = z.infer<typeof courseSchema>;
@@ -30,6 +34,9 @@ export function CourseOverview({ course }: CourseOverviewProps) {
     defaultValues: {
       title: course.title,
       description: course.description || "",
+      level: course.level || undefined,
+      tag: course.tag || "",
+      category: course.category || "",
     },
   });
 
@@ -73,12 +80,49 @@ export function CourseOverview({ course }: CourseOverviewProps) {
 
           <FormField
             control={form.control}
-            name="description"
+            name="level"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Description</FormLabel>
+                <FormLabel>Course Level</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select course level" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="introduction">Introduction</SelectItem>
+                    <SelectItem value="intermediate">Intermediate</SelectItem>
+                    <SelectItem value="advanced">Advanced</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Category</FormLabel>
                 <FormControl>
-                  <Textarea rows={6} {...field} />
+                  <Input placeholder="e.g., Business, Technology, Health" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="tag"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Tag</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g., Productivity, Leadership, Marketing" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
