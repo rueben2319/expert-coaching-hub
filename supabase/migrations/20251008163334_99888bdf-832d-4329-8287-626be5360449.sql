@@ -53,6 +53,18 @@ CREATE POLICY "Admins can view all profiles"
   ON public.profiles FOR SELECT
   USING (public.has_role(auth.uid(), 'admin'));
 
+-- Allow clients to view coach profiles for billing/coaching purposes
+CREATE POLICY "Clients can view coach profiles"
+  ON public.profiles FOR SELECT
+  USING (
+    public.has_role(auth.uid(), 'client') AND
+    EXISTS (
+      SELECT 1 FROM public.coach_packages
+      WHERE coach_packages.coach_id = profiles.id
+      AND coach_packages.is_active = true
+    )
+  );
+
 -- User roles policies
 CREATE POLICY "Users can view their own roles"
   ON public.user_roles FOR SELECT
@@ -81,9 +93,9 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'full_name', '')
   );
   
-  -- Assign default role as 'client'
+  -- Assign role from user metadata if provided, otherwise default to 'client'
   INSERT INTO public.user_roles (user_id, role)
-  VALUES (NEW.id, 'client');
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'role', 'client'));
   
   RETURN NEW;
 END;

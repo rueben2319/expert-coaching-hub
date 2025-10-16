@@ -90,16 +90,23 @@ export const GoogleCalendarStatus = ({
 
   // Listen for auth state changes (when user returns from OAuth)
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
         // Small delay to ensure token is available
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           checkCalendarAccess();
         }, 1000);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (!user) {

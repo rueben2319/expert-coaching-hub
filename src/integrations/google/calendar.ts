@@ -117,7 +117,7 @@ class GoogleCalendarService {
   }
 
   async createEvent(calendarId: string = 'primary', event: GoogleCalendarEvent): Promise<GoogleCalendarResponse> {
-    return this.makeCalendarRequest(`/calendars/${calendarId}/events?conferenceDataVersion=1`, {
+    return this.makeCalendarRequest(`/calendars/${calendarId}/events?conferenceDataVersion=1&sendUpdates=all`, {
       method: 'POST',
       body: JSON.stringify(event),
     });
@@ -135,9 +135,40 @@ class GoogleCalendarService {
   }
 
   async deleteEvent(calendarId: string = 'primary', eventId: string): Promise<void> {
-    await this.makeCalendarRequest(`/calendars/${calendarId}/events/${eventId}`, {
+    const accessToken = await this.getAccessToken();
+    
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`, {
       method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
     });
+
+    if (!response.ok) {
+      // For DELETE requests, 410 Gone means the event is already deleted (success)
+      if (response.status === 410) {
+        console.log('Calendar event already deleted (410 Gone) - treating as success');
+        return; // Don't throw error for already deleted events
+      }
+
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorMessage = error.error?.message || response.statusText;
+      
+      // Specific handling for deleted project error
+      if (errorMessage.includes('has been deleted') || errorMessage.includes('Project') && response.status === 403) {
+        throw new Error('Google Cloud Project has been deleted. Please reconfigure OAuth credentials in Google Cloud Console and update Supabase settings.');
+      }
+      
+      // Specific handling for other 403 errors
+      if (response.status === 403) {
+        throw new Error(`Google Calendar access denied: ${errorMessage}. Please check OAuth permissions and API quotas.`);
+      }
+      
+      throw new Error(`Google Calendar API error: ${errorMessage}`);
+    }
+
+    // DELETE requests typically don't return a body, so we don't parse JSON
   }
 
   async getEvent(calendarId: string = 'primary', eventId: string): Promise<GoogleCalendarResponse> {
@@ -197,6 +228,14 @@ class GoogleCalendarService {
         },
       },
     };
+
+    console.log('Creating Google Calendar event with attendees:', {
+      summary: meetingData.summary,
+      attendeeCount: meetingData.attendeeEmails.length,
+      attendees: meetingData.attendeeEmails,
+      startTime: meetingData.startTime,
+      endTime: meetingData.endTime,
+    });
 
     return this.createEvent('primary', event);
   }

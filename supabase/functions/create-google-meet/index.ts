@@ -63,6 +63,13 @@ serve(async (req: Request) => {
       throw new Error('Unauthorized');
     }
 
+    // Enforce role: only coaches or admins can create meetings for courses
+    const { data: roleRow, error: roleErr } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle();
+    const userRole = roleRow?.role || null;
+    if (userRole !== 'coach' && userRole !== 'admin') {
+      return new Response(JSON.stringify({ error: 'Forbidden: only coaches can create meetings' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const body: MeetingRequest = await req.json();
     const { summary, description, startTime, endTime, attendees, courseId } = body;
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { clientNavItems, clientSidebarSections } from '@/config/navigation';
@@ -20,9 +20,11 @@ import {
   ExternalLink,
   MessageCircle,
   Eye,
-  AlertCircle
+  AlertCircle,
+  User,
+  Check
 } from 'lucide-react';
-import { format, formatDistanceToNow, isAfter, isBefore, addHours } from 'date-fns';
+import { format, formatDistanceToNow, isAfter, isBefore, addHours, addMinutes } from 'date-fns';
 
 interface Meeting {
   id: string;
@@ -42,6 +44,7 @@ interface Meeting {
 export default function ClientSessions() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch meetings where user is an attendee
@@ -50,25 +53,165 @@ export default function ClientSessions() {
     queryFn: async () => {
       if (!user?.email) throw new Error('User email not available');
 
+      console.log('=== CLIENT SESSIONS DEBUG ===');
+      console.log('Current user:', { id: user.id, email: user.email });
+      console.log('Fetching meetings for client:', user.email);
+
       // First get all meetings, then filter client-side
       // This is more reliable than complex JSONB queries
       const { data, error } = await supabase
         .from('meetings')
-        .select('*')
+        .select(`
+          *,
+          user_id
+        `)
         .order('start_time', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching meetings:', error);
+        throw error;
+      }
+
+      console.log(`=== DATABASE QUERY RESULTS ===`);
+      console.log(`Total meetings in database: ${data?.length || 0}`);
       
+      if (data && data.length > 0) {
+        console.log('All meetings in database:');
+        data.forEach((meeting, index) => {
+          console.log(`${index + 1}. ID: ${meeting.id}, Summary: "${meeting.summary}", Attendees:`, meeting.attendees, `User ID: ${meeting.user_id}`);
+        });
+      }
+
       // Filter meetings where user is an attendee
       const userMeetings = (data || []).filter(meeting => {
         const attendees = Array.isArray(meeting.attendees) ? meeting.attendees : [];
-        return attendees.includes(user.email);
+        const isAttendee = attendees.includes(user.email);
+        console.log(`=== FILTERING MEETING ${meeting.id} ===`);
+        console.log(`Summary: "${meeting.summary}"`);
+        console.log(`Attendees array:`, attendees);
+        console.log(`User email: "${user.email}"`);
+        console.log(`Is attendee: ${isAttendee}`);
+        return isAttendee;
       });
+
+      console.log(`=== FINAL RESULTS ===`);
+      console.log(`Filtered to ${userMeetings.length} meetings for this client`);
+      if (userMeetings.length > 0) {
+        userMeetings.forEach((meeting, index) => {
+          console.log(`${index + 1}. "${meeting.summary}" - ${meeting.attendees?.length || 0} attendees`);
+        });
+      }
 
       return userMeetings as Meeting[];
     },
     enabled: !!user?.email,
   });
+
+  // TEMPORARY: Check all meetings in database (remove after debugging)
+  const { data: allMeetings } = useQuery({
+    queryKey: ['all-meetings-debug'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('meetings')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Error fetching all meetings:', error);
+        return [];
+      }
+
+      console.log('=== ALL MEETINGS IN DATABASE (LAST 10) ===');
+      data.forEach((meeting, index) => {
+        console.log(`${index + 1}. ${meeting.summary} - Created: ${meeting.created_at}`);
+        console.log(`   Attendees:`, meeting.attendees);
+        console.log(`   Status: ${meeting.status}, User ID: ${meeting.user_id}`);
+        console.log(`   Calendar Event ID: ${meeting.calendar_event_id}`);
+        console.log(`   Meet Link: ${meeting.meet_link}`);
+      });
+
+      return data;
+    },
+  });
+
+  // Get coach info for meetings
+  const { data: coachEmails } = useQuery({
+    queryKey: ['coach-emails', meetings?.map(m => m.user_id)],
+    queryFn: async () => {
+      if (!meetings?.length) return {};
+
+      const coachIds = [...new Set(meetings.map(m => m.user_id))];
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('id', coachIds);
+
+      if (error) {
+        console.error('Error fetching coach emails:', error);
+        return {};
+      }
+
+      const emailMap = data.reduce((acc: Record<string, string>, profile) => {
+        acc[profile.id] = profile.email;
+        return acc;
+      }, {});
+
+      console.log('Coach emails:', emailMap);
+      return emailMap;
+    },
+    enabled: !!meetings?.length,
+  });
+
+  // Get acceptance status for meetings
+  const { data: acceptedMeetings } = useQuery({
+    queryKey: ['client-meeting-acceptances', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return {};
+
+      const { data, error } = await supabase
+        .from('meeting_analytics')
+        .select('meeting_id, event_type')
+        .eq('user_id', user.id)
+        .eq('event_type', 'invitation_accepted');
+
+      if (error) {
+        console.error('Error fetching meeting acceptances:', error);
+        return {};
+      }
+
+      // Create a map of meeting_id -> accepted status
+      const acceptanceMap: Record<string, boolean> = {};
+      data.forEach(record => {
+        acceptanceMap[record.meeting_id] = true;
+      });
+
+      return acceptanceMap;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Accept meeting invitation
+  const acceptInvitation = async (meeting: Meeting) => {
+    try {
+      await supabase.from('meeting_analytics').insert({
+        meeting_id: meeting.id,
+        user_id: user?.id,
+        event_type: 'invitation_accepted',
+        event_data: {
+          timestamp: new Date().toISOString(),
+          user_role: 'client'
+        },
+      });
+
+      // Refresh the acceptance status
+      queryClient.invalidateQueries({ queryKey: ['client-meeting-acceptances', user?.id] });
+
+      // Could also send a notification or update to coach here
+    } catch (error) {
+      console.error('Error accepting invitation:', error);
+    }
+  };
 
   // Get meeting status with color coding
   const getMeetingStatus = (meeting: Meeting) => {
@@ -83,12 +226,27 @@ export default function ClientSessions() {
     return { status: 'completed', color: 'secondary', label: 'Completed' };
   };
 
+  // Check if coach is attending the meeting
+  const isCoachAttending = (meeting: Meeting) => {
+    const coachEmail = coachEmails?.[meeting.user_id];
+    if (!coachEmail) {
+      console.log(`No coach email found for meeting ${meeting.id}, user_id: ${meeting.user_id}`);
+      return false;
+    }
+    
+    const attendees = Array.isArray(meeting.attendees) ? meeting.attendees : [];
+    const isAttending = attendees.includes(coachEmail);
+    
+    console.log(`Meeting ${meeting.id}: Coach email ${coachEmail}, attendees: ${attendees.join(', ')}, is attending: ${isAttending}`);
+    return isAttending;
+  };
+
   // Check if meeting can be joined (within 15 minutes of start time)
   const canJoinMeeting = (meeting: Meeting) => {
     const now = new Date();
     const startTime = new Date(meeting.start_time);
     const endTime = new Date(meeting.end_time);
-    const joinWindowStart = addHours(startTime, -0.25); // 15 minutes before
+    const joinWindowStart = addMinutes(startTime, -15); // 15 minutes before
 
     return now >= joinWindowStart && now <= endTime && meeting.status !== 'cancelled';
   };
@@ -252,21 +410,26 @@ export default function ClientSessions() {
                           </div>
                         </div>
                       </div>
-
-                      {/* Attendees */}
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm">
-                          <div className="font-medium">Attendees</div>
-                          <div className="text-muted-foreground">
-                            {meeting.attendees?.length || 0} participants
-                          </div>
-                        </div>
-                      </div>
                     </div>
 
                     {/* Actions */}
                     <div className="flex items-center gap-2">
+                      {/* Accept Invitation Button - only show if not accepted yet */}
+                      {!acceptedMeetings?.[meeting.id] && (
+                        <Button onClick={() => acceptInvitation(meeting)} className="gap-2 bg-green-600 hover:bg-green-700">
+                          <Check className="h-4 w-4" />
+                          Accept Invitation
+                        </Button>
+                      )}
+
+                      {/* Show accepted badge if invitation was accepted */}
+                      {acceptedMeetings?.[meeting.id] && (
+                        <div className="flex items-center gap-2 text-green-600">
+                          <Check className="h-4 w-4" />
+                          <span className="text-sm font-medium">Accepted</span>
+                        </div>
+                      )}
+
                       {meeting.meet_link && canJoin && (
                         <Button onClick={() => joinMeeting(meeting)} className="gap-2">
                           <Video className="h-4 w-4" />
@@ -297,8 +460,6 @@ export default function ClientSessions() {
           </div>
         </div>
       )}
-
-      {/* Past Sessions */}
       {pastMeetings.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Past Sessions</h2>
@@ -352,9 +513,14 @@ export default function ClientSessions() {
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4 text-muted-foreground" />
                         <div className="text-sm">
-                          <div className="font-medium">Attendees</div>
-                          <div className="text-muted-foreground">
+                          <div className="font-medium flex items-center gap-2">
                             {meeting.attendees?.length || 0} participants
+                            {isCoachAttending(meeting) && (
+                              <div className="flex items-center gap-1 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
+                                <User className="h-3 w-3" />
+                                Coach attending
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -388,7 +554,7 @@ export default function ClientSessions() {
             <p className="text-muted-foreground mb-4">
               {searchQuery 
                 ? "No sessions match your search criteria." 
-                : "You don't have any scheduled sessions yet."
+                : "You don't have any scheduled sessions yet. Your coach will invite you to sessions when they're created."
               }
             </p>
             {searchQuery && (

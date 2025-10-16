@@ -70,6 +70,131 @@ export type Database = {
           },
         ]
       }
+      client_subscriptions: {
+        Row: {
+          billing_cycle: string
+          client_id: string
+          coach_id: string
+          created_at: string
+          end_date: string | null
+          id: string
+          package_id: string
+          payment_method: string | null
+          renewal_date: string | null
+          start_date: string
+          status: string
+          transaction_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          billing_cycle: string
+          client_id: string
+          coach_id: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          package_id: string
+          payment_method?: string | null
+          renewal_date?: string | null
+          start_date?: string
+          status?: string
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          billing_cycle?: string
+          client_id?: string
+          coach_id?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          package_id?: string
+          payment_method?: string | null
+          renewal_date?: string | null
+          start_date?: string
+          status?: string
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_subscriptions_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "coach_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_packages: {
+        Row: {
+          coach_id: string
+          created_at: string
+          description: string | null
+          features: Json
+          id: string
+          is_active: boolean
+          max_clients: number | null
+          name: string
+          price_monthly: number
+          price_yearly: number
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          description?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean
+          max_clients?: number | null
+          name: string
+          price_monthly: number
+          price_yearly: number
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          description?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean
+          max_clients?: number | null
+          name?: string
+          price_monthly?: number
+          price_yearly?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      coach_settings: {
+        Row: {
+          coach_id: string
+          created_at: string
+          id: string
+          paychangu_enabled: boolean
+          paychangu_secret_key: string | null
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          id?: string
+          paychangu_enabled?: boolean
+          paychangu_secret_key?: string | null
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          id?: string
+          paychangu_enabled?: boolean
+          paychangu_secret_key?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       coach_subscriptions: {
         Row: {
           billing_cycle: string
@@ -239,31 +364,40 @@ export type Database = {
       }
       courses: {
         Row: {
+          category: string | null
           coach_id: string
           created_at: string
           description: string | null
           id: string
+          level: Database["public"]["Enums"]["course_level"] | null
           status: Database["public"]["Enums"]["course_status"]
+          tag: string | null
           thumbnail_url: string | null
           title: string
           updated_at: string
         }
         Insert: {
+          category?: string | null
           coach_id: string
           created_at?: string
           description?: string | null
           id?: string
+          level?: Database["public"]["Enums"]["course_level"] | null
           status?: Database["public"]["Enums"]["course_status"]
+          tag?: string | null
           thumbnail_url?: string | null
           title: string
           updated_at?: string
         }
         Update: {
+          category?: string | null
           coach_id?: string
           created_at?: string
           description?: string | null
           id?: string
+          level?: Database["public"]["Enums"]["course_level"] | null
           status?: Database["public"]["Enums"]["course_status"]
+          tag?: string | null
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
@@ -733,6 +867,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      get_coach_paychangu_secret: {
+        Args: { _coach_id: string }
+        Returns: string
+      }
       get_next_lesson: {
         Args: { _course_id: string; _user_id: string }
         Returns: string
@@ -752,6 +890,7 @@ export type Database = {
     Enums: {
       app_role: "client" | "coach" | "admin"
       content_type: "video" | "text" | "quiz" | "interactive" | "file"
+      course_level: "introduction" | "intermediate" | "advanced"
       course_status: "draft" | "published" | "archived"
       enrollment_status: "active" | "completed" | "dropped"
     }
@@ -883,6 +1022,7 @@ export const Constants = {
     Enums: {
       app_role: ["client", "coach", "admin"],
       content_type: ["video", "text", "quiz", "interactive", "file"],
+      course_level: ["introduction", "intermediate", "advanced"],
       course_status: ["draft", "published", "archived"],
       enrollment_status: ["active", "completed", "dropped"],
     },

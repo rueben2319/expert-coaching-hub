@@ -9,11 +9,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function Courses() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [enrollmentDialog, setEnrollmentDialog] = useState<{
+    open: boolean;
+    course: any;
+  }>({ open: false, course: null });
 
   const { data: courses, isLoading } = useQuery({
     queryKey: ["published-courses"],
@@ -31,6 +37,40 @@ export default function Courses() {
       return data;
     },
   });
+
+  const { data: hasActiveSubscription } = useQuery({
+    queryKey: ["has-active-subscription", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_subscriptions")
+        .select("status")
+        .eq("client_id", user!.id)
+        .eq("status", "active")
+        .limit(1);
+
+      if (error) throw error;
+      return data && data.length > 0;
+    },
+  });
+
+  const checkCoachSubscription = async (coachId: string) => {
+    if (!user?.id) return false;
+
+    const { data, error } = await supabase
+      .from("client_subscriptions")
+      .select(`
+        status,
+        coach_packages!inner(coach_id)
+      `)
+      .eq("client_id", user.id)
+      .eq("status", "active")
+      .eq("coach_packages.coach_id", coachId)
+      .limit(1);
+
+    if (error) return false;
+    return data && data.length > 0;
+  };
 
   const enrollMutation = useMutation({
     mutationFn: async (courseId: string) => {
@@ -60,6 +100,36 @@ export default function Courses() {
     return course.course_enrollments?.some((e: any) => e.user_id === user?.id);
   };
 
+  const handleEnrollClick = async (course: any) => {
+    if (isEnrolled(course)) {
+      navigate(`/client/course/${course.id}`);
+      return;
+    }
+
+    // Check if user has subscription with this specific coach
+    const hasCoachSubscription = await checkCoachSubscription(course.coach_id);
+
+    if (hasCoachSubscription) {
+      // User has subscription with this coach, enroll directly
+      enrollMutation.mutate(course.id);
+    } else {
+      // User doesn't have subscription with this coach, show payment options
+      setEnrollmentDialog({ open: true, course });
+    }
+  };
+
+  const handleOneTimePayment = async (course: any) => {
+    // TODO: Implement one-time payment for course
+    toast({ title: "One-time payment coming soon!", description: "This feature is not yet implemented." });
+    setEnrollmentDialog({ open: false, course: null });
+  };
+
+  const handleSubscribeToCoach = () => {
+    // Navigate to packages page, but ideally filter by the coach
+    navigate("/client/packages");
+    setEnrollmentDialog({ open: false, course: null });
+  };
+
   return (
     <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
@@ -77,10 +147,29 @@ export default function Courses() {
             {courses.map((course) => (
               <Card key={course.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
+                  <div className="flex justify-between items-start mb-2">
+                    {course.level && (
+                      <Badge variant="outline" className="capitalize">
+                        {course.level}
+                      </Badge>
+                    )}
+                  </div>
                   <CardTitle className="line-clamp-2">{course.title}</CardTitle>
                   <CardDescription className="line-clamp-3">
                     {course.description}
                   </CardDescription>
+                  <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
+                    {course.category && (
+                      <span>
+                        <span className="font-medium">Category:</span> {course.category}
+                      </span>
+                    )}
+                    {course.tag && (
+                      <span>
+                        <span className="font-medium">Tag:</span> {course.tag}
+                      </span>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
@@ -94,7 +183,7 @@ export default function Courses() {
                     ) : (
                       <Button
                         className="w-full"
-                        onClick={() => enrollMutation.mutate(course.id)}
+                        onClick={() => handleEnrollClick(course)}
                         disabled={enrollMutation.isPending}
                       >
                         {enrollMutation.isPending ? "Enrolling..." : "Enroll Now"}
@@ -117,6 +206,44 @@ export default function Courses() {
           </Card>
         )}
       </div>
+
+      {/* Enrollment Options Dialog */}
+      <Dialog open={enrollmentDialog.open} onOpenChange={(open) => setEnrollmentDialog({ open, course: open ? enrollmentDialog.course : null })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Access This Course</DialogTitle>
+            <DialogDescription>
+              To enroll in "{enrollmentDialog.course?.title}", choose how you'd like to access this course.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3">
+              <Button
+                variant="outline"
+                onClick={() => handleOneTimePayment(enrollmentDialog.course)}
+                className="h-auto p-4 flex flex-col items-start space-y-2"
+              >
+                <div className="font-semibold">Pay for This Course Only</div>
+                <div className="text-sm text-muted-foreground text-left">
+                  One-time payment to access this specific course permanently
+                </div>
+                <div className="text-sm font-medium text-orange-600">Coming Soon</div>
+              </Button>
+
+              <Button
+                onClick={handleSubscribeToCoach}
+                className="h-auto p-4 flex flex-col items-start space-y-2"
+              >
+                <div className="font-semibold">Subscribe to Coach Packages</div>
+                <div className="text-sm text-muted-foreground text-left">
+                  Get unlimited access to all courses from this coach plus premium coaching services
+                </div>
+                <div className="text-sm font-medium">View Coach Packages →</div>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

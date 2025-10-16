@@ -17,6 +17,8 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
 
+const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+
 interface TokenStatus {
   hasTokens: boolean;
   isExpired: boolean;
@@ -60,7 +62,7 @@ export function TokenManagementDashboard({
         throw new Error('No session found');
       }
 
-      const response = await fetch(`/functions/v1/get-token-status`, {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/get-token-status`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -69,7 +71,9 @@ export function TokenManagementDashboard({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch token status');
+        const errorText = await response.text();
+        console.error('Token status fetch failed:', response.status, errorText);
+        throw new Error(`Failed to fetch token status: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -103,7 +107,7 @@ export function TokenManagementDashboard({
         throw new Error('No session found');
       }
 
-      const response = await fetch(`/functions/v1/refresh-google-token`, {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/refresh-google-token`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -112,7 +116,9 @@ export function TokenManagementDashboard({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to refresh token');
+        const errorText = await response.text();
+        console.error('Token refresh failed:', response.status, errorText);
+        throw new Error(`Failed to refresh token: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();

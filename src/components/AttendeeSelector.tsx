@@ -96,8 +96,31 @@ export const AttendeeSelector = ({
         
         {!courseId && (
           <p className="text-xs text-muted-foreground">
-            Showing all clients from your courses (no course selected)
+            Showing all clients from your courses
           </p>
+        )}
+
+        {/* Quick Select All Button */}
+        {!courseId && clients && clients.length > 0 && (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const allClientEmails = clients.map(client => client.email);
+                const newEmails = selectedEmails.length === clients.length 
+                  ? [] // If all are selected, deselect all
+                  : [...new Set([...selectedEmails.filter(email => !clients.some(client => client.email === email)), ...allClientEmails])];
+                onEmailsChange(newEmails);
+              }}
+              className="text-xs"
+            >
+              {selectedEmails.filter(email => clients.some(client => client.email === email)).length === clients.length
+                ? "Deselect All"
+                : "Select All Clients"
+              }
+            </Button>
+          </div>
         )}
 
         <Popover open={open} onOpenChange={setOpen}>
@@ -162,6 +185,24 @@ export const AttendeeSelector = ({
         </Popover>
       </div>
 
+      {/* Manual Email Input - Primary Option */}
+      <div className="space-y-2">
+        <Label htmlFor="manual-emails" className="flex items-center gap-2">
+          <Mail className="h-4 w-4" />
+          Add Attendee Emails
+        </Label>
+        <Textarea
+          id="manual-emails"
+          placeholder="Enter email addresses separated by commas&#10;Example: client1@example.com, client2@example.com"
+          rows={3}
+          value={manualEmails}
+          onChange={(e) => setManualEmails(e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          Add attendee email addresses. You can also select from enrolled clients above.
+        </p>
+      </div>
+
       {/* Selected Attendees */}
       {selectedEmails.length > 0 && (
         <div className="space-y-2">
@@ -207,24 +248,6 @@ export const AttendeeSelector = ({
           </div>
         </div>
       )}
-
-      {/* Manual Email Input */}
-      <div className="space-y-2">
-        <Label htmlFor="manual-emails" className="flex items-center gap-2">
-          <Mail className="h-4 w-4" />
-          Additional Emails (Optional)
-        </Label>
-        <Textarea
-          id="manual-emails"
-          placeholder="user1@example.com, user2@example.com"
-          rows={2}
-          value={manualEmails}
-          onChange={(e) => setManualEmails(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          Add additional email addresses separated by commas
-        </p>
-      </div>
 
       {error && (
         <p className="text-sm text-destructive">{error}</p>
