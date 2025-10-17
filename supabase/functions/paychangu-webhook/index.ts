@@ -106,7 +106,7 @@ serve(async (req: Request) => {
     // Find transaction
     const { data: tx, error: txErr } = await supabase
       .from("transactions")
-      .select("id, user_id, amount, currency, status, order_id, subscription_id, client_subscription_id")
+      .select("id, user_id, amount, currency, status, subscription_id")
       .eq("transaction_ref", tx_ref)
       .single();
     if (txErr || !tx) throw new Error("Transaction not found");
@@ -188,98 +188,6 @@ serve(async (req: Request) => {
         }
       }
 
-      if (tx.order_id) {
-        // Mark order paid
-        const now = new Date();
-        await (supabase.from("client_orders") as any)
-          .update({ status: "paid", start_date: now.toISOString() })
-          .eq("id", tx.order_id);
-
-        const { data: invNum } = await supabase.rpc("generate_invoice_number");
-        await (supabase.from("invoices") as any).insert({
-          user_id: tx.user_id,
-          amount: tx.amount,
-          currency: tx.currency,
-          invoice_number: invNum ?? `INV-${Date.now()}`,
-          invoice_date: now.toISOString(),
-          payment_method: "paychangu",
-          description: "Order payment",
-          status: "paid",
-          order_id: tx.order_id,
-          subscription_id: null,
-        });
-      }
-
-      if (tx.client_subscription_id) {
-        // Handle client subscription to coach package
-        console.log("Activating client subscription:", tx.client_subscription_id);
-        const now = new Date();
-
-        // Get subscription details
-        const { data: sub, error: subErr } = await supabase
-          .from("client_subscriptions")
-          .select("billing_cycle")
-          .eq("id", tx.client_subscription_id)
-          .single();
-
-        if (!subErr && sub) {
-          const renewal = new Date(now);
-          if (sub.billing_cycle === "yearly") {
-            renewal.setFullYear(now.getFullYear() + 1);
-          } else {
-            renewal.setMonth(now.getMonth() + 1);
-          }
-
-          const updateData = {
-            status: "active",
-            renewal_date: renewal.toISOString(),
-            transaction_id: tx.id,
-            start_date: now.toISOString()
-          };
-          console.log("Updating client subscription with:", updateData);
-
-          const { error: updateErr } = await supabase
-            .from("client_subscriptions")
-            .update(updateData)
-            .eq("id", tx.client_subscription_id);
-
-          if (updateErr) {
-            console.error("Error updating client subscription:", updateErr);
-            throw new Error("Failed to update client subscription status");
-          } else {
-            console.log("Successfully activated client subscription");
-          }
-
-          // Create invoice
-          const { data: invNum } = await supabase.rpc("generate_invoice_number");
-          const invoiceData = {
-            user_id: tx.user_id,
-            amount: tx.amount,
-            currency: tx.currency,
-            invoice_number: invNum ?? `INV-${Date.now()}`,
-            invoice_date: now.toISOString(),
-            payment_method: "paychangu",
-            description: "Coach package subscription",
-            status: "paid",
-            order_id: null,
-            subscription_id: tx.client_subscription_id,
-          };
-          console.log("Creating invoice for client subscription:", invoiceData);
-
-          const { error: invErr } = await supabase
-            .from("invoices")
-            .insert(invoiceData);
-
-          if (invErr) {
-            console.error("Error creating invoice for client subscription:", invErr);
-            // Don't throw here as subscription is already updated
-          } else {
-            console.log("Successfully created invoice for client subscription");
-          }
-        } else {
-          console.error("Client subscription not found or error:", subErr);
-        }
-      }
     }
 
     // Always return JSON for webhook acknowledgement

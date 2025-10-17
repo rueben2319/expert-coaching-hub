@@ -23,17 +23,15 @@ serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const [invoicesRes, ordersRes, subsRes, txsRes] = await Promise.all([
-      supabase.from("invoices").select("id, invoice_number, amount, currency, status, invoice_date, description, payment_method, order_id, subscription_id").eq("user_id", user.id).order("invoice_date", { ascending: false }),
-      supabase.from("client_orders").select("id, type, amount, currency, status, created_at, course_id, coach_id").eq("client_id", user.id).order("created_at", { ascending: false }),
+    const [invoicesRes, subsRes, txsRes] = await Promise.all([
+      supabase.from("invoices").select("id, invoice_number, amount, currency, status, invoice_date, description, payment_method, subscription_id").eq("user_id", user.id).order("invoice_date", { ascending: false }),
       supabase.from("coach_subscriptions").select("id, status, tier_id, start_date, end_date, renewal_date, billing_cycle").eq("coach_id", user.id).order("start_date", { ascending: false }),
-      supabase.from("transactions").select("id, transaction_ref, amount, currency, status, created_at, order_id, subscription_id").eq("user_id", user.id).order("created_at", { ascending: false }),
+      supabase.from("transactions").select("id, transaction_ref, amount, currency, status, created_at, subscription_id").eq("user_id", user.id).order("created_at", { ascending: false }),
     ]);
 
     return new Response(
       JSON.stringify({
         invoices: invoicesRes.data ?? [],
-        orders: ordersRes.data ?? [],
         subscriptions: subsRes.data ?? [],
         transactions: txsRes.data ?? [],
       }),

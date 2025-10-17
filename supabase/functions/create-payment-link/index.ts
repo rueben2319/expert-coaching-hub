@@ -17,15 +17,12 @@ const corsHeaders = {
 
 type BillingCycle = "monthly" | "yearly";
 
-type Mode = "coach_subscription" | "client_one_time" | "client_subscription";
+type Mode = "coach_subscription";
 
 interface CreatePaymentRequest {
   mode: Mode;
   tier_id?: string;
   billing_cycle?: BillingCycle;
-  coach_id?: string;
-  course_id?: string | null;
-  amount?: number; // required for client_* modes unless price derived elsewhere
   currency?: string; // defaults to PAYCHANGU_DEFAULT_CURRENCY or MWK
   return_url?: string;
   metadata?: Record<string, unknown>;
@@ -46,7 +43,6 @@ serve(async (req: Request) => {
   // Initialize variables for cleanup in catch block
   let supabase: any;
   let subscriptionId: string | null = null;
-  let orderId: string | null = null;
 
   try {
     console.log("Starting payment link creation");
@@ -126,57 +122,13 @@ serve(async (req: Request) => {
 
     if (!mode) throw new Error("mode is required");
 
-    // For client payments (subscription or one-time), try to use coach's PayChangu secret
-    let paymentSecret = paychanguSecret; // Default to platform secret
-    let usingCoachSecret = false;
-
-    if ((mode === "client_subscription" || mode === "client_one_time") && body.coach_id) {
-      console.log("Looking for coach PayChangu secret for coach:", body.coach_id);
-      const { data: coachSettings, error: coachError } = await supabase
-        .from("coach_settings")
-        .select("paychangu_secret_key, paychangu_enabled")
-        .eq("coach_id", body.coach_id)
-        .eq("paychangu_enabled", true)
-        .maybeSingle();
-
-      if (coachError) {
-        console.log("Error fetching coach settings:", coachError);
-        console.log("Falling back to platform PayChangu secret");
-      } else if (coachSettings?.paychangu_secret_key && coachSettings.paychangu_enabled) {
-        console.log("Found coach PayChangu secret, validating it...");
-        // Basic validation
-        if (!coachSettings.paychangu_secret_key || coachSettings.paychangu_secret_key.length < 20) {
-          console.log("Coach PayChangu secret appears invalid, falling back to platform secret");
-          console.log("Secret length:", coachSettings.paychangu_secret_key?.length || 0);
-        } else {
-          console.log("Using coach's PayChangu secret key");
-          paymentSecret = coachSettings.paychangu_secret_key;
-          usingCoachSecret = true;
-        }
-      } else {
-        console.log("Coach has no PayChangu secret configured or disabled, using platform secret");
-      }
-    }
-
-    console.log("Payment configuration:", {
-      mode,
-      usingCoachSecret,
-      hasCoachId: !!body.coach_id,
-      paymentSecretLength: paymentSecret.length,
-      paymentSecretPrefix: paymentSecret.substring(0, 10) + "..."
-    });
+    // Use platform PayChangu secret for all payments
+    const paymentSecret = paychanguSecret;
 
     // For coach subscription, ensure the user is a coach (or admin)
     if (mode === "coach_subscription") {
       if (userRole !== "coach" && userRole !== "admin") {
         return new Response(JSON.stringify({ error: "Forbidden: user must be a coach to subscribe to coach plans" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-    }
-
-    // For client modes, ensure user is a client (or admin)
-    if (mode === "client_one_time" || mode === "client_subscription") {
-      if (userRole !== "client" && userRole !== "admin") {
-        return new Response(JSON.stringify({ error: "Forbidden: user must be a client to purchase courses" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }
 
@@ -187,7 +139,6 @@ serve(async (req: Request) => {
     const currency = body.currency || defaultCurrency;
 
     let amount = body.amount ?? 0;
-    let orderId: string | null = null;
     let subscriptionId: string | null = null;
     let description = "";
 
@@ -227,79 +178,6 @@ serve(async (req: Request) => {
       if (subErr || !sub) throw new Error("Failed to create subscription record");
       subscriptionId = sub.id;
 
-    } else if (mode === "client_one_time") {
-      if (!body.coach_id) throw new Error("coach_id is required for client_one_time");
-      if (!body.course_id) throw new Error("course_id is required for client_one_time");
-      if (typeof body.amount !== "number" || body.amount <= 0) throw new Error("valid amount is required for client_one_time");
-      amount = body.amount;
-      description = `One-time purchase for course ${body.course_id}`;
-
-      const { data: ord, error: ordErr } = await supabase
-        .from("client_orders")
-        .insert({
-          client_id: user.id,
-          coach_id: body.coach_id,
-          type: "one_time",
-          amount,
-          currency,
-          status: "pending",
-          transaction_id: null,
-          course_id: body.course_id,
-          start_date: new Date().toISOString(),
-          end_date: null,
-        })
-        .select()
-        .single();
-      if (ordErr || !ord) throw new Error("Failed to create order record");
-      orderId = ord.id;
-
-    } else if (mode === "client_subscription") {
-      if (!body.coach_id) throw new Error("coach_id is required for client_subscription");
-      if (!body.package_id) throw new Error("package_id is required for client_subscription");
-      const cycle: BillingCycle = body.billing_cycle || "monthly";
-
-      console.log("Looking up coach package:", body.package_id);
-      const { data: coachPackage, error: packageErr } = await supabase
-        .from("coach_packages")
-        .select("id, name, price_monthly, price_yearly, coach_id")
-        .eq("id", body.package_id)
-        .eq("is_active", true)
-        .single();
-      console.log("Package lookup result:", { coachPackage, packageErr });
-      if (packageErr || !coachPackage) throw new Error("Package not found or inactive");
-
-      // Ensure the coach_id matches
-      if (coachPackage.coach_id !== body.coach_id) {
-        throw new Error("Package does not belong to the specified coach");
-      }
-
-      amount = cycle === "yearly" ? coachPackage.price_yearly : coachPackage.price_monthly;
-      description = `Subscription to ${coachPackage.name} (${cycle})`;
-
-      // Create client subscription record
-      console.log("Creating client subscription record...");
-      const subscriptionData = {
-        client_id: user.id,
-        coach_id: body.coach_id,
-        package_id: body.package_id,
-        billing_cycle: cycle,
-        start_date: new Date().toISOString(),
-        end_date: null,
-        renewal_date: null, // Will be set on activation
-        transaction_id: null,
-        payment_method: "paychangu",
-        status: "pending"
-      };
-      console.log("Subscription data:", subscriptionData);
-
-      const { data: sub, error: subErr } = await supabase
-        .from("client_subscriptions")
-        .insert(subscriptionData)
-        .select()
-        .single();
-      console.log("Subscription creation result:", { sub, subErr });
-      if (subErr || !sub) throw new Error("Failed to create subscription record");
-      subscriptionId = sub.id;
     } else {
       throw new Error("Unsupported mode");
     }
@@ -313,15 +191,8 @@ serve(async (req: Request) => {
       currency,
       status: "pending",
       gateway_response: null,
-      order_id: orderId,
+      subscription_id: subscriptionId,
     };
-
-    // Set the appropriate subscription ID based on mode
-    if (mode === "client_subscription") {
-      transactionData.client_subscription_id = subscriptionId;
-    } else {
-      transactionData.subscription_id = subscriptionId;
-    }
 
     console.log("Transaction data:", transactionData);
 
@@ -336,14 +207,10 @@ serve(async (req: Request) => {
 
     const callbackUrl = Deno.env.get("PAYCHANGU_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/paychangu-webhook`;
 
-    // Set return URL based on mode
+    // Set return URL for coach subscription
     let returnUrl = body.return_url;
     if (!returnUrl && appBaseUrl) {
-      if (mode === "coach_subscription") {
-        returnUrl = `${appBaseUrl}/coach/billing/success`;
-      } else {
-        returnUrl = `${appBaseUrl}/client/billing/success`; // For future client success page
-      }
+      returnUrl = `${appBaseUrl}/coach/billing/success`;
     }
     returnUrl = returnUrl || `${supabaseUrl}/functions/v1/paychangu-webhook`;
     console.log("Final return_url:", returnUrl);
@@ -366,7 +233,6 @@ serve(async (req: Request) => {
       },
       meta: {
         mode,
-        order_id: orderId,
         subscription_id: subscriptionId,
         user_id: user.id,
         ...body.metadata,
@@ -406,39 +272,16 @@ serve(async (req: Request) => {
       // Clean up subscription records that were created but never paid for
       if (subscriptionId) {
         console.log("Deleting unpaid subscription:", subscriptionId);
-
-        // Try to delete from client_subscriptions first
-        const { error: clientSubErr } = await supabase
-          .from("client_subscriptions")
+        await supabase
+          .from("coach_subscriptions")
           .delete()
           .eq("id", subscriptionId);
-
-        // If that didn't work, try coach_subscriptions
-        if (clientSubErr) {
-          console.log("Not a client subscription, trying coach subscription");
-          const { error: coachSubErr } = await supabase
-            .from("coach_subscriptions")
-            .delete()
-            .eq("id", subscriptionId);
-
-          if (coachSubErr) {
-            console.log("Failed to delete subscription from either table:", coachSubErr);
-          }
-        }
-      }
-
-      // Clean up order records that were created but never paid for
-      if (orderId) {
-        console.log("Deleting unpaid order:", orderId);
-        await supabase.from("client_orders").delete().eq("id", orderId);
       }
 
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
         details: data,
         debug: {
-          usingCoachSecret,
-          coachId: body.coach_id,
           mode,
           responseStatus: resp.status
         }
@@ -449,7 +292,6 @@ serve(async (req: Request) => {
       JSON.stringify({
         checkout_url: data.data.checkout_url,
         transaction_ref: tx_ref,
-        order_id: orderId,
         subscription_id: subscriptionId,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -461,21 +303,7 @@ serve(async (req: Request) => {
     try {
       if (subscriptionId) {
         console.log("Cleaning up unpaid subscription due to error:", subscriptionId);
-        // Try client_subscriptions first
-        const { error: clientSubErr } = await supabase
-          .from("client_subscriptions")
-          .delete()
-          .eq("id", subscriptionId);
-
-        if (clientSubErr) {
-          // Try coach_subscriptions
-          await supabase.from("coach_subscriptions").delete().eq("id", subscriptionId);
-        }
-      }
-
-      if (orderId) {
-        console.log("Cleaning up unpaid order due to error:", orderId);
-        await supabase.from("client_orders").delete().eq("id", orderId);
+        await supabase.from("coach_subscriptions").delete().eq("id", subscriptionId);
       }
     } catch (cleanupError) {
       console.error("Error during cleanup:", cleanupError);
