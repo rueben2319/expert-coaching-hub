@@ -76,14 +76,33 @@ export default function Courses() {
               <Card key={course.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex justify-between items-start">
-                    <Badge variant={course.status === "published" ? "default" : "secondary"}>
-                      {course.status}
-                    </Badge>
+                    <div className="flex gap-2">
+                      <Badge variant={course.status === "published" ? "default" : "secondary"}>
+                        {course.status}
+                      </Badge>
+                      {course.level && (
+                        <Badge variant="outline" className="capitalize">
+                          {course.level}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <CardTitle className="line-clamp-2">{course.title}</CardTitle>
                   <CardDescription className="line-clamp-3">
                     {course.description}
                   </CardDescription>
+                  <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
+                    {course.category && (
+                      <span>
+                        <span className="font-medium">Category:</span> {course.category}
+                      </span>
+                    )}
+                    {course.tag && (
+                      <span>
+                        <span className="font-medium">Tag:</span> {course.tag}
+                      </span>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">

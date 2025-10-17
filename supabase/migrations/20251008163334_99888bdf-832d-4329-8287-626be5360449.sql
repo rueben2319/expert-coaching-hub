@@ -93,9 +93,9 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'full_name', '')
   );
   
-  -- Assign default role as 'client'
+  -- Assign role from user metadata if provided, otherwise default to 'client'
   INSERT INTO public.user_roles (user_id, role)
-  VALUES (NEW.id, 'client');
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'role', 'client'));
   
   RETURN NEW;
 END;

@@ -1,8 +1,93 @@
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, Users, BookOpen, TrendingUp } from "lucide-react";
+import { GraduationCap, Users, BookOpen, TrendingUp, Star } from "lucide-react";
+
+const sampleCourses = [
+  {
+    id: "c1",
+    title: "Foundations of Product Management",
+    coach: "Ava Johnson",
+    duration: "6 weeks",
+    students: 1280,
+    image: "/placeholder.svg",
+  },
+  {
+    id: "c2",
+    title: "Intro to Growth Marketing",
+    coach: "Liam Smith",
+    duration: "4 weeks",
+    students: 920,
+    image: "/placeholder.svg",
+  },
+  {
+    id: "c3",
+    title: "Advanced Coaching Techniques",
+    coach: "Sophia Lee",
+    duration: "8 weeks",
+    students: 540,
+    image: "/placeholder.svg",
+  },
+];
+
+const sampleCoaches = [
+  { id: "co1", name: "Ava Johnson", title: "Product Coach", reviews: 124 },
+  { id: "co2", name: "Liam Smith", title: "Growth Coach", reviews: 98 },
+  { id: "co3", name: "Sophia Lee", title: "Leadership Coach", reviews: 76 },
+];
+
+const sampleReviews = [
+  { id: "r1", name: "Mark", rating: 5, text: "Transformed my career — the coaching was practical and supportive." },
+  { id: "r2", name: "Rita", rating: 5, text: "Amazing course structure and actionable feedback from coaches." },
+  { id: "r3", name: "Joel", rating: 4, text: "Great insights and measurable progress over the weeks." },
+];
+
+const CourseCard = ({ course }: { course: typeof sampleCourses[number] }) => (
+  <div className="bg-card/50 rounded-2xl shadow-sm overflow-hidden">
+    <div className="h-40 bg-muted-foreground/5 flex items-center justify-center">
+      <img src={course.image} alt={course.title} className="h-28 object-contain" />
+    </div>
+    <div className="p-4">
+      <h4 className="font-semibold text-lg">{course.title}</h4>
+      <p className="text-sm text-muted-foreground">{course.coach} • {course.duration}</p>
+      <div className="mt-3 flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">{course.students.toLocaleString()} students</div>
+        <Button size="sm" className="px-3" onClick={() => { window.location.href = '/auth'; }}>
+          View
+        </Button>
+      </div>
+    </div>
+  </div>
+);
+
+const CoachCard = ({ coach }: { coach: typeof sampleCoaches[number] }) => (
+  <div className="bg-gradient-to-br from-white/20 to-card/20 border rounded-2xl p-4 text-center">
+    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3 text-primary">
+      <Users className="w-7 h-7" />
+    </div>
+    <h5 className="font-semibold">{coach.name}</h5>
+    <p className="text-sm text-muted-foreground">{coach.title}</p>
+    <div className="mt-2 text-sm text-muted-foreground">{coach.reviews} reviews</div>
+  </div>
+);
+
+const ReviewItem = ({ r }: { r: typeof sampleReviews[number] }) => (
+  <div className="flex-shrink-0 w-80 bg-card/30 rounded-2xl p-4 mr-4">
+    <div className="flex items-center gap-3 mb-2">
+      <div className="w-10 h-10 rounded-full bg-muted-foreground/10 flex items-center justify-center">{r.name[0]}</div>
+      <div>
+        <div className="font-medium">{r.name}</div>
+        <div className="flex items-center text-yellow-400 text-sm">
+          {Array.from({ length: r.rating }).map((_, i) => (
+            <Star key={i} className="w-4 h-4" />
+          ))}
+        </div>
+      </div>
+    </div>
+    <div className="text-sm text-muted-foreground">{r.text}</div>
+  </div>
+);
 
 const Index = () => {
   const navigate = useNavigate();
@@ -39,7 +124,7 @@ const Index = () => {
             <Button variant="ghost" onClick={() => navigate("/auth")}>
               Sign In
             </Button>
-            <Button 
+            <Button
               className="bg-gradient-to-r from-primary to-accent hover:opacity-90"
               onClick={() => navigate("/auth")}
             >
@@ -62,15 +147,15 @@ const Index = () => {
               Connect with expert coaches, create engaging courses, and accelerate your growth journey
             </p>
             <div className="flex flex-wrap gap-4 justify-center">
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-lg px-8"
                 onClick={() => navigate("/auth")}
               >
                 Start Learning
               </Button>
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 variant="outline"
                 className="text-lg px-8"
                 onClick={() => navigate("/auth")}
@@ -81,39 +166,48 @@ const Index = () => {
           </div>
         </section>
 
-        <section className="container mx-auto px-4 py-20 bg-card/30 backdrop-blur-sm rounded-3xl my-12">
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="text-center p-6">
-              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Users className="w-8 h-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">For Students</h3>
-              <p className="text-muted-foreground">
-                Access expert-led courses, track your progress, and achieve your learning goals
-              </p>
-            </div>
+        <section className="container mx-auto px-4 py-12">
+          <h2 className="text-2xl font-semibold mb-6 text-center">Featured Courses</h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {sampleCourses.map((c) => (
+              <CourseCard key={c.id} course={c} />
+            ))}
+          </div>
+        </section>
 
-            <div className="text-center p-6">
-              <div className="w-16 h-16 bg-accent/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <BookOpen className="w-8 h-8 text-accent" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">For Coaches</h3>
-              <p className="text-muted-foreground">
-                Create and publish courses, manage students, and grow your coaching business
-              </p>
-            </div>
+        <section className="container mx-auto px-4 py-12 bg-card/30 backdrop-blur-sm rounded-3xl my-12">
+          <h2 className="text-2xl font-semibold mb-6 text-center">Top Coaches</h2>
+          <div className="grid sm:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {sampleCoaches.map((co) => (
+              <CoachCard key={co.id} coach={co} />
+            ))}
+          </div>
+        </section>
 
-            <div className="text-center p-6">
-              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <TrendingUp className="w-8 h-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">Track Growth</h3>
-              <p className="text-muted-foreground">
-                Monitor progress with detailed analytics and insights for continuous improvement
-              </p>
+        <section className="container mx-auto px-4 py-12">
+          <h2 className="text-2xl font-semibold mb-6 text-center">What students say</h2>
+          <div className="overflow-x-auto py-2 flex items-start px-2">
+            {sampleReviews.map((r) => (
+              <ReviewItem key={r.id} r={r} />
+            ))}
+          </div>
+        </section>
+
+        <section className="container mx-auto px-4 py-12 bg-gradient-to-r from-primary/10 to-accent/10 rounded-3xl my-12">
+          <div className="max-w-3xl mx-auto text-center">
+            <h3 className="text-2xl font-semibold mb-4">Ready to start?</h3>
+            <p className="text-muted-foreground mb-6">Join thousands of learners and start accelerating your growth with expert coaches.</p>
+            <div className="flex gap-4 justify-center">
+              <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 px-8" onClick={() => navigate('/auth')}>
+                Get Started
+              </Button>
+              <Button variant="outline" className="px-8" onClick={() => navigate('/auth')}>
+                Learn More
+              </Button>
             </div>
           </div>
         </section>
+
       </main>
 
       <footer className="border-t mt-20">

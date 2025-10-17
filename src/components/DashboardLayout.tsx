@@ -62,7 +62,7 @@ export function DashboardLayout({
   sidebarSections = [],
   brandName = "Experts Coaching Hub",
 }: DashboardLayoutProps) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, role } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
@@ -203,6 +203,17 @@ export function DashboardLayout({
                 Token Management
               </DropdownMenuItem>
             </TokenManagementDialog>
+
+            {role === 'admin' && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/admin')}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Admin Dashboard
+                </DropdownMenuItem>
+              </>
+            )}
+
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -271,6 +282,17 @@ export function DashboardLayout({
                 {item.label}
               </Button>
             ))}
+
+            {/* Admin quick link */}
+            {role === 'admin' && (
+              <Button
+                variant="ghost"
+                className="text-sm font-medium ml-2 text-primary"
+                onClick={() => navigate('/admin')}
+              >
+                Admin
+              </Button>
+            )}
           </nav>
 
           {/* Right Side Actions */}
@@ -320,12 +342,23 @@ export function DashboardLayout({
                   Profile
                 </DropdownMenuItem>
                 <TokenManagementDialog>
-                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    <Shield className="mr-2 h-4 w-4" />
-                    Token Management
-                  </DropdownMenuItem>
-                </TokenManagementDialog>
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                <Shield className="mr-2 h-4 w-4" />
+                Token Management
+              </DropdownMenuItem>
+            </TokenManagementDialog>
+
+            {role === 'admin' && (
+              <>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/admin')}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Admin Dashboard
+                </DropdownMenuItem>
+              </>
+            )}
+
+            <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign Out

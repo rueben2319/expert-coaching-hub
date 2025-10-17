@@ -38,13 +38,35 @@ export class MeetingManager {
     }
 
     try {
+      // Get coach's email from profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        throw new Error('Failed to get user profile');
+      }
+
+      // Ensure coach's email is included in attendees
+      const allAttendeeEmails = [...new Set([...meetingData.attendeeEmails, profile.email])];
+
+      console.log('Meeting creation details:', {
+        summary: meetingData.summary,
+        originalAttendees: meetingData.attendeeEmails,
+        coachEmail: profile.email,
+        allAttendees: allAttendeeEmails,
+        attendeeCount: allAttendeeEmails.length,
+      });
+
       // Create Google Calendar event with Meet link
       const calendarEvent = await googleCalendarService.createMeetingWithGoogleMeet({
         summary: meetingData.summary,
         description: meetingData.description,
         startTime: meetingData.startTime,
         endTime: meetingData.endTime,
-        attendeeEmails: meetingData.attendeeEmails,
+        attendeeEmails: allAttendeeEmails,
       });
 
       // Extract Google Meet link
@@ -62,7 +84,7 @@ export class MeetingManager {
         calendar_event_id: calendarEvent.id,
         start_time: meetingData.startTime,
         end_time: meetingData.endTime,
-        attendees: meetingData.attendeeEmails,
+        attendees: allAttendeeEmails,
         status: 'scheduled',
       };
 
@@ -85,7 +107,7 @@ export class MeetingManager {
       // Log analytics event
       await this.logAnalyticsEvent(dbMeeting.id, user.id, 'meeting_created', {
         calendar_event_id: calendarEvent.id,
-        attendee_count: meetingData.attendeeEmails.length,
+        attendee_count: allAttendeeEmails.length,
       });
 
       return dbMeeting;
@@ -118,17 +140,14 @@ export class MeetingManager {
     }
 
     try {
-      // Use Edge Function to cancel Google Meet if calendar_event_id exists
+      // Skip Edge function and go directly to Google Calendar API
+      // The Edge function appears to have issues, so we'll use the direct approach
       if (existingMeeting.calendar_event_id) {
         try {
-          await cancelGoogleMeet({
-            meetingId: meetingId,
-            calendarEventId: existingMeeting.calendar_event_id
-          });
-        } catch (edgeFunctionError) {
-          console.warn('Edge function failed, falling back to direct API call:', edgeFunctionError);
-          // Fallback to direct API call if Edge Function fails
           await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
+        } catch (calendarError: any) {
+          console.warn('Calendar deletion failed, but continuing with database update:', calendarError);
+          // Don't throw here - we still want to update the database status
         }
       }
 
@@ -158,6 +177,23 @@ export class MeetingManager {
     }
 
     try {
+      // If attendee emails are being updated, ensure coach's email is included
+      let attendeeEmails = updateData.attendeeEmails;
+      if (attendeeEmails) {
+        // Get coach's email from profile
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('email')
+            .eq('id', user.id)
+            .single();
+
+          if (!profileError && profile.email) {
+            attendeeEmails = [...new Set([...attendeeEmails, profile.email])];
+          }
+        }
+      }
       const response = await fetch(`${SUPABASE_URL}/functions/v1/update-google-meet`, {
         method: 'PATCH',
         headers: {
@@ -170,7 +206,7 @@ export class MeetingManager {
           description: updateData.description,
           startTime: updateData.startTime,
           endTime: updateData.endTime,
-          attendees: updateData.attendeeEmails,
+          attendees: attendeeEmails,
         }),
       });
 

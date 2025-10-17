@@ -13,6 +13,7 @@ declare const Deno: {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, signature",
+  "Access-Control-Allow-Methods": "OPTIONS, POST",
 };
 
 type WebhookPayload = {
@@ -26,6 +27,16 @@ type WebhookPayload = {
   };
 };
 
+function timingSafeEqual(a: string, b: string): boolean {
+  // Constant-time compare for equal-length strings
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 async function verifySignature(rawBody: string, signatureHeader: string | null): Promise<boolean> {
   const secret = Deno.env.get("PAYCHANGU_WEBHOOK_SECRET");
   if (!secret || !signatureHeader) return false;
@@ -38,69 +49,44 @@ async function verifySignature(rawBody: string, signatureHeader: string | null):
     ["sign"]
   );
   const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(rawBody));
-  const computed = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
-  return computed === signatureHeader.toLowerCase();
+  const computedHex = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const providedHex = signatureHeader.trim().toLowerCase();
+  return timingSafeEqual(computedHex, providedHex);
 }
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
-  console.log("Webhook received - method:", req.method);
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+  }
 
   let payload: WebhookPayload;
-  let rawBody = "";
+  const rawBody = await req.text();
+  const signature = req.headers.get("Signature") || req.headers.get("signature");
 
-  if (req.method === "POST") {
-    // Handle POST requests with JSON body
-    rawBody = await req.text();
-    const signature = req.headers.get("Signature");
+  // Require secret and signature for all environments
+  if (!Deno.env.get("PAYCHANGU_WEBHOOK_SECRET") || !signature) {
+    return new Response(JSON.stringify({ error: "Missing signature or secret" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-    console.log("POST webhook - signature header present:", !!signature);
-    console.log("Raw body length:", rawBody.length);
+  const valid = await verifySignature(rawBody, signature);
+  if (!valid) {
+    return new Response(JSON.stringify({ error: "Invalid signature" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-    // For development/testing, skip signature verification if secret is not set
-    const webhookSecret = Deno.env.get("PAYCHANGU_WEBHOOK_SECRET");
-    console.log("PAYCHANGU_WEBHOOK_SECRET set:", !!webhookSecret);
-
-    if (webhookSecret) {
-      console.log("Verifying signature...");
-      const valid = await verifySignature(rawBody, signature);
-      console.log("Signature valid:", valid);
-      if (!valid) return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    } else {
-      console.log("PAYCHANGU_WEBHOOK_SECRET not set, skipping signature verification");
-    }
-
-    try {
-      payload = JSON.parse(rawBody) as WebhookPayload;
-    } catch (e) {
-      return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-  } else if (req.method === "GET") {
-    // Handle GET requests with query parameters
-    console.log("GET webhook - processing query parameters");
-    const url = new URL(req.url);
-    const tx_ref = url.searchParams.get("tx_ref");
-    const status = url.searchParams.get("status") || "successful";
-
-    if (!tx_ref) {
-      return new Response(JSON.stringify({ error: "Missing tx_ref parameter" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    // Create payload from query parameters
-    payload = {
-      status: status,
-      data: {
-        tx_ref: tx_ref,
-        status: status
-      }
-    };
-
-    console.log("GET webhook payload:", JSON.stringify(payload, null, 2));
-
-  } else {
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+  try {
+    payload = JSON.parse(rawBody) as WebhookPayload;
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -296,38 +282,11 @@ serve(async (req: Request) => {
       }
     }
 
-    // For successful payments, return HTTP redirect instead of HTML page
-    if (success) {
-      const appBaseUrl = Deno.env.get("APP_BASE_URL");
-      if (appBaseUrl) {
-        // Determine redirect URL based on subscription type
-        let redirectUrl;
-        if (tx.client_subscription_id) {
-          // Client subscription - redirect to client success page
-          redirectUrl = `${appBaseUrl}/client/billing/success?tx_ref=${tx_ref}&status=successful`;
-        } else {
-          // Coach subscription or other - redirect to coach success page
-          redirectUrl = `${appBaseUrl}/coach/billing/success?tx_ref=${tx_ref}&status=successful`;
-        }
-
-        console.log("Redirecting to:", redirectUrl);
-
-        // Return HTTP 302 redirect instead of HTML page
-        return new Response(null, {
-          status: 302,
-          headers: {
-            "Location": redirectUrl,
-            ...corsHeaders
-          }
-        });
-      } else {
-        console.log("APP_BASE_URL not set, cannot redirect");
-      }
-    } else {
-      console.log("Payment not successful, returning JSON response");
-    }
-
-    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Always return JSON for webhook acknowledgement
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
