@@ -27,7 +27,6 @@ import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
 import CoachBilling from "./pages/coach/Billing";
 import BillingSuccess from "./pages/coach/BillingSuccess";
-import CoachPackages from "./pages/coach/CoachPackages";
 import CoachSettings from "./pages/coach/CoachSettings";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/Users";
@@ -203,14 +202,6 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <BillingSuccess />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/coach/packages"
-              element={
-                <ProtectedRoute allowedRoles={["coach"]}>
-                  <CoachPackages />
                 </ProtectedRoute>
               }
             />

@@ -10,8 +10,7 @@ import {
   Settings,
   UserCheck,
   Shield,
-  MessageCircle,
-  Package
+  MessageCircle
 } from "lucide-react";
 
 // Coach Navigation Configuration
@@ -20,7 +19,6 @@ export const coachNavItems = [
   { label: "Courses", href: "/coach/courses" },
   { label: "Students", href: "/coach/students" },
   { label: "Sessions", href: "/coach/sessions" },
-  { label: "Packages", href: "/coach/packages" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Analytics", href: "/coach/analytics" },
   { label: "Billing", href: "/coach/billing" },
@@ -32,7 +30,6 @@ export const coachSidebarSections = [
     title: "Course Management",
     items: [
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/coach/courses" },
-      { icon: <Package className="w-4 h-4" />, label: "Packages", href: "/coach/packages" },
       { icon: <Users className="w-4 h-4" />, label: "Students", href: "/coach/students" },
     ],
   },
