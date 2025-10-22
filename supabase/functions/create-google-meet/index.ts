@@ -4,8 +4,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'http://localhost:5173',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Credentials': 'true',
 };
 
 interface MeetingRequest {
@@ -76,6 +77,32 @@ serve(async (req: Request) => {
     // Validate request body
     if (!summary || !startTime || !endTime || !attendees?.length) {
       throw new Error('Missing required fields: summary, startTime, endTime, and attendees');
+    }
+
+    // Sanitize and validate inputs
+    if (typeof summary !== 'string' || summary.trim().length === 0) {
+      throw new Error('Summary must be a non-empty string');
+    }
+    
+    if (typeof description !== 'undefined' && typeof description !== 'string') {
+      throw new Error('Description must be a string');
+    }
+
+    if (!Array.isArray(attendees)) {
+      throw new Error('Attendees must be an array');
+    }
+
+    // Validate email format for attendees
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    for (const email of attendees) {
+      if (typeof email !== 'string' || !emailRegex.test(email)) {
+        throw new Error(`Invalid email format: ${email}`);
+      }
+    }
+
+    // Limit number of attendees to prevent abuse
+    if (attendees.length > 100) {
+      throw new Error('Maximum 100 attendees allowed');
     }
 
     // Validate date format

@@ -24,8 +24,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/auth" replace />;
   }
 
-  if (allowedRoles && role && !allowedRoles.includes(role)) {
-    return <Navigate to={`/${role}`} replace />;
+  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+    // If user has no role or insufficient role, redirect to appropriate page
+    const redirectPath = role ? `/${role}` : "/auth";
+    return <Navigate to={redirectPath} replace />;
   }
 
   return <>{children}</>;

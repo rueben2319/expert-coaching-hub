@@ -207,9 +207,12 @@ class GoogleCalendarService {
     attendeeEmails: string[];
     timeZone?: string;
   }): Promise<GoogleCalendarResponse> {
+    // Sanitize input to prevent XSS
+    const sanitizeString = (str: string) => str.replace(/[<>]/g, '');
+    
     const event: GoogleCalendarEvent = {
-      summary: meetingData.summary,
-      description: meetingData.description,
+      summary: sanitizeString(meetingData.summary),
+      description: meetingData.description ? sanitizeString(meetingData.description) : undefined,
       start: {
         dateTime: meetingData.startTime,
         timeZone: meetingData.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,

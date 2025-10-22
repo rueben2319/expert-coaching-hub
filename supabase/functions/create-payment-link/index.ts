@@ -11,8 +11,9 @@ declare const Deno: {
 };
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get('ALLOWED_ORIGIN') || 'http://localhost:5173',
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Credentials": "true",
 };
 
 type BillingCycle = "monthly" | "yearly";
@@ -312,7 +313,13 @@ serve(async (req: Request) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
+    console.error("Payment creation error:", e);
+    
+    // Sanitize error message for client
+    const msg = e instanceof Error ? 
+      (e.message.includes('Missing') || e.message.includes('required') || e.message.includes('Forbidden') ? 
+        e.message : 'Payment processing failed. Please try again.') : 
+      "Payment processing failed. Please try again.";
 
     // Clean up any records that were created but payment failed
     try {

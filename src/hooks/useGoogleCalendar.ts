@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { googleCalendarService, GoogleCalendarEvent, GoogleCalendarResponse } from '@/integrations/google/calendar';
 import { toast } from 'sonner';
@@ -112,7 +112,7 @@ export const useGoogleCalendar = () => {
     });
   };
 
-  return {
+  return useMemo(() => ({
     // Access validation
     validateAccess,
     isValidating,
@@ -135,5 +135,19 @@ export const useGoogleCalendar = () => {
     createMeetingError: createMeetingMutation.error,
     updateEventError: updateEventMutation.error,
     deleteEventError: deleteEventMutation.error,
-  };
+  }), [
+    validateAccess,
+    isValidating,
+    useCalendarEvents,
+    useCalendarEvent,
+    createMeetingMutation.mutateAsync,
+    createMeetingMutation.isPending,
+    createMeetingMutation.error,
+    updateEventMutation.mutateAsync,
+    updateEventMutation.isPending,
+    updateEventMutation.error,
+    deleteEventMutation.mutateAsync,
+    deleteEventMutation.isPending,
+    deleteEventMutation.error,
+  ]);
 };
