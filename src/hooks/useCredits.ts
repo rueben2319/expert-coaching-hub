@@ -107,7 +107,7 @@ export function useCredits() {
       queryClient.invalidateQueries({ queryKey: ["credit_wallet", user?.id] });
       queryClient.invalidateQueries({ queryKey: ["credit_transactions", user?.id] });
       queryClient.invalidateQueries({ queryKey: ["published-courses"] });
-      queryClient.invalidateQueries({ queryKey: ["enrolled-courses"] });
+      queryClient.invalidateQueries({ queryKey: ["my-enrollments", user?.id] });
       toast.success("Enrolled successfully!");
     },
     onError: (error: any) => {
