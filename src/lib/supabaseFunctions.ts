@@ -1,7 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 
-// Supabase anon key for function calls
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZicnhnYXhqbXB3dXNiYmJ6emdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5NDEwNzEsImV4cCI6MjA3NTUxNzA3MX0.maRLFsi1sb9DneLCSPtw4N8_w2jjms75c_lu0K375lQ";
+// Get Supabase URL and Key from environment
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZicnhnYXhqbXB3dXNiYmJ6emdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5NDEwNzEsImV4cCI6MjA3NTUxNzA3MX0.maRLFsi1sb9DneLCSPtw4N8_w2jjms75c_lu0K375lQ";
 
 /**
  * Utility functions for calling Supabase Edge Functions with proper authorization
@@ -80,7 +81,7 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
     console.log('Session token present:', !!session.access_token);
 
     // Use direct fetch instead of supabase.functions.invoke
-    const functionUrl = `https://vbrxgaxjmpwusbbbzzgl.supabase.co/functions/v1/${functionName}`;
+    const functionUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
     console.log(`Calling function '${functionName}' with params:`, JSON.stringify(params, null, 2));
     console.log(`Function URL: ${functionUrl}`);
 

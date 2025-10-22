@@ -145,6 +145,12 @@ serve(async (req: Request) => {
       return response.json();
     };
 
+    // Get current event to preserve timezone if not updating time
+    const currentEvent: GoogleCalendarResponse = await makeCalendarRequest(
+      'GET',
+      `/calendars/primary/events/${existingMeeting.calendar_event_id}`
+    );
+
     // Prepare updated event data
     const updatedEventData: Partial<GoogleCalendarEvent> = {};
 
@@ -159,14 +165,14 @@ serve(async (req: Request) => {
     if (startTime !== undefined) {
       updatedEventData.start = {
         dateTime: startTime,
-        timeZone: 'UTC',
+        timeZone: currentEvent.start.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
     }
 
     if (endTime !== undefined) {
       updatedEventData.end = {
         dateTime: endTime,
-        timeZone: 'UTC',
+        timeZone: currentEvent.end.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
     }
 

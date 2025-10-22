@@ -3,7 +3,8 @@ import { googleCalendarService } from "@/integrations/google/calendar";
 import { cancelGoogleMeet } from "@/lib/supabaseFunctions";
 import type { Database } from "@/integrations/supabase/types";
 
-const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+// Get Supabase URL from environment
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
 
 export interface MeetingData {
   summary: string;
@@ -242,10 +243,19 @@ export class MeetingManager {
       throw new Error('User not authenticated');
     }
 
+    // Get user's email from profile to avoid potential injection
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+
+    const userEmail = profile?.email || user.email || '';
+
     let query = supabase
       .from('meetings')
       .select('*')
-      .or(`user_id.eq.${user.id},attendees.cs.["${user.email || ''}"]`);
+      .or(`user_id.eq.${user.id},attendees.cs.{${userEmail}}`);
 
     if (options.status) {
       query = query.eq('status', options.status);

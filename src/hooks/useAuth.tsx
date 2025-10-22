@@ -36,33 +36,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          fetchUserRole(session.user.id);
-        } else {
-          setRole(null);
-        }
-        
-        setLoading(false);
-      }
-    );
-
+    // Initialize session first
+    let mounted = true;
+    
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
         fetchUserRole(session.user.id);
+      } else {
+        setRole(null);
       }
       
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Set up auth state listener for subsequent changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mounted) return;
+        
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          await fetchUserRole(session.user.id);
+        } else {
+          setRole(null);
+        }
+        
+        // Only set loading to false on initial load, not on subsequent auth changes
+        if (event === 'INITIAL_SESSION') {
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {

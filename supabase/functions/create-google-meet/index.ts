@@ -88,14 +88,20 @@ serve(async (req: Request) => {
       throw new Error('Start time must be before end time');
     }
 
-    // Get user's session to access provider tokens
-    const { data: session, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.session?.provider_token) {
-      throw new Error('No valid Google OAuth session found. Please sign in with Google again.');
+    // Get user's Google OAuth tokens from metadata (Edge Functions can't access session)
+    const { data: userData, error: userMetaError } = await supabase.auth.admin.getUserById(user.id);
+    
+    if (userMetaError || !userData?.user) {
+      throw new Error('Failed to retrieve user metadata');
     }
 
-    let accessToken = session.session.provider_token;
-    const refreshToken = session.session.provider_refresh_token;
+    const userMetadata = (userData.user as any).user_metadata;
+    let accessToken = userMetadata?.google_access_token;
+    const refreshToken = userMetadata?.google_refresh_token;
+    
+    if (!accessToken) {
+      throw new Error('No valid Google OAuth token found. Please reconnect your Google account.');
+    }
 
     // Helper function to refresh Google OAuth token
     const refreshAccessToken = async (refreshToken: string): Promise<string> => {

@@ -102,17 +102,17 @@ export class TokenDebugger {
 
   static async testCalendarAccess(): Promise<boolean> {
     try {
-      const tokenInfo = await this.getTokenInfo();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!tokenInfo.hasProviderToken) {
+      if (sessionError || !session?.provider_token) {
         console.error('❌ No provider token available');
         return false;
       }
 
-      // Test a simple Calendar API call
+      // Test a simple Calendar API call with the actual token
       const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
         headers: {
-          'Authorization': `Bearer ${tokenInfo.tokenPreview?.replace('...', '')}`, // This won't work, just for demo
+          'Authorization': `Bearer ${session.provider_token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -121,7 +121,8 @@ export class TokenDebugger {
         console.log('✅ Calendar API access successful');
         return true;
       } else {
-        console.error('❌ Calendar API access failed:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('❌ Calendar API access failed:', response.status, response.statusText, errorText);
         return false;
       }
     } catch (error) {

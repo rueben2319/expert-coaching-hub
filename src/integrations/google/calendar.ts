@@ -207,6 +207,9 @@ class GoogleCalendarService {
     attendeeEmails: string[];
     timeZone?: string;
   }): Promise<GoogleCalendarResponse> {
+    // Generate a unique requestId using timestamp + random string to prevent duplicates
+    const requestId = `meet-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    
     const event: GoogleCalendarEvent = {
       summary: meetingData.summary,
       description: meetingData.description,
@@ -221,7 +224,7 @@ class GoogleCalendarService {
       attendees: meetingData.attendeeEmails.map(email => ({ email })),
       conferenceData: {
         createRequest: {
-          requestId: `meet-${Date.now()}`,
+          requestId,
           conferenceSolutionKey: {
             type: 'hangoutsMeet',
           },

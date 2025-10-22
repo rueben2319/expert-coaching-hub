@@ -65,12 +65,10 @@ export const useGoogleCalendar = () => {
     onSuccess: (data) => {
       toast.success('Meeting created successfully!');
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
-      return data;
     },
     onError: (error: any) => {
       console.error('Failed to create meeting:', error);
       toast.error(error.message || 'Failed to create meeting');
-      throw error;
     },
   });
 
