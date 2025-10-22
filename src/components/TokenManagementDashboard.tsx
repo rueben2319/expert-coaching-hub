@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
 
-const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || "";
 
 interface TokenStatus {
   hasTokens: boolean;
@@ -62,7 +62,8 @@ export function TokenManagementDashboard({
         throw new Error('No session found');
       }
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/get-token-status`, {
+      const baseUrl = (supabase as any).storageUrl?.replace?.('/storage/v1', '') || SUPABASE_URL;
+      const response = await fetch(`${baseUrl}/functions/v1/get-token-status`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -107,7 +108,8 @@ export function TokenManagementDashboard({
         throw new Error('No session found');
       }
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/refresh-google-token`, {
+      const baseUrl = (supabase as any).storageUrl?.replace?.('/storage/v1', '') || SUPABASE_URL;
+      const response = await fetch(`${baseUrl}/functions/v1/refresh-google-token`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,

@@ -1,7 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
 
-// Supabase anon key for function calls
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZicnhnYXhqbXB3dXNiYmJ6emdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5NDEwNzEsImV4cCI6MjA3NTUxNzA3MX0.maRLFsi1sb9DneLCSPtw4N8_w2jjms75c_lu0K375lQ";
+// Read anon key from environment instead of hardcoding
+const SUPABASE_ANON_KEY = (
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY
+) as string;
 
 /**
  * Utility functions for calling Supabase Edge Functions with proper authorization
@@ -79,25 +81,26 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
 
     console.log('Session token present:', !!session.access_token);
 
-    // Use direct fetch instead of supabase.functions.invoke
-    const functionUrl = `https://vbrxgaxjmpwusbbbzzgl.supabase.co/functions/v1/${functionName}`;
-    console.log(`Calling function '${functionName}' with params:`, JSON.stringify(params, null, 2));
-    console.log(`Function URL: ${functionUrl}`);
+    // Build the Functions base URL from client or env
+    const baseFromClient = (supabase as any).storageUrl?.replace?.('/storage/v1', '');
+    const supabaseUrl = (baseFromClient || (import.meta.env.VITE_SUPABASE_URL as string)) as string;
+    const functionUrl = `${supabaseUrl}/functions/v1/${functionName}`;
+    console.log(`Calling function '${functionName}' at ${functionUrl}`);
 
     const response = await fetch(functionUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
-        'apikey': SUPABASE_ANON_KEY, // Add the anon key
+        apikey: SUPABASE_ANON_KEY,
       },
       body: JSON.stringify(params),
     });
 
     console.log('Request headers:', {
-      'Authorization': `Bearer ${session.access_token ? 'present' : 'missing'}`,
+      Authorization: session.access_token ? 'present' : 'missing',
       'Content-Type': 'application/json',
-      'apikey': SUPABASE_ANON_KEY ? 'present' : 'missing',
+      apikey: SUPABASE_ANON_KEY ? 'present' : 'missing',
     });
 
     if (!response.ok) {

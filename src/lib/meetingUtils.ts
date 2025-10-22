@@ -1,9 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { googleCalendarService } from "@/integrations/google/calendar";
-import { cancelGoogleMeet } from "@/lib/supabaseFunctions";
+import { cancelGoogleMeet, callSupabaseFunction } from "@/lib/supabaseFunctions";
 import type { Database } from "@/integrations/supabase/types";
 
-const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || "";
 
 export interface MeetingData {
   summary: string;
@@ -60,57 +60,35 @@ export class MeetingManager {
         attendeeCount: allAttendeeEmails.length,
       });
 
-      // Create Google Calendar event with Meet link
-      const calendarEvent = await googleCalendarService.createMeetingWithGoogleMeet({
+      // Route creation through Edge Function for robust token handling and RLS
+      const result = await callSupabaseFunction<
+        { summary: string; description?: string; startTime: string; endTime: string; attendees: string[]; courseId?: string },
+        { success: boolean; meetingId: string; error?: string }
+      >('create-google-meet', {
         summary: meetingData.summary,
         description: meetingData.description,
         startTime: meetingData.startTime,
         endTime: meetingData.endTime,
-        attendeeEmails: allAttendeeEmails,
+        attendees: allAttendeeEmails,
+        courseId: meetingData.courseId,
       });
 
-      // Extract Google Meet link
-      const meetLink = calendarEvent.conferenceData?.entryPoints?.find(
-        ep => ep.entryPointType === 'video'
-      )?.uri || calendarEvent.hangoutLink;
-
-      // Create database record
-      const meetingInsert: DatabaseMeetingInsert = {
-        user_id: user.id,
-        course_id: meetingData.courseId || null,
-        summary: meetingData.summary,
-        description: meetingData.description || null,
-        meet_link: meetLink || null,
-        calendar_event_id: calendarEvent.id,
-        start_time: meetingData.startTime,
-        end_time: meetingData.endTime,
-        attendees: allAttendeeEmails,
-        status: 'scheduled',
-      };
-
-      const { data: dbMeeting, error } = await supabase
-        .from('meetings')
-        .insert(meetingInsert)
-        .select()
-        .single();
-
-      if (error) {
-        // If database insert fails, try to clean up the calendar event
-        try {
-          await googleCalendarService.deleteEvent('primary', calendarEvent.id);
-        } catch (cleanupError) {
-          console.error('Failed to cleanup calendar event:', cleanupError);
-        }
-        throw error;
+      if (!result?.success || !result.meetingId) {
+        throw new Error(result?.error || 'Failed to create meeting');
       }
 
-      // Log analytics event
-      await this.logAnalyticsEvent(dbMeeting.id, user.id, 'meeting_created', {
-        calendar_event_id: calendarEvent.id,
-        attendee_count: allAttendeeEmails.length,
-      });
+      // Fetch the inserted meeting to return a typed row
+      const { data: dbMeeting, error: readError } = await supabase
+        .from('meetings')
+        .select('*')
+        .eq('id', result.meetingId)
+        .single();
 
-      return dbMeeting;
+      if (readError || !dbMeeting) {
+        throw new Error('Meeting created but failed to retrieve record');
+      }
+
+      return dbMeeting as DatabaseMeeting;
     } catch (error) {
       console.error('Failed to create meeting:', error);
       throw error;
@@ -140,29 +118,19 @@ export class MeetingManager {
     }
 
     try {
-      // Skip Edge function and go directly to Google Calendar API
-      // The Edge function appears to have issues, so we'll use the direct approach
-      if (existingMeeting.calendar_event_id) {
-        try {
-          await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
-        } catch (calendarError: any) {
-          console.warn('Calendar deletion failed, but continuing with database update:', calendarError);
-          // Don't throw here - we still want to update the database status
-        }
+      // Prefer Edge Function to ensure proper token handling and RLS
+      const result = await callSupabaseFunction<{ meetingId: string }, { success: boolean; message?: string }>(
+        'cancel-google-meet',
+        { meetingId }
+      );
+
+      if (!result?.success) {
+        throw new Error(result?.message || 'Failed to cancel meeting');
       }
 
-      // Update database status to cancelled
-      const { error } = await supabase
-        .from('meetings')
-        .update({ status: 'cancelled' })
-        .eq('id', meetingId);
-
-      if (error) throw error;
-
-      // Log analytics event
-      await this.logAnalyticsEvent(meetingId, user.id, 'meeting_cancelled');
+      // Edge Function updates DB and logs analytics; nothing else to do here
     } catch (error) {
-      console.error('Failed to cancel meeting:', error);
+      console.error('Failed to cancel meeting via function:', error);
       throw error;
     }
   }
@@ -180,7 +148,6 @@ export class MeetingManager {
       // If attendee emails are being updated, ensure coach's email is included
       let attendeeEmails = updateData.attendeeEmails;
       if (attendeeEmails) {
-        // Get coach's email from profile
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: profile, error: profileError } = await supabase
@@ -194,31 +161,21 @@ export class MeetingManager {
           }
         }
       }
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/update-google-meet`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          meetingId,
-          summary: updateData.summary,
-          description: updateData.description,
-          startTime: updateData.startTime,
-          endTime: updateData.endTime,
-          attendees: attendeeEmails,
-        }),
+
+      const result = await callSupabaseFunction<
+        { meetingId: string; summary?: string; description?: string; startTime?: string; endTime?: string; attendees?: string[] },
+        { success: boolean; meeting: any; error?: string }
+      >('update-google-meet', {
+        meetingId,
+        summary: updateData.summary,
+        description: updateData.description,
+        startTime: updateData.startTime,
+        endTime: updateData.endTime,
+        attendees: attendeeEmails,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update meeting');
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to update meeting');
       }
 
       return result.meeting;

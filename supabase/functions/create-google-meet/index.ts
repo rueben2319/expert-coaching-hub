@@ -47,13 +47,21 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Get user from auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('No authorization header');
     }
+
+    // Forward Authorization header so auth.getSession() has user context
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
 
     const { data: { user }, error: userError } = await supabase.auth.getUser(
       authHeader.replace('Bearer ', '')
