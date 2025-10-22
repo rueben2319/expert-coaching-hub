@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/logger";
 
 export interface GoogleCalendarEvent {
   id?: string;
@@ -148,7 +149,7 @@ class GoogleCalendarService {
     if (!response.ok) {
       // For DELETE requests, 410 Gone means the event is already deleted (success)
       if (response.status === 410) {
-        console.log('Calendar event already deleted (410 Gone) - treating as success');
+        logger.log('Calendar event already deleted (410 Gone) - treating as success');
         return; // Don't throw error for already deleted events
       }
 
@@ -229,10 +230,10 @@ class GoogleCalendarService {
       },
     };
 
-    console.log('Creating Google Calendar event with attendees:', {
+    // Log meeting creation without sensitive data
+    logger.log('Creating Google Calendar event:', {
       summary: meetingData.summary,
       attendeeCount: meetingData.attendeeEmails.length,
-      attendees: meetingData.attendeeEmails,
       startTime: meetingData.startTime,
       endTime: meetingData.endTime,
     });
@@ -246,7 +247,7 @@ class GoogleCalendarService {
       await this.listEvents('primary', { maxResults: 1 });
       return true;
     } catch (error) {
-      console.error('Google Calendar access validation failed:', error);
+      logger.error('Google Calendar access validation failed:', error);
       return false;
     }
   }

@@ -1,7 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
 
-// Supabase anon key for function calls
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZicnhnYXhqbXB3dXNiYmJ6emdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5NDEwNzEsImV4cCI6MjA3NTUxNzA3MX0.maRLFsi1sb9DneLCSPtw4N8_w2jjms75c_lu0K375lQ";
+// Supabase anon key for function calls - using environment variable
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_ANON_KEY) {
+  throw new Error('Missing VITE_SUPABASE_ANON_KEY environment variable');
+}
 
 /**
  * Utility functions for calling Supabase Edge Functions with proper authorization
