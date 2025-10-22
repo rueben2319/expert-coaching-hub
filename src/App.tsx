@@ -15,9 +15,6 @@ import CourseViewer from "./pages/client/CourseViewer";
 import ClientSessions from "./pages/client/Sessions";
 import ClientMeetingRoom from "./pages/client/MeetingRoom";
 import ClientAnalytics from "./pages/client/ClientAnalytics";
-import ClientBilling from "./pages/client/Billing";
-import ClientPackages from "./pages/client/ClientPackages";
-import ClientBillingSuccess from "./pages/client/BillingSuccess";
 import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
@@ -93,43 +90,19 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-<Route
-  path="/client/sessions/:meetingId"
-  element={
-    <ProtectedRoute allowedRoles={["client"]}>
-      <ClientMeetingRoom />
-    </ProtectedRoute>
-  }
-/>
+            <Route
+              path="/client/sessions/:meetingId"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientMeetingRoom />
+                </ProtectedRoute>
+              }
+            />
             <Route 
               path="/client/analytics" 
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <ClientAnalytics />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/client/billing"
-              element={
-                <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientBilling />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/client/packages"
-              element={
-                <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientPackages />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/client/billing/success"
-              element={
-                <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientBillingSuccess />
                 </ProtectedRoute>
               }
             />
