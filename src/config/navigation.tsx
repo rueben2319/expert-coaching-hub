@@ -10,7 +10,9 @@ import {
   Settings,
   UserCheck,
   Shield,
-  MessageCircle
+  MessageCircle,
+  Wallet,
+  ArrowDownToLine
 } from "lucide-react";
 
 // Coach Navigation Configuration
@@ -21,6 +23,7 @@ export const coachNavItems = [
   { label: "Sessions", href: "/coach/sessions" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Analytics", href: "/coach/analytics" },
+  { label: "Withdrawals", href: "/coach/withdrawals" },
   { label: "Billing", href: "/coach/billing" },
   { label: "Settings", href: "/coach/settings" },
 ];
@@ -44,6 +47,7 @@ export const coachSidebarSections = [
     title: "Analytics & Billing",
     items: [
       { icon: <BarChart3 className="w-4 h-4" />, label: "Performance", href: "/coach/analytics" },
+      { icon: <ArrowDownToLine className="w-4 h-4" />, label: "Withdrawals", href: "/coach/withdrawals" },
       { icon: <Shield className="w-4 h-4" />, label: "Billing", href: "/coach/billing" },
       { icon: <Settings className="w-4 h-4" />, label: "Settings", href: "/coach/settings" },
     ],
@@ -55,6 +59,7 @@ export const clientNavItems = [
   { label: "Dashboard", href: "/client" },
   { label: "Explore", href: "/client/courses" },
   { label: "My Courses", href: "/client/my-courses" },
+  { label: "Credits", href: "/client/credits" },
   { label: "Analytics", href: "/client/analytics" },
   { label: "Sessions", href: "/client/sessions" },
 ];
@@ -65,6 +70,7 @@ export const clientSidebarSections = [
     items: [
       { icon: <Search className="w-4 h-4" />, label: "Explore", href: "/client/courses" },
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/client/my-courses" },
+      { icon: <Wallet className="w-4 h-4" />, label: "Credits", href: "/client/credits" },
       { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", href: "/client/analytics" },
     ],
   },

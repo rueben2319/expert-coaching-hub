@@ -28,6 +28,9 @@ import Analytics from "./pages/coach/Analytics";
 import CoachBilling from "./pages/coach/Billing";
 import BillingSuccess from "./pages/coach/BillingSuccess";
 import CoachSettings from "./pages/coach/CoachSettings";
+import Withdrawals from "./pages/coach/Withdrawals";
+import CreditPackages from "./pages/client/CreditPackages";
+import CreditPurchaseSuccess from "./pages/client/CreditPurchaseSuccess";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/Users";
 import UserDetail from "./pages/admin/UserDetail";
@@ -92,7 +95,7 @@ const App = () => (
               } 
             />
             <Route
-              path="/client/sessions/:meetingId"
+              path="/client/meeting/:meetingId"
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <ClientMeetingRoom />
@@ -106,6 +109,22 @@ const App = () => (
                   <ClientAnalytics />
                 </ProtectedRoute>
               }
+            />
+            <Route 
+              path="/client/credits" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <CreditPackages />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/client/credits/success" 
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <CreditPurchaseSuccess />
+                </ProtectedRoute>
+              } 
             />
 
             {/* Coach Routes */}
@@ -210,6 +229,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <CoachSettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/coach/withdrawals"
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <Withdrawals />
                 </ProtectedRoute>
               }
             />

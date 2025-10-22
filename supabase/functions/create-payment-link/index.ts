@@ -285,11 +285,8 @@ serve(async (req: Request) => {
         await supabase.from("coach_subscriptions").delete().eq("id", subscriptionId);
       }
 
-      // Clean up order records that were created but never paid for
-      if (orderId) {
-        console.log("Deleting unpaid order:", orderId);
-        await supabase.from("client_orders").delete().eq("id", orderId);
-      }
+      // Note: client_orders table removed - client payment system not implemented
+      // orderId cleanup no longer needed
 
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
@@ -321,10 +318,8 @@ serve(async (req: Request) => {
         await supabase.from("coach_subscriptions").delete().eq("id", subscriptionId);
       }
 
-      if (orderId) {
-        console.log("Cleaning up unpaid order due to error:", orderId);
-        await supabase.from("client_orders").delete().eq("id", orderId);
-      }
+      // Note: client_orders table removed - client payment system not implemented
+      // orderId cleanup no longer needed
     } catch (cleanupError) {
       console.error("Error during cleanup:", cleanupError);
     }

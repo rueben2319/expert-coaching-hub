@@ -4,16 +4,19 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, Clock, TrendingUp, Calendar, User } from "lucide-react";
+import { BookOpen, Clock, TrendingUp, Calendar, User, Coins } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { useCredits } from "@/hooks/useCredits";
+import { CreditWallet } from "@/components/CreditWallet";
 
 export default function Courses() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { enrollWithCredits, balance } = useCredits();
 
   const { data: courses, isLoading } = useQuery({
     queryKey: ["published-courses"],
@@ -32,8 +35,7 @@ export default function Courses() {
     },
   });
 
-  // All courses are free - client payment system not implemented
-
+  // Free enrollment mutation (for free courses)
   const enrollMutation = useMutation({
     mutationFn: async (courseId: string) => {
       const { error } = await supabase
@@ -41,6 +43,8 @@ export default function Courses() {
         .insert({
           user_id: user!.id,
           course_id: courseId,
+          payment_status: "free",
+          credits_paid: 0,
         });
       if (error) throw error;
     },
@@ -68,18 +72,38 @@ export default function Courses() {
       return;
     }
 
-    // Direct enrollment - all courses are free
-    enrollMutation.mutate(course.id);
+    // Check if course is free or paid
+    const isFree = course.is_free || !course.price_credits || course.price_credits === 0;
+    
+    if (isFree) {
+      // Free enrollment
+      enrollMutation.mutate(course.id);
+    } else {
+      // Check if user has enough credits
+      if (balance < course.price_credits) {
+        toast({ 
+          title: "Insufficient credits", 
+          description: `You need ${course.price_credits} credits. Buy more credits to enroll.`,
+          variant: "destructive" 
+        });
+        return;
+      }
+      // Paid enrollment with credits
+      enrollWithCredits.mutate(course.id);
+    }
   };
 
   return (
     <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Browse Courses</h1>
-          <p className="text-muted-foreground mt-2">
-            Discover and enroll in courses
-          </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold">Browse Courses</h1>
+            <p className="text-muted-foreground mt-2">
+              Discover and enroll in courses
+            </p>
+          </div>
+          <CreditWallet compact />
         </div>
 
         {isLoading ? (
@@ -90,11 +114,23 @@ export default function Courses() {
               <Card key={course.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex justify-between items-start mb-2">
-                    {course.level && (
-                      <Badge variant="outline" className="capitalize">
-                        {course.level}
-                      </Badge>
-                    )}
+                    <div className="flex gap-2">
+                      {course.level && (
+                        <Badge variant="outline" className="capitalize">
+                          {course.level}
+                        </Badge>
+                      )}
+                      {course.is_free || !course.price_credits || course.price_credits === 0 ? (
+                        <Badge variant="secondary" className="bg-green-100 text-green-700">
+                          Free
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" className="flex items-center gap-1">
+                          <Coins className="h-3 w-3" />
+                          {course.price_credits} Credits
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <CardTitle className="line-clamp-2">{course.title}</CardTitle>
                   <CardDescription className="line-clamp-3">
@@ -126,9 +162,11 @@ export default function Courses() {
                       <Button
                         className="w-full"
                         onClick={() => handleEnrollClick(course)}
-                        disabled={enrollMutation.isPending}
+                        disabled={enrollMutation.isPending || enrollWithCredits.isPending}
                       >
-                        {enrollMutation.isPending ? "Enrolling..." : "Enroll Now"}
+                        {(enrollMutation.isPending || enrollWithCredits.isPending) ? "Enrolling..." : 
+                         (course.is_free || !course.price_credits || course.price_credits === 0) ? "Enroll Free" : 
+                         `Enroll for ${course.price_credits} Credits`}
                       </Button>
                     )}
                   </div>
