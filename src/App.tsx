@@ -34,18 +34,20 @@ import AdminUsers from "./pages/admin/Users";
 import UserDetail from "./pages/admin/UserDetail";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider defaultTheme="system" storageKey="experts-coaching-hub-theme">
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-          <Routes>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="system" storageKey="experts-coaching-hub-theme">
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
 
@@ -261,12 +263,13 @@ const App = () => (
 
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
+            </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

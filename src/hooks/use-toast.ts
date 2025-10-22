@@ -68,6 +68,12 @@ const addToRemoveQueue = (toastId: string) => {
   toastTimeouts.set(toastId, timeout);
 };
 
+// Cleanup function to clear all timeouts
+export const clearAllToastTimeouts = () => {
+  toastTimeouts.forEach((timeout) => clearTimeout(timeout));
+  toastTimeouts.clear();
+};
+
 export const reducer = (state: State, action: Action): State => {
   switch (action.type) {
     case "ADD_TOAST":

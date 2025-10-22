@@ -11,9 +11,10 @@ declare const Deno: {
 };
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get('ALLOWED_ORIGINS') || 'http://localhost:5173',
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, signature",
   "Access-Control-Allow-Methods": "OPTIONS, GET, POST",
+  "Access-Control-Max-Age": "86400",
 };
 
 type WebhookPayload = {
