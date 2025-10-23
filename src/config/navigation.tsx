@@ -11,7 +11,8 @@ import {
   UserCheck,
   Shield,
   MessageCircle,
-  Package
+  Wallet,
+  ArrowDownToLine
 } from "lucide-react";
 
 // Coach Navigation Configuration
@@ -20,9 +21,9 @@ export const coachNavItems = [
   { label: "Courses", href: "/coach/courses" },
   { label: "Students", href: "/coach/students" },
   { label: "Sessions", href: "/coach/sessions" },
-  { label: "Packages", href: "/coach/packages" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Analytics", href: "/coach/analytics" },
+  { label: "Withdrawals", href: "/coach/withdrawals" },
   { label: "Billing", href: "/coach/billing" },
   { label: "Settings", href: "/coach/settings" },
 ];
@@ -32,7 +33,6 @@ export const coachSidebarSections = [
     title: "Course Management",
     items: [
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/coach/courses" },
-      { icon: <Package className="w-4 h-4" />, label: "Packages", href: "/coach/packages" },
       { icon: <Users className="w-4 h-4" />, label: "Students", href: "/coach/students" },
     ],
   },
@@ -47,6 +47,7 @@ export const coachSidebarSections = [
     title: "Analytics & Billing",
     items: [
       { icon: <BarChart3 className="w-4 h-4" />, label: "Performance", href: "/coach/analytics" },
+      { icon: <ArrowDownToLine className="w-4 h-4" />, label: "Withdrawals", href: "/coach/withdrawals" },
       { icon: <Shield className="w-4 h-4" />, label: "Billing", href: "/coach/billing" },
       { icon: <Settings className="w-4 h-4" />, label: "Settings", href: "/coach/settings" },
     ],
@@ -57,11 +58,10 @@ export const coachSidebarSections = [
 export const clientNavItems = [
   { label: "Dashboard", href: "/client" },
   { label: "Explore", href: "/client/courses" },
-  { label: "Packages", href: "/client/packages" },
   { label: "My Courses", href: "/client/my-courses" },
+  { label: "Credits", href: "/client/credits" },
   { label: "Analytics", href: "/client/analytics" },
   { label: "Sessions", href: "/client/sessions" },
-  { label: "Billing", href: "/client/billing" },
 ];
 
 export const clientSidebarSections = [
@@ -69,16 +69,15 @@ export const clientSidebarSections = [
     title: "Learning",
     items: [
       { icon: <Search className="w-4 h-4" />, label: "Explore", href: "/client/courses" },
-      { icon: <Package className="w-4 h-4" />, label: "Packages", href: "/client/packages" },
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/client/my-courses" },
+      { icon: <Wallet className="w-4 h-4" />, label: "Credits", href: "/client/credits" },
       { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", href: "/client/analytics" },
     ],
   },
   {
-    title: "Sessions & Billing",
+    title: "Sessions",
     items: [
       { icon: <MessageCircle className="w-4 h-4" />, label: "My Sessions", href: "/client/sessions" },
-      { icon: <Shield className="w-4 h-4" />, label: "Billing", href: "/client/billing" },
     ],
   },
 ];

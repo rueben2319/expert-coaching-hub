@@ -104,7 +104,7 @@ export default function CoachSettings() {
               Payment Integrations
             </CardTitle>
             <CardDescription>
-              Set up payment processing for your client subscriptions and one-time purchases
+              Payment integrations for client payments are not currently available. Courses are free to enroll.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -183,21 +183,13 @@ export default function CoachSettings() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <h4 className="font-medium">Client Subscriptions</h4>
-                <p className="text-sm text-muted-foreground">
-                  When clients subscribe to your coaching packages, payments will be processed
-                  directly to your PayChangu account instead of the platform's account.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-medium">One-Time Payments</h4>
-                <p className="text-sm text-muted-foreground">
-                  Future feature: Clients can pay for individual courses directly to you.
-                  Currently, course enrollment is free.
-                </p>
-              </div>
+            <div className="space-y-2">
+              <h4 className="font-medium">Platform Billing Only</h4>
+              <p className="text-sm text-muted-foreground">
+                Currently, only platform subscription billing is active (coaches pay for platform access).
+                Client payment features (subscriptions and one-time payments) are not implemented.
+                All courses are free for clients to enroll.
+              </p>
             </div>
           </CardContent>
         </Card>

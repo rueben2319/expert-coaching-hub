@@ -51,10 +51,15 @@ export default function Auth() {
       return;
     }
 
+    let isMounted = true;
+
     (async () => {
       try {
         // Ensure we refresh the role from DB first to avoid race conditions
         await refreshRole();
+
+        // Check if component is still mounted
+        if (!isMounted) return;
 
         // Re-check role directly from DB to avoid stale closure values
         const { data: roleData } = await supabase
@@ -62,6 +67,8 @@ export default function Auth() {
           .select('role')
           .eq('user_id', user.id)
           .single();
+
+        if (!isMounted) return;
 
         if (roleData && roleData.role) {
           navigate(`/${roleData.role}`);
@@ -120,13 +127,21 @@ export default function Auth() {
           }
         } else {
           // default for users with no role is client
-          navigate('/client');
+          if (isMounted) {
+            navigate('/client');
+          }
         }
       } catch (e) {
         console.error('Error during role resolution flow:', e);
-        navigate('/client');
+        if (isMounted) {
+          navigate('/client');
+        }
       }
     })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user, navigate, refreshRole]);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -150,6 +165,14 @@ export default function Auth() {
           return;
         }
 
+        // Sanitize full name
+        const sanitizedFullName = fullName.trim().replace(/[<>]/g, '');
+        if (sanitizedFullName !== fullName.trim()) {
+          toast.error("Full name contains invalid characters.");
+          setLoading(false);
+          return;
+        }
+
         if (password !== confirmPassword) {
           toast.error("Passwords do not match.");
           setLoading(false);
@@ -164,11 +187,11 @@ export default function Auth() {
         }
 
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: email.trim().toLowerCase(),
           password,
           options: {
             data: {
-              full_name: fullName,
+              full_name: sanitizedFullName,
               role: selectedRole
             },
             emailRedirectTo: `${window.location.origin}/`,

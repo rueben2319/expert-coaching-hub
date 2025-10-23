@@ -15,9 +15,6 @@ import CourseViewer from "./pages/client/CourseViewer";
 import ClientSessions from "./pages/client/Sessions";
 import ClientMeetingRoom from "./pages/client/MeetingRoom";
 import ClientAnalytics from "./pages/client/ClientAnalytics";
-import ClientBilling from "./pages/client/Billing";
-import ClientPackages from "./pages/client/ClientPackages";
-import ClientBillingSuccess from "./pages/client/BillingSuccess";
 import CoachDashboard from "./pages/coach/CoachDashboard";
 import CoachCourses from "./pages/coach/Courses";
 import CreateCourse from "./pages/coach/CreateCourse";
@@ -30,25 +27,29 @@ import Schedule from "./pages/coach/Schedule";
 import Analytics from "./pages/coach/Analytics";
 import CoachBilling from "./pages/coach/Billing";
 import BillingSuccess from "./pages/coach/BillingSuccess";
-import CoachPackages from "./pages/coach/CoachPackages";
 import CoachSettings from "./pages/coach/CoachSettings";
+import Withdrawals from "./pages/coach/Withdrawals";
+import CreditPackages from "./pages/client/CreditPackages";
+import CreditPurchaseSuccess from "./pages/client/CreditPurchaseSuccess";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/Users";
 import UserDetail from "./pages/admin/UserDetail";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider defaultTheme="system" storageKey="experts-coaching-hub-theme">
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-          <Routes>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="system" storageKey="experts-coaching-hub-theme">
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
 
@@ -93,14 +94,14 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-<Route
-  path="/client/sessions/:meetingId"
-  element={
-    <ProtectedRoute allowedRoles={["client"]}>
-      <ClientMeetingRoom />
-    </ProtectedRoute>
-  }
-/>
+            <Route
+              path="/client/meeting/:meetingId"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <ClientMeetingRoom />
+                </ProtectedRoute>
+              }
+            />
             <Route 
               path="/client/analytics" 
               element={
@@ -109,29 +110,21 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/client/billing"
+            <Route 
+              path="/client/credits" 
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientBilling />
+                  <CreditPackages />
                 </ProtectedRoute>
-              }
+              } 
             />
-            <Route
-              path="/client/packages"
+            <Route 
+              path="/client/credits/success" 
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientPackages />
+                  <CreditPurchaseSuccess />
                 </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/client/billing/success"
-              element={
-                <ProtectedRoute allowedRoles={["client"]}>
-                  <ClientBillingSuccess />
-                </ProtectedRoute>
-              }
+              } 
             />
 
             {/* Coach Routes */}
@@ -232,18 +225,18 @@ const App = () => (
               }
             />
             <Route
-              path="/coach/packages"
-              element={
-                <ProtectedRoute allowedRoles={["coach"]}>
-                  <CoachPackages />
-                </ProtectedRoute>
-              }
-            />
-            <Route
               path="/coach/settings"
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <CoachSettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/coach/withdrawals"
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <Withdrawals />
                 </ProtectedRoute>
               }
             />
@@ -288,12 +281,13 @@ const App = () => (
 
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
+            </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

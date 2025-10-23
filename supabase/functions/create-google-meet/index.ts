@@ -3,9 +3,18 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime  
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+// Deno global type declaration for IDE
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 };
 
 interface MeetingRequest {
@@ -39,6 +48,28 @@ interface CalendarEvent {
   hangoutLink?: string;
 }
 
+// Simple rate limiting store (in production, use Redis or similar)
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 10; // 10 requests per minute
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const userLimit = rateLimitStore.get(userId);
+  
+  if (!userLimit || now > userLimit.resetTime) {
+    rateLimitStore.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (userLimit.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+  
+  userLimit.count++;
+  return true;
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -63,6 +94,17 @@ serve(async (req: Request) => {
       throw new Error('Unauthorized');
     }
 
+    // Check rate limit
+    if (!checkRateLimit(user.id)) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }), 
+        { 
+          status: 429, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
     // Enforce role: only coaches or admins can create meetings for courses
     const { data: roleRow, error: roleErr } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle();
     const userRole = roleRow?.role || null;
@@ -77,6 +119,19 @@ serve(async (req: Request) => {
     if (!summary || !startTime || !endTime || !attendees?.length) {
       throw new Error('Missing required fields: summary, startTime, endTime, and attendees');
     }
+
+    // Sanitize inputs
+    const sanitizedSummary = summary.trim().substring(0, 200); // Limit length
+    const sanitizedDescription = description ? description.trim().substring(0, 1000) : undefined;
+    
+    // Validate email format for attendees
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalidEmails = attendees.filter(email => !emailRegex.test(email.trim()));
+    if (invalidEmails.length > 0) {
+      throw new Error(`Invalid email addresses: ${invalidEmails.join(', ')}`);
+    }
+    
+    const sanitizedAttendees = attendees.map(email => email.trim().toLowerCase());
 
     // Validate date format
     const startDate = new Date(startTime);
@@ -138,8 +193,8 @@ serve(async (req: Request) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            summary,
-            description,
+            summary: sanitizedSummary,
+            description: sanitizedDescription,
             start: {
               dateTime: startTime,
               timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
@@ -148,7 +203,7 @@ serve(async (req: Request) => {
               dateTime: endTime,
               timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             },
-            attendees: attendees.map(email => ({ email })),
+            attendees: sanitizedAttendees.map(email => ({ email })),
             conferenceData: {
               createRequest: {
                 requestId,
@@ -194,13 +249,13 @@ serve(async (req: Request) => {
       .insert({
         user_id: user.id,
         course_id: courseId || null,
-        summary,
-        description,
+        summary: sanitizedSummary,
+        description: sanitizedDescription,
         meet_link: meetLink,
         calendar_event_id: calendarEvent.id,
         start_time: startTime,
         end_time: endTime,
-        attendees: attendees,
+        attendees: sanitizedAttendees,
         status: 'scheduled',
       })
       .select()
@@ -217,7 +272,7 @@ serve(async (req: Request) => {
       user_id: user.id,
       event_type: 'meeting_created',
       event_data: {
-        attendee_count: attendees.length,
+        attendee_count: sanitizedAttendees.length,
         course_id: courseId,
         calendar_event_id: calendarEvent.id,
         has_meet_link: !!meetLink,
