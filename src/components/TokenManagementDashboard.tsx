@@ -16,6 +16,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
+import { syncTokens } from '@/lib/tokenSync';
 
 const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
 
@@ -128,6 +129,9 @@ export function TokenManagementDashboard({
           title: 'Token Refreshed',
           description: 'Google OAuth token has been refreshed successfully',
         });
+        
+        // Synchronize tokens from backend to frontend
+        await syncTokens();
         
         await fetchTokenStatus();
         onTokenRefresh?.();
