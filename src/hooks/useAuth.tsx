@@ -30,8 +30,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .eq("user_id", userId)
       .single();
 
-    if (!error && data) {
+    if (error) {
+      console.error("Failed to fetch user role:", error);
+      setRole(null);
+      return;
+    }
+
+    if (data) {
       setRole(data.role as UserRole);
+    } else {
+      setRole(null);
     }
   };
 

@@ -97,6 +97,9 @@ async function verifyCoachRole(supabase: any, userId: string) {
   return true;
 }
 
+const MAX_WITHDRAWAL = 100000; // Maximum withdrawal limit
+const MIN_WITHDRAWAL = 10; // Minimum withdrawal amount
+
 function validateRequestBody(body: any) {
   const { credits_amount, payment_method, payment_details } = body;
   if (!credits_amount || !payment_method || !payment_details) {
@@ -107,7 +110,27 @@ function validateRequestBody(body: any) {
   }
 
   const creditsNum = Number(credits_amount);
-  if (isNaN(creditsNum) || creditsNum <= 0) throw new Error("Amount must be positive");
+  
+  // Comprehensive validation
+  if (isNaN(creditsNum)) {
+    throw new Error("Amount must be a valid number");
+  }
+  
+  if (creditsNum <= 0) {
+    throw new Error("Amount must be positive");
+  }
+  
+  if (creditsNum < MIN_WITHDRAWAL) {
+    throw new Error(`Minimum withdrawal is ${MIN_WITHDRAWAL} credits`);
+  }
+  
+  if (creditsNum > MAX_WITHDRAWAL) {
+    throw new Error(`Maximum withdrawal is ${MAX_WITHDRAWAL} credits`);
+  }
+  
+  if (!Number.isInteger(creditsNum)) {
+    throw new Error("Amount must be a whole number (no decimals)");
+  }
 
   if (payment_method === "mobile_money") {
     const mobile = payment_details.mobile;

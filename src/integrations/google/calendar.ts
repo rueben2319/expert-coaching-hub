@@ -57,8 +57,23 @@ export interface GoogleCalendarResponse {
 }
 
 class GoogleCalendarService {
+  // Cache to prevent redundant session fetches
+  private sessionCache: { session: any; timestamp: number } | null = null;
+  private readonly CACHE_DURATION = 5000; // 5 seconds
+
   private async getAccessToken(): Promise<string> {
+    const now = Date.now();
+    
+    // Use cached session if recent and has token
+    if (this.sessionCache && (now - this.sessionCache.timestamp) < this.CACHE_DURATION) {
+      if (this.sessionCache.session?.provider_token) {
+        return this.sessionCache.session.provider_token;
+      }
+    }
+
+    // Fetch fresh session
     const { data: { session } } = await supabase.auth.getSession();
+    this.sessionCache = { session, timestamp: now };
     
     if (!session) {
       throw new Error('No active session. Please sign in.');

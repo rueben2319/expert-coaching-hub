@@ -24,6 +24,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/auth" replace />;
   }
 
+  // If user is authenticated but role is still null after loading, redirect to home
+  if (user && role === null && !loading) {
+    console.warn("User authenticated but no role found");
+    return <Navigate to="/" replace />;
+  }
+
+  // Check role-based access
   if (allowedRoles && role && !allowedRoles.includes(role)) {
     return <Navigate to={`/${role}`} replace />;
   }
