@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+// Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
@@ -16,299 +17,364 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
-// Function to get operator ID from PayChangu
-async function getOperatorId(payChanguSecret: string, phoneNumber: string): Promise<string> {
-  try {
-    // Clean phone number (remove +265 prefix if present, keep just the number)
-    const cleanNumber = phoneNumber.replace(/^\+?265/, "");
+/** ---------- Helper Functions ---------- **/
 
-    // Get operators from PayChangu
-    const operatorsResponse = await fetch("https://api.paychangu.com/operators", {
-      method: "GET",
+async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
+  try {
+    console.log('DEBUG: Original mobile:', phoneNumber);
+    const cleanNumber = phoneNumber.replace(/^\+?265/, '');
+    console.log('DEBUG: Cleaned mobile:', cleanNumber);
+
+    const operatorsResponse = await fetch('https://api.paychangu.com/mobile-money/', {
+      method: 'GET',
       headers: {
-        "Accept": "application/json",
-        "Authorization": `Bearer ${payChanguSecret}`
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${payChanguSecret}`,
       },
     });
 
     if (!operatorsResponse.ok) {
-      throw new Error("Failed to fetch operators from PayChangu");
+      console.error('Failed to fetch operators, status:', operatorsResponse.status);
+      // Fallback to hardcoded operators for Malawi
+      if (/^(99|88)/.test(cleanNumber)) {
+        console.log('DEBUG: Using fallback Airtel operator');
+        return 'AIRTEL_MW';
+      } else if (/^(77|76)/.test(cleanNumber)) {
+        console.log('DEBUG: Using fallback TNM operator');
+        return 'TNM_MW';
+      } else {
+        throw new Error('Unsupported mobile number prefix');
+      }
     }
 
     const operatorsData = await operatorsResponse.json();
+    console.log('DEBUG: Operators API response:', JSON.stringify(operatorsData, null, 2));
+    const operatorsList = operatorsData.data ?? [];
 
-    // Find the operator based on phone number prefix
-    // Malawi mobile prefixes: Airtel (99, 88), TNM (77, 76)
-    let operatorName = "";
-    if (cleanNumber.startsWith("99") || cleanNumber.startsWith("88")) {
-      operatorName = "Airtel";
-    } else if (cleanNumber.startsWith("77") || cleanNumber.startsWith("76")) {
-      operatorName = "TNM";
-    } else {
-      throw new Error("Unsupported mobile number prefix");
+    let operatorName = '';
+    if (/^(99|88)/.test(cleanNumber)) operatorName = 'Airtel';
+    else if (/^(77|76)/.test(cleanNumber)) operatorName = 'TNM';
+    else throw new Error('Unsupported mobile number prefix');
+
+    console.log('DEBUG: Looking for operator:', operatorName);
+    console.log('DEBUG: Total operators found:', operatorsList.length);
+
+    let foundOperator: any = null;
+    for (const op of operatorsList) {
+      console.log('DEBUG: Evaluating operator:', JSON.stringify(op, null, 2));
+      if (!op || !op.name || !op.supported_country || !op.supported_country.name) {
+        console.log('DEBUG: Skipping invalid operator - missing fields');
+        continue;
+      }
+      const nameMatch = op.name.toLowerCase().includes(operatorName.toLowerCase());
+      const countryMatch = op.supported_country.name.toLowerCase() === 'malawi';
+      console.log(`DEBUG: ${op.name} - nameMatch: ${nameMatch}, countryMatch: ${countryMatch}`);
+      if (nameMatch && countryMatch) {
+        console.log('DEBUG: Found matching operator:', op);
+        foundOperator = op;
+        break;
+      }
     }
 
-    // Find the operator in the response
-    const operator = operatorsData.data?.find((op: any) =>
-      op.name.toLowerCase().includes(operatorName.toLowerCase()) &&
-      op.country.toLowerCase().includes("malawi")
-    );
-
-    if (!operator) {
-      throw new Error(`Operator not found for ${operatorName}`);
+    if (foundOperator) {
+      console.log('DEBUG: Using found operator with ref_id:', foundOperator.ref_id);
+      return foundOperator.ref_id;
     }
 
-    return operator.ref_id;
-  } catch (error) {
-    console.error("Error getting operator ID:", error);
-    throw error;
+    console.log('DEBUG: Operator not found in API, using fallback');
+    // Fallback operators
+    if (operatorName === 'Airtel') return 'AIRTEL_MW';
+    if (operatorName === 'TNM') return 'TNM_MW';
+    throw new Error(`Operator not found for ${operatorName}`);
+  } catch (err) {
+    console.error('Error getting operator ID:', err);
+    throw new Error('Failed to determine mobile operator');
   }
 }
 
-serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+async function authenticateUser(supabase: any, token: string) {
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) throw new Error("Unauthorized");
+  return user;
+}
 
-  if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+async function verifyCoachRole(supabase: any, userId: string) {
+  const { data: userRole, error } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .single();
+
+  if (error || !userRole || !["coach", "admin"].includes(userRole.role)) {
+    throw new Error("Only coaches can request withdrawals");
   }
+  return true;
+}
+
+function validateRequestBody(body: any) {
+  const { credits_amount, payment_method, payment_details } = body;
+  if (!credits_amount || !payment_method || !payment_details) {
+    const missing = ["credits_amount", "payment_method", "payment_details"].filter(
+      (k) => !body[k]
+    );
+    throw new Error(`Missing required fields: ${missing.join(", ")}`);
+  }
+
+  const creditsNum = Number(credits_amount);
+  if (isNaN(creditsNum) || creditsNum <= 0) throw new Error("Amount must be positive");
+
+  if (payment_method === "mobile_money") {
+    const mobile = payment_details.mobile;
+    if (!mobile) throw new Error("Missing mobile number for mobile money payment");
+    const cleanNumber = mobile.replace(/^\+?265/, "");
+    if (!/^(99|88|77|76)\d{7}$/.test(cleanNumber)) {
+      throw new Error("Invalid mobile number format. Example: +265999123456");
+    }
+  }
+
+  return { creditsToWithdraw: creditsNum, payment_method, payment_details };
+}
+
+async function getWalletBalance(supabase: any, userId: string) {
+  const { data: wallet, error } = await supabase
+    .from("credit_wallets")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
+  if (error || !wallet) throw new Error("Wallet not found");
+  return Number(wallet.balance);
+}
+
+async function createWithdrawalRequest(
+  supabase: any,
+  userId: string,
+  credits: number,
+  amountMWK: number,
+  payment_method: string,
+  payment_details: any,
+  notes?: string
+) {
+  const { data, error } = await supabase
+    .from("withdrawal_requests")
+    .insert({
+      coach_id: userId,
+      credits_amount: credits,
+      amount: amountMWK,
+      status: "processing",
+      payment_method,
+      payment_details,
+      notes: notes || null,
+    })
+    .select()
+    .single();
+
+  if (error || !data) throw new Error("Failed to create withdrawal request");
+  return data;
+}
+
+async function executePayout(
+  payChanguSecret: string,
+  withdrawal: any,
+  payment_details: any,
+  operatorId: string,
+  amountMWK: number
+) {
+  // Ensure mobile number is exactly 9 digits
+  const cleanMobile = payment_details.mobile.replace(/^\+?265/, '');
+  console.log('DEBUG: Formatted mobile for payout:', cleanMobile);
+
+  if (!/^\d{9}$/.test(cleanMobile)) {
+    throw new Error(`Invalid mobile number format: ${cleanMobile}. Must be exactly 9 digits.`);
+  }
+
+  const payload = {
+    mobile_money_operator_ref_id: operatorId,
+    mobile: cleanMobile,
+    amount: amountMWK.toString(),
+    currency: "MWK",
+    reason: "Coach withdrawal payout",
+    charge_id: `WD-${withdrawal.id}`,
+  };
+
+  console.log('Payout payload:', JSON.stringify(payload, null, 2));
+
+  const resp = await fetch("https://api.paychangu.com/mobile-money/payouts/initialize", {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${payChanguSecret}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  console.log('Payout API response status:', resp.status);
+
+  const result = await resp.json();
+  console.log('Payout API response:', JSON.stringify(result, null, 2));
+
+  if (!resp.ok || result.status !== "success" || result.data?.transaction?.status !== "success") {
+    console.error("PayChangu payout error:", result);
+    throw new Error("Failed to execute payout");
+  }
+
+  return result.data;
+}
+
+async function finalizeWithdrawal(
+  supabase: any,
+  userId: string,
+  withdrawalRequest: any,
+  creditsToDeduct: number,
+  walletBalance: number,
+  payoutData: any,
+  payment_method: string,
+  amountMWK: number
+) {
+  const newBalance = walletBalance - creditsToDeduct;
+
+  // Deduct credits
+  const { error: updateError } = await supabase
+    .from("credit_wallets")
+    .update({ balance: newBalance, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+
+  if (updateError) {
+    console.error("Failed to update wallet balance:", updateError);
+    throw new Error("Failed to update wallet balance");
+  }
+
+  // Record transaction
+  const { error: transactionError } = await supabase.from("credit_transactions").insert({
+    user_id: userId,
+    transaction_type: "withdrawal",
+    amount: -creditsToDeduct,
+    balance_before: walletBalance,
+    balance_after: newBalance,
+    reference_type: "withdrawal_request",
+    reference_id: withdrawalRequest.id,
+    description: `Immediate withdrawal: ${creditsToDeduct} credits → ${amountMWK} MWK via PayChangu`,
+    metadata: {
+      payment_method,
+      amount_mwk: amountMWK,
+      payout_ref: payoutData.ref_id,
+      payout_trans_id: payoutData.trans_id,
+    },
+  });
+
+  if (transactionError) {
+    console.error("Failed to record transaction:", transactionError);
+    throw new Error("Failed to record transaction");
+  }
+
+  // Update withdrawal status
+  const { error: withdrawalError } = await supabase
+    .from("withdrawal_requests")
+    .update({
+      status: "completed",
+      processed_at: new Date().toISOString(),
+      processed_by: userId,
+    })
+    .eq("id", withdrawalRequest.id);
+
+  if (withdrawalError) {
+    console.error("Failed to update withdrawal status:", withdrawalError);
+    throw new Error("Failed to update withdrawal status");
+  }
+
+  return newBalance;
+}
+
+/** ---------- Main Server ---------- **/
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST")
+    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const payChanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");  // you’ll set this in env
+    const payChanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Missing Supabase configuration");
-    }
-    if (!payChanguSecret) {
-      throw new Error("Missing PayChangu secret key");
-    }
+    if (!supabaseUrl || !supabaseKey || !payChanguSecret)
+      throw new Error("Missing configuration");
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Authenticate user
+    // Auth
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!authHeader) throw new Error("No authorization header");
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const user = await authenticateUser(supabase, token);
 
-    // Verify user is a coach
-    const { data: userRole } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .single();
+    // Role check
+    await verifyCoachRole(supabase, user.id);
 
-    if (!userRole || (userRole.role !== "coach" && userRole.role !== "admin")) {
-      return new Response(JSON.stringify({ error: "Only coaches can request withdrawals" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Parse request body
+    // Body validation
     const body = await req.json();
-    const { credits_amount, payment_method, payment_details, notes } = body;
+    const { creditsToWithdraw, payment_method, payment_details } =
+      validateRequestBody(body);
 
-    if (!credits_amount || !payment_method || !payment_details) {
-      return new Response(
-        JSON.stringify({ error: "credits_amount, payment_method, and payment_details are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    const creditsToWithdraw = Number(credits_amount);
-    if (creditsToWithdraw <= 0) {
-      return new Response(JSON.stringify({ error: "Amount must be positive" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Wallet & balance
+    const walletBalance = await getWalletBalance(supabase, user.id);
+    if (walletBalance < creditsToWithdraw) throw new Error("Insufficient balance");
 
-    // Get coach's wallet
-    const { data: wallet, error: walletErr } = await supabase
-      .from("credit_wallets")
-      .select("*")
-      .eq("user_id", user.id)
-      .single();
+    // Convert credits → MWK
+    const amountMWK = creditsToWithdraw * 100;
 
-    if (walletErr || !wallet) {
-      return new Response(JSON.stringify({ error: "Wallet not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const currentBalance = Number(wallet.balance);
+    // Create withdrawal request
+    const withdrawalRequest = await createWithdrawalRequest(
+      supabase,
+      user.id,
+      creditsToWithdraw,
+      amountMWK,
+      payment_method,
+      payment_details,
+      body.notes
+    );
 
-    if (currentBalance < creditsToWithdraw) {
-      return new Response(
-        JSON.stringify({
-          error: "Insufficient balance",
-          current_balance: currentBalance,
-          requested: creditsToWithdraw,
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Calculate MWK amount (1 credit = 100 MWK conversion rate) – adjust if needed
-    const conversionRate = 100; 
-    const amountMWK = creditsToWithdraw * conversionRate;
-
-    // Create withdrawal request row (status will reflect “processing”/“sent” rather than “pending approval”)
-    const { data: withdrawalRequest, error: requestErr } = await supabase
-      .from("withdrawal_requests")
-      .insert({
-        coach_id: user.id,
-        amount: amountMWK,
-        credits_amount: creditsToWithdraw,
-        status: "processing",     // Changed from “pending” to “processing”
-        payment_method: payment_method,
-        payment_details: payment_details,
-        notes: notes || null,
-      })
-      .select()
-      .single();
-
-    if (requestErr || !withdrawalRequest) {
-      console.error("Failed to create withdrawal request:", requestErr);
-      throw new Error("Failed to create withdrawal request: " + (requestErr?.message ?? ""));
-    }
-
-    // Get the correct operator ID from PayChangu
+    // Operator & payout
     const operatorId = await getOperatorId(payChanguSecret, payment_details.mobile);
+    const payoutData = await executePayout(
+      payChanguSecret,
+      withdrawalRequest,
+      payment_details,
+      operatorId,
+      amountMWK
+    );
 
-    // Immediately call PayChangu payout API
-    const payoutPayload = {
-      mobile_money_operator_ref_id: operatorId, // ✅ Use fetched operator ID
-      mobile: payment_details.mobile,
-      amount: amountMWK.toString(),
-      currency: "MWK",
-      reason: "Coach withdrawal payout",
-      charge_id: `WD-${withdrawalRequest.id}`
-    };
+    // Finalize withdrawal
+    const newBalance = await finalizeWithdrawal(
+      supabase,
+      user.id,
+      withdrawalRequest,
+      creditsToWithdraw,
+      walletBalance,
+      payoutData,
+      payment_method,
+      amountMWK
+    );
 
-    const payoutResponse = await fetch("https://api.paychangu.com/mobile-money/payouts/initialize", {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${payChanguSecret}`
-      },
-      body: JSON.stringify(payoutPayload),
-    });
-
-    const payoutResult = await payoutResponse.json();
-    if (!payoutResponse.ok || payoutResult.status !== "success") {
-      // Handle payout failure: mark withdrawal request as failed
-      await supabase
-        .from("withdrawal_requests")
-        .update({
-          status: "failed",
-          processed_at: new Date().toISOString(),
-          admin_notes: `Payout API error: ${JSON.stringify(payoutResult)}`,
-        })
-        .eq("id", withdrawalRequest.id);
-
-      return new Response(
-        JSON.stringify({
-          error: "Payout failed",
-          payout_response: payoutResult
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // On success: deduct credits, record transaction, update request status
-    const coachId = withdrawalRequest.coach_id;
-    const creditsAmount = creditsToWithdraw;
-    const balanceAfter = currentBalance - creditsAmount;
-
-    // Deduct credits
-    const { error: updateErr } = await supabase
-      .from("credit_wallets")
-      .update({
-        balance: balanceAfter,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", coachId);
-
-    if (updateErr) {
-      console.error("Failed to update wallet:", updateErr);
-      // You may still proceed — but you should alert/setup reconciliation
-    }
-
-    // Create credit transaction record
-    const { error: creditTxErr } = await supabase
-      .from("credit_transactions")
-      .insert({
-        user_id: coachId,
-        transaction_type: "withdrawal",
-        amount: -creditsAmount,
-        balance_before: currentBalance,
-        balance_after: balanceAfter,
-        reference_type: "withdrawal_request",
-        reference_id: withdrawalRequest.id,
-        description: `Immediate withdrawal: ${creditsAmount} credits → ${amountMWK} MWK via PayChangu`,
-        metadata: {
-          payment_method: payment_method,
-          amount_mwk: amountMWK,
-          payout_ref: payoutResult.data.ref_id,
-          payout_trans_id: payoutResult.data.trans_id
-        }
-      });
-
-    if (creditTxErr) {
-      console.error("Failed to create credit transaction:", creditTxErr);
-    }
-
-    // Update withdrawal request status
-    const { error: statusErr } = await supabase
-      .from("withdrawal_requests")
-      .update({
-        status: "completed", // ✅ Changed from "approved" to "completed"
-        processed_at: new Date().toISOString(),
-        processed_by: user.id,
-        admin_notes: `Auto-approved via API. Payout ref: ${payoutResult.data.ref_id}`
-      })
-      .eq("id", withdrawalRequest.id);
-
-    if (statusErr) {
-      console.error("Failed to update withdrawal status:", statusErr);
-      // alert for reconciliation
-    }
-
-    // Return success response
     return new Response(
       JSON.stringify({
         success: true,
         withdrawal_request_id: withdrawalRequest.id,
         credits_amount: creditsToWithdraw,
         amount_mwk: amountMWK,
-        payout_ref: payoutResult.data.ref_id,
-        payout_trans_id: payoutResult.data.trans_id,
-        new_balance: balanceAfter,
-        message: "Withdrawal executed via mobile money payout successfully."
+        payout_ref: payoutData.ref_id,
+        payout_trans_id: payoutData.trans_id,
+        new_balance: newBalance,
+        message: "Withdrawal executed successfully.",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
-    console.error("Error in immediate-withdrawal:", msg);
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Immediate withdrawal error:", msg);
+    return new Response(
+      JSON.stringify({ error: msg }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
