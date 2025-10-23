@@ -14,6 +14,10 @@ import { CreditWallet } from "@/components/CreditWallet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const CONVERSION_RATE = 100; // 1 credit = 100 MWK
+const MIN_WITHDRAWAL = 10; // Minimum 10 credits
+const MAX_WITHDRAWAL = 10000; // Maximum 10,000 credits per transaction
+const DAILY_LIMIT = 50000; // Maximum 50,000 credits per day
+const CREDIT_AGING_DAYS = 3; // Credits must age 3 days before withdrawal
 
 export default function Withdrawals() {
   const { balance, requestWithdrawal, withdrawalRequests, withdrawalsLoading } = useCredits();
@@ -27,8 +31,11 @@ export default function Withdrawals() {
 
   const creditsAmount = Number(amount) || 0;
   const mwkAmount = creditsAmount * CONVERSION_RATE;
-  const canSubmit = creditsAmount > 0 && creditsAmount <= balance && 
-                    paymentMethod === "mobile_money" && phoneNumber;
+  
+  // Enhanced validation
+  const isAmountValid = creditsAmount >= MIN_WITHDRAWAL && creditsAmount <= MAX_WITHDRAWAL && creditsAmount <= balance;
+  const isPhoneValid = phoneNumber && /^\+?265\d{9}$/.test(phoneNumber.replace(/\s/g, ''));
+  const canSubmit = isAmountValid && paymentMethod === "mobile_money" && isPhoneValid;
 
   const handleSubmit = () => {
     const paymentDetails = paymentMethod === "bank_transfer" 
@@ -94,12 +101,32 @@ export default function Withdrawals() {
           <div className="lg:col-span-1">
             <CreditWallet showActions={false} />
             
-            <Alert className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs">
-                <strong>Conversion Rate:</strong> 1 Credit = MWK {CONVERSION_RATE}
-              </AlertDescription>
-            </Alert>
+            <div className="mt-4 space-y-2">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  <strong>Conversion Rate:</strong> 1 Credit = MWK {CONVERSION_RATE}
+                </AlertDescription>
+              </Alert>
+              
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs space-y-1">
+                  <div><strong>Withdrawal Limits:</strong></div>
+                  <div>• Min: {MIN_WITHDRAWAL} credits (MWK {MIN_WITHDRAWAL * CONVERSION_RATE})</div>
+                  <div>• Max per transaction: {MAX_WITHDRAWAL.toLocaleString()} credits</div>
+                  <div>• Max per day: {DAILY_LIMIT.toLocaleString()} credits</div>
+                  <div>• Rate limit: 5 requests per hour</div>
+                </AlertDescription>
+              </Alert>
+              
+              <Alert className="border-blue-200 bg-blue-50">
+                <AlertCircle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-xs text-blue-900">
+                  <strong>Credit Aging:</strong> Credits must be at least {CREDIT_AGING_DAYS} days old before withdrawal (prevents fraud).
+                </AlertDescription>
+              </Alert>
+            </div>
           </div>
 
           <div className="lg:col-span-2">
@@ -130,9 +157,19 @@ export default function Withdrawals() {
                       ≈ <span className="font-semibold">MWK {mwkAmount.toLocaleString()}</span>
                     </p>
                   )}
+                  {creditsAmount > 0 && creditsAmount < MIN_WITHDRAWAL && (
+                    <p className="text-sm text-destructive">
+                      Minimum withdrawal: {MIN_WITHDRAWAL} credits (MWK {MIN_WITHDRAWAL * CONVERSION_RATE})
+                    </p>
+                  )}
+                  {creditsAmount > MAX_WITHDRAWAL && (
+                    <p className="text-sm text-destructive">
+                      Maximum per transaction: {MAX_WITHDRAWAL.toLocaleString()} credits
+                    </p>
+                  )}
                   {creditsAmount > balance && (
                     <p className="text-sm text-destructive">
-                      Insufficient balance. Available: {balance} credits
+                      Insufficient balance. Available: {balance.toFixed(2)} credits
                     </p>
                   )}
                 </div>
@@ -189,6 +226,14 @@ export default function Withdrawals() {
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Supported: Airtel (99/88), TNM (77/76)
+                    </p>
+                    {phoneNumber && !isPhoneValid && (
+                      <p className="text-xs text-destructive">
+                        Invalid format. Use: +265 999 123 456
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -222,9 +267,17 @@ export default function Withdrawals() {
                   )}
                 </Button>
 
-                <p className="text-xs text-muted-foreground text-center">
-                  Instant payouts to mobile money. Failed payouts are automatically refunded.
-                </p>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground text-center">
+                    ⚡ Instant payouts to mobile money (seconds to minutes)
+                  </p>
+                  <p className="text-xs text-muted-foreground text-center">
+                    🔒 Failed payouts are automatically refunded
+                  </p>
+                  <p className="text-xs text-muted-foreground text-center">
+                    🛡️ Protected by fraud detection and rate limiting
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </div>
