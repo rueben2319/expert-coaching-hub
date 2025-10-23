@@ -72,6 +72,27 @@ serve(async (req: Request) => {
       });
     }
 
+    // 🔒 SECURITY: Rate limiting on purchases (10 per hour)
+    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+    const { data: recentPurchases } = await supabase
+      .from("transactions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("transaction_mode", "credit_purchase")
+      .gte("created_at", oneHourAgo);
+    
+    const purchaseCount = recentPurchases?.length || 0;
+    if (purchaseCount >= 10) {
+      console.warn(`⚠️ Purchase rate limit exceeded for user ${user.id}`);
+      return new Response(JSON.stringify({ 
+        error: "Too many purchase attempts. Please try again later." 
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    console.log(`✓ Purchase rate limit check passed (${purchaseCount}/10 in last hour)`);
+
     // Fetch credit package
     const { data: creditPackage, error: packageError } = await supabase
       .from("credit_packages")
@@ -85,6 +106,29 @@ serve(async (req: Request) => {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // 🔒 SECURITY: Fraud detection for large purchases
+    const totalCredits = Number(creditPackage.credits) + Number(creditPackage.bonus_credits || 0);
+    
+    // Check if this is first purchase of large amount
+    const { data: pastSuccessful } = await supabase
+      .from("transactions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("transaction_mode", "credit_purchase")
+      .eq("status", "success");
+    
+    const isFirstPurchase = !pastSuccessful || pastSuccessful.length === 0;
+    
+    if (isFirstPurchase && totalCredits > 1000) {
+      console.warn(`⚠️ Large first purchase flagged`, {
+        user_id: user.id,
+        credits: totalCredits,
+        amount: creditPackage.price_mwk,
+      });
+      // Log for monitoring, but allow the purchase
+      // In production, you might want to require additional verification
     }
 
     // Calculate total credits (base + bonus)
