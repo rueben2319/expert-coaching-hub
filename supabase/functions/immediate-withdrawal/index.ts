@@ -21,9 +21,7 @@ const corsHeaders = {
 
 async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
   try {
-    console.log('DEBUG: Original mobile:', phoneNumber);
     const cleanNumber = phoneNumber.replace(/^\+?265/, '');
-    console.log('DEBUG: Cleaned mobile:', cleanNumber);
 
     const operatorsResponse = await fetch('https://api.paychangu.com/mobile-money/', {
       method: 'GET',
@@ -37,10 +35,8 @@ async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
       console.error('Failed to fetch operators, status:', operatorsResponse.status);
       // Fallback to hardcoded operators for Malawi
       if (/^(99|88)/.test(cleanNumber)) {
-        console.log('DEBUG: Using fallback Airtel operator');
         return 'AIRTEL_MW';
       } else if (/^(77|76)/.test(cleanNumber)) {
-        console.log('DEBUG: Using fallback TNM operator');
         return 'TNM_MW';
       } else {
         throw new Error('Unsupported mobile number prefix');
@@ -48,7 +44,6 @@ async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
     }
 
     const operatorsData = await operatorsResponse.json();
-    console.log('DEBUG: Operators API response:', JSON.stringify(operatorsData, null, 2));
     const operatorsList = operatorsData.data ?? [];
 
     let operatorName = '';
@@ -56,32 +51,23 @@ async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
     else if (/^(77|76)/.test(cleanNumber)) operatorName = 'TNM';
     else throw new Error('Unsupported mobile number prefix');
 
-    console.log('DEBUG: Looking for operator:', operatorName);
-    console.log('DEBUG: Total operators found:', operatorsList.length);
-
     let foundOperator: any = null;
     for (const op of operatorsList) {
-      console.log('DEBUG: Evaluating operator:', JSON.stringify(op, null, 2));
       if (!op || !op.name || !op.supported_country || !op.supported_country.name) {
-        console.log('DEBUG: Skipping invalid operator - missing fields');
         continue;
       }
       const nameMatch = op.name.toLowerCase().includes(operatorName.toLowerCase());
       const countryMatch = op.supported_country.name.toLowerCase() === 'malawi';
-      console.log(`DEBUG: ${op.name} - nameMatch: ${nameMatch}, countryMatch: ${countryMatch}`);
       if (nameMatch && countryMatch) {
-        console.log('DEBUG: Found matching operator:', op);
         foundOperator = op;
         break;
       }
     }
 
     if (foundOperator) {
-      console.log('DEBUG: Using found operator with ref_id:', foundOperator.ref_id);
       return foundOperator.ref_id;
     }
 
-    console.log('DEBUG: Operator not found in API, using fallback');
     // Fallback operators
     if (operatorName === 'Airtel') return 'AIRTEL_MW';
     if (operatorName === 'TNM') return 'TNM_MW';
@@ -181,7 +167,6 @@ async function executePayout(
 ) {
   // Ensure mobile number is exactly 9 digits
   const cleanMobile = payment_details.mobile.replace(/^\+?265/, '');
-  console.log('DEBUG: Formatted mobile for payout:', cleanMobile);
 
   if (!/^\d{9}$/.test(cleanMobile)) {
     throw new Error(`Invalid mobile number format: ${cleanMobile}. Must be exactly 9 digits.`);
@@ -344,7 +329,6 @@ serve(async (req) => {
       amountMWK
     );
 
-    // Finalize withdrawal
     const newBalance = await finalizeWithdrawal(
       supabase,
       user.id,
@@ -362,8 +346,8 @@ serve(async (req) => {
         withdrawal_request_id: withdrawalRequest.id,
         credits_amount: creditsToWithdraw,
         amount_mwk: amountMWK,
-        payout_ref: payoutData.ref_id,
-        payout_trans_id: payoutData.trans_id,
+        payout_ref: payoutData.transaction.ref_id,
+        payout_trans_id: payoutData.transaction.trans_id,
         new_balance: newBalance,
         message: "Withdrawal executed successfully.",
       }),
