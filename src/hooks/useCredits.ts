@@ -129,7 +129,7 @@ export function useCredits() {
     },
   });
 
-  // Request withdrawal
+  // Request withdrawal (now does immediate payout)
   const requestWithdrawal = useMutation({
     mutationFn: async (params: {
       credits_amount: number;
@@ -137,13 +137,13 @@ export function useCredits() {
       payment_details: any;
       notes?: string;
     }) => {
-      return callSupabaseFunction("request-withdrawal", params);
+      return callSupabaseFunction("immediate-withdrawal", params); // ✅ Changed to immediate-withdrawal
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["credit_wallet", user?.id] });
       queryClient.invalidateQueries({ queryKey: ["credit_transactions", user?.id] });
       queryClient.invalidateQueries({ queryKey: ["withdrawal_requests", user?.id] });
-      toast.success("Withdrawal request submitted successfully!");
+      toast.success("Withdrawal initiated successfully! Check your mobile money shortly.");
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to submit withdrawal request");

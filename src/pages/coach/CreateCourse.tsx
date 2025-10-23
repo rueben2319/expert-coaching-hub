@@ -14,8 +14,9 @@ import { toast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 const courseSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
@@ -23,6 +24,8 @@ const courseSchema = z.object({
   level: z.enum(["introduction", "intermediate", "advanced"]).optional(),
   tag: z.string().trim().max(100, "Tag must be less than 100 characters").optional(),
   category: z.string().trim().max(100, "Category must be less than 100 characters").optional(),
+  is_free: z.boolean().default(true),
+  price_credits: z.number().min(0, "Price must be 0 or greater").optional(),
 });
 
 type CourseFormData = z.infer<typeof courseSchema>;
@@ -39,6 +42,8 @@ export default function CreateCourse() {
       level: undefined,
       tag: "",
       category: "",
+      is_free: true,
+      price_credits: 0,
     },
   });
 
@@ -53,6 +58,8 @@ export default function CreateCourse() {
           level: data.level,
           tag: data.tag,
           category: data.category,
+          is_free: data.is_free,
+          price_credits: data.is_free ? 0 : (data.price_credits || 0),
           status: "draft",
         })
         .select()
@@ -126,6 +133,20 @@ export default function CreateCourse() {
 
                 <FormField
                   control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Describe your course content, objectives, and what students will learn..." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="level"
                   render={({ field }) => (
                     <FormItem>
@@ -174,6 +195,64 @@ export default function CreateCourse() {
                     </FormItem>
                   )}
                 />
+
+                {/* Pricing Section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Pricing</h3>
+
+                  <FormField
+                    control={form.control}
+                    name="is_free"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Free Course</FormLabel>
+                          <FormDescription>
+                            Toggle this on to make your course free, or off to set a credit price
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={(checked) => {
+                              field.onChange(checked);
+                              if (checked) {
+                                form.setValue("price_credits", 0);
+                              }
+                            }}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  {!form.watch("is_free") && (
+                    <FormField
+                      control={form.control}
+                      name="price_credits"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Price (Credits)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Enter price in credits"
+                              {...field}
+                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              value={field.value || ""}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Set the price in credits that students need to pay to enroll in this course
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
 
                 <div className="flex gap-4">
                   <Button

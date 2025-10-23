@@ -139,44 +139,8 @@ serve(async (req: Request) => {
       throw new Error("Failed to create withdrawal request: " + requestErr.message);
     }
 
-    // Deduct credits from wallet (hold them until processed)
-    const balanceAfter = currentBalance - creditsToWithdraw;
-
-    const { error: updateErr } = await supabase
-      .from("credit_wallets")
-      .update({
-        balance: balanceAfter,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", user.id);
-
-    if (updateErr) {
-      console.error("Failed to update wallet:", updateErr);
-      throw new Error("Failed to update wallet balance");
-    }
-
-    // Create credit transaction record
-    const { error: creditTxErr } = await supabase
-      .from("credit_transactions")
-      .insert({
-        user_id: user.id,
-        transaction_type: "withdrawal",
-        amount: -creditsToWithdraw,
-        balance_before: currentBalance,
-        balance_after: balanceAfter,
-        reference_type: "withdrawal_request",
-        reference_id: withdrawalRequest.id,
-        description: `Withdrawal request: ${creditsToWithdraw} credits → ${amountMWK} MWK`,
-        metadata: {
-          payment_method: payment_method,
-          amount_mwk: amountMWK,
-        },
-      });
-
-    if (creditTxErr) {
-      console.error("Failed to create credit transaction:", creditTxErr);
-      // Don't throw here, withdrawal request is already created
-    }
+    // ✅ FIXED: Credits are NOT deducted here - they remain in wallet until admin approval
+    // Admin will deduct credits when approving the withdrawal request
 
     return new Response(
       JSON.stringify({
@@ -185,7 +149,7 @@ serve(async (req: Request) => {
         credits_amount: creditsToWithdraw,
         amount_mwk: amountMWK,
         status: "pending",
-        message: "Withdrawal request submitted successfully",
+        message: "Withdrawal request submitted successfully. Credits will be held until admin approval.",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

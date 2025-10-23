@@ -18,7 +18,7 @@ const CONVERSION_RATE = 100; // 1 credit = 100 MWK
 export default function Withdrawals() {
   const { balance, requestWithdrawal, withdrawalRequests, withdrawalsLoading } = useCredits();
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
+  const [paymentMethod, setPaymentMethod] = useState("mobile_money");
   const [accountNumber, setAccountNumber] = useState("");
   const [bankName, setBankName] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -28,12 +28,12 @@ export default function Withdrawals() {
   const creditsAmount = Number(amount) || 0;
   const mwkAmount = creditsAmount * CONVERSION_RATE;
   const canSubmit = creditsAmount > 0 && creditsAmount <= balance && 
-                    (paymentMethod === "bank_transfer" ? (accountNumber && bankName && accountName) : phoneNumber);
+                    paymentMethod === "mobile_money" && phoneNumber;
 
   const handleSubmit = () => {
     const paymentDetails = paymentMethod === "bank_transfer" 
       ? { account_number: accountNumber, bank_name: bankName, account_name: accountName }
-      : { phone_number: phoneNumber };
+      : { mobile: phoneNumber }; // ✅ Changed from phone_number to mobile
 
     requestWithdrawal.mutate({
       credits_amount: creditsAmount,
@@ -61,6 +61,7 @@ export default function Withdrawals() {
         return <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />;
       case "rejected":
       case "cancelled":
+      case "failed":
         return <XCircle className="h-4 w-4 text-red-600" />;
       default:
         return null;
@@ -74,6 +75,7 @@ export default function Withdrawals() {
       processing: "outline",
       rejected: "destructive",
       cancelled: "destructive",
+      failed: "destructive",
     };
     return variants[status] || "outline";
   };
@@ -84,7 +86,7 @@ export default function Withdrawals() {
         <div>
           <h1 className="text-3xl font-bold">Withdrawals</h1>
           <p className="text-muted-foreground mt-2">
-            Request to withdraw your earnings
+            Withdraw your earnings instantly to mobile money
           </p>
         </div>
 
@@ -108,7 +110,7 @@ export default function Withdrawals() {
                   Request Withdrawal
                 </CardTitle>
                 <CardDescription>
-                  Withdraw your earnings to your bank account or mobile money
+                  Instantly withdraw your earnings to mobile money
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -142,8 +144,8 @@ export default function Withdrawals() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                      <SelectItem value="mobile_money">Mobile Money (Instant)</SelectItem>
+                      <SelectItem value="bank_transfer" disabled>Bank Transfer (Coming Soon)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -215,13 +217,13 @@ export default function Withdrawals() {
                   ) : (
                     <>
                       <ArrowDownToLine className="h-4 w-4 mr-2" />
-                      Submit Withdrawal Request
+                      Withdraw Now
                     </>
                   )}
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  Withdrawal requests are processed within 1-3 business days
+                  Instant payouts to mobile money. Failed payouts are automatically refunded.
                 </p>
               </CardContent>
             </Card>
@@ -270,6 +272,11 @@ export default function Withdrawals() {
                         {request.rejection_reason && (
                           <p className="text-sm text-destructive">
                             Reason: {request.rejection_reason}
+                          </p>
+                        )}
+                        {request.status === "failed" && (
+                          <p className="text-sm text-orange-600">
+                            Credits have been automatically refunded to your wallet
                           </p>
                         )}
                         {request.notes && (
