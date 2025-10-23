@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,14 +9,17 @@ import { useAuth } from "@/hooks/useAuth";
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
   const [totalCourses, setTotalCourses] = useState<number | null>(null);
+  const [pendingWithdrawals, setPendingWithdrawals] = useState<number | null>(null);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const navItems = [
     { label: "Dashboard", href: "/admin" },
     { label: "Users", href: "/admin/users" },
+    { label: "Withdrawals", href: "/admin/withdrawals" },
     { label: "Courses", href: "/admin/courses" },
     { label: "Settings", href: "/admin/settings" },
   ];
@@ -38,6 +42,16 @@ export default function AdminDashboard() {
           icon: <Shield className="h-4 w-4" />,
           label: "Roles & Permissions",
           href: "/admin/roles",
+        },
+      ],
+    },
+    {
+      title: "Finance",
+      items: [
+        {
+          icon: <AlertCircle className="h-4 w-4" />,
+          label: "Withdrawal Requests",
+          href: "/admin/withdrawals",
         },
       ],
     },
@@ -75,6 +89,13 @@ export default function AdminDashboard() {
         // total courses
         const coursesCountRes = await supabase.from('courses').select('*', { count: 'exact', head: true });
         if (mounted) setTotalCourses(coursesCountRes.count ?? 0);
+
+        // pending withdrawals
+        const withdrawalsCountRes = await supabase
+          .from('withdrawal_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        if (mounted) setPendingWithdrawals(withdrawalsCountRes.count ?? 0);
 
         // recent users
         const { data: recent, error: recentErr } = await supabase
@@ -152,6 +173,23 @@ export default function AdminDashboard() {
           <CardContent>
             <div className="text-3xl font-bold mb-2 text-accent">{loading ? '...' : totalCourses ?? 0}</div>
             <p className="text-sm text-muted-foreground">Courses available</p>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center mb-4">
+              <AlertCircle className="w-6 h-6 text-orange-500" />
+            </div>
+            <CardTitle>Pending Withdrawals</CardTitle>
+            <CardDescription>Withdrawal requests awaiting approval</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-orange-500">{loading ? '...' : pendingWithdrawals ?? 0}</div>
+            <p className="text-sm text-muted-foreground">Require attention</p>
+            <Button variant="outline" className="w-full mt-2" onClick={() => window.location.href = '/admin/withdrawals'}>
+              Manage Withdrawals
+            </Button>
           </CardContent>
         </Card>
 

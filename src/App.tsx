@@ -34,6 +34,7 @@ import CreditPurchaseSuccess from "./pages/client/CreditPurchaseSuccess";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/Users";
 import UserDetail from "./pages/admin/UserDetail";
+import AdminWithdrawals from "./pages/admin/Withdrawals";
 import Profile from "./pages/Profile";
 import { ThemeProvider } from "./hooks/useTheme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -275,6 +276,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
                   <UserDetail />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/withdrawals"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AdminWithdrawals />
                 </ProtectedRoute>
               }
             />
