@@ -25,6 +25,7 @@ type WebhookPayload = {
     amount?: number;
     currency?: string;
     status?: string;
+    charge_id?: string; // ✅ Added charge_id
   };
   // PayChangu sends tx_ref at root level
   tx_ref?: string;
@@ -35,6 +36,7 @@ type WebhookPayload = {
   amount?: number;
   currency?: string;
   charge?: number;
+  charge_id?: string; // ✅ Added charge_id
   amount_split?: any;
   total_amount_paid?: number;
   mode?: string;
@@ -211,6 +213,10 @@ serve(async (req: Request) => {
       .update({ status: success ? "success" : "failed", gateway_response: payload })
       .eq("id", tx.id);
 
+    // Check if this is a payout (withdrawal) transaction
+    const isPayout = tx_ref.startsWith("WD-");
+    console.log("Is payout transaction:", isPayout);
+
     if (success) {
       console.log("Payment was successful, processing updates...");
 
@@ -316,6 +322,33 @@ serve(async (req: Request) => {
           console.log("Successfully created invoice for credit purchase");
         }
 
+      } else if (isPayout) {
+        console.log("💰 Processing PAYOUT (withdrawal) completion for user:", tx.user_id);
+
+        // Extract withdrawal request ID from charge_id (WD-{id})
+        const chargeId = payload.data?.charge_id || (payload as any).charge_id || (payload as any).charge;
+        const withdrawalId = chargeId?.replace("WD-", "");
+
+        if (withdrawalId) {
+          // Update withdrawal request status
+          const { error: withdrawalErr } = await supabase
+            .from("withdrawal_requests")
+            .update({
+              status: "completed",
+              processed_at: new Date().toISOString(),
+              admin_notes: `Payout completed successfully. Ref: ${tx_ref}`
+            })
+            .eq("id", withdrawalId);
+
+          if (withdrawalErr) {
+            console.error("Failed to update withdrawal request status:", withdrawalErr);
+          } else {
+            console.log("Successfully updated withdrawal request status to completed");
+          }
+        } else {
+          console.error("Could not extract withdrawal ID from charge_id:", chargeId);
+        }
+
       } else if (tx.subscription_id) {
         console.log("Updating coach subscription:", tx.subscription_id);
         // Activate coach subscription
@@ -380,6 +413,98 @@ serve(async (req: Request) => {
           }
         } else {
           console.error("Subscription not found or error:", subErr);
+        }
+      }
+
+    } else {
+      // Payment failed - handle failures
+      console.log("Payment failed, handling error case...");
+
+      if (isPayout) {
+        console.log("❌ PAYOUT FAILED - handling withdrawal failure for user:", tx.user_id);
+
+        // Extract withdrawal request ID from charge_id (WD-{id})
+        const chargeId = payload.data?.charge_id || (payload as any).charge_id || (payload as any).charge;
+        const withdrawalId = chargeId?.replace("WD-", "");
+
+        if (withdrawalId) {
+          // Update withdrawal request status to failed
+          const { error: withdrawalErr } = await supabase
+            .from("withdrawal_requests")
+            .update({
+              status: "failed",
+              processed_at: new Date().toISOString(),
+              admin_notes: `Payout failed. Error: ${JSON.stringify(payload)}`
+            })
+            .eq("id", withdrawalId);
+
+          if (withdrawalErr) {
+            console.error("Failed to update withdrawal request status:", withdrawalErr);
+          } else {
+            console.log("Successfully updated withdrawal request status to failed");
+          }
+
+          // IMPORTANT: Attempt to refund credits to user's wallet
+          console.log("Attempting to refund credits to user wallet...");
+
+          // Get the withdrawal request to know how many credits to refund
+          const { data: withdrawalReq, error: reqErr } = await supabase
+            .from("withdrawal_requests")
+            .select("credits_amount, coach_id")
+            .eq("id", withdrawalId)
+            .single();
+
+          if (!reqErr && withdrawalReq) {
+            // Get user's wallet
+            const { data: wallet, error: walletErr } = await supabase
+              .from("credit_wallets")
+              .select("balance")
+              .eq("user_id", withdrawalReq.coach_id)
+              .single();
+
+            if (!walletErr && wallet) {
+              const refundAmount = Number(withdrawalReq.credits_amount);
+              const currentBalance = Number(wallet.balance);
+              const newBalance = currentBalance + refundAmount;
+
+              // Update wallet with refund
+              const { error: refundErr } = await supabase
+                .from("credit_wallets")
+                .update({
+                  balance: newBalance,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("user_id", withdrawalReq.coach_id);
+
+              if (!refundErr) {
+                // Create refund transaction record
+                const { error: refundTxErr } = await supabase
+                  .from("credit_transactions")
+                  .insert({
+                    user_id: withdrawalReq.coach_id,
+                    transaction_type: "refund",
+                    amount: refundAmount,
+                    balance_before: currentBalance,
+                    balance_after: newBalance,
+                    reference_type: "withdrawal_request",
+                    reference_id: withdrawalId,
+                    description: `Refund for failed withdrawal payout`,
+                    metadata: {
+                      payout_ref: tx_ref,
+                      failure_reason: "Payout failed - credits refunded"
+                    },
+                  });
+
+                if (refundTxErr) {
+                  console.error("Failed to create refund transaction:", refundTxErr);
+                } else {
+                  console.log("Successfully refunded credits to user wallet");
+                }
+              } else {
+                console.error("Failed to refund credits to wallet:", refundErr);
+              }
+            }
+          }
         }
       }
     }

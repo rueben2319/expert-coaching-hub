@@ -1,31 +1,13 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { CheckCircle, XCircle, Clock, AlertCircle, Users, BookOpen, Shield, Settings, BarChart3 } from "lucide-react";
+import { CheckCircle, XCircle, Clock, AlertCircle, Users, BookOpen, Shield, Settings, BarChart3, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { toast } from "@/hooks/use-toast";
-import { callSupabaseFunction } from "@/lib/supabaseFunctions";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 
 export default function AdminWithdrawals() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
-  const [adminNotes, setAdminNotes] = useState("");
-  const [actionType, setActionType] = useState<"approve" | "reject">("approve");
 
   const navItems = [
     { label: "Dashboard", href: "/admin" },
@@ -123,66 +105,32 @@ export default function AdminWithdrawals() {
     },
   });
 
-  const processWithdrawalMutation = useMutation({
-    mutationFn: async ({ requestId, action, notes }: { requestId: string; action: "approve" | "reject"; notes?: string }) => {
-      return await callSupabaseFunction("approve-withdrawal", {
-        withdrawal_request_id: requestId,
-        action,
-        admin_notes: notes,
-      });
-    },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["admin-withdrawal-requests"] });
-      toast({
-        title: `Withdrawal ${variables.action}d successfully`,
-        description: `The withdrawal request has been ${variables.action}d.`,
-      });
-      setSelectedRequest(null);
-      setAdminNotes("");
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error processing withdrawal",
-        description: error.message || "An error occurred while processing the withdrawal.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleProcessWithdrawal = (request: any, action: "approve" | "reject") => {
-    setSelectedRequest(request);
-    setActionType(action);
-    setAdminNotes("");
-  };
-
-  const confirmProcessWithdrawal = () => {
-    if (!selectedRequest) return;
-
-    processWithdrawalMutation.mutate({
-      requestId: selectedRequest.id,
-      action: actionType,
-      notes: adminNotes.trim() || undefined,
-    });
+  const formatMWK = (amount: number) => {
+    return new Intl.NumberFormat('en-MW', {
+      style: 'currency',
+      currency: 'MWK',
+    }).format(amount);
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
         return <Badge variant="secondary" className="flex items-center gap-1"><Clock className="h-3 w-3" /> Pending</Badge>;
+      case "processing":
+        return <Badge variant="outline" className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Processing</Badge>;
       case "approved":
         return <Badge variant="default" className="bg-green-100 text-green-700 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Approved</Badge>;
+      case "completed":
+        return <Badge variant="default" className="bg-green-100 text-green-700 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Completed</Badge>;
       case "rejected":
         return <Badge variant="destructive" className="flex items-center gap-1"><XCircle className="h-3 w-3" /> Rejected</Badge>;
+      case "failed":
+        return <Badge variant="destructive" className="flex items-center gap-1"><XCircle className="h-3 w-3" /> Failed</Badge>;
+      case "cancelled":
+        return <Badge variant="destructive" className="flex items-center gap-1"><XCircle className="h-3 w-3" /> Cancelled</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
-  };
-
-  const formatMWK = (amount: number) => {
-    return new Intl.NumberFormat('en-MW', {
-      style: 'currency',
-      currency: 'MWK',
-    }).format(amount);
   };
 
   if (isLoading) {
@@ -200,7 +148,7 @@ export default function AdminWithdrawals() {
           <div>
             <h1 className="text-3xl font-bold">Withdrawal Requests</h1>
             <p className="text-muted-foreground mt-2">
-              Review and process coach withdrawal requests
+              Monitor coach withdrawal requests (all payouts are processed automatically)
             </p>
           </div>
         </div>
@@ -278,27 +226,6 @@ export default function AdminWithdrawals() {
                       <span>Processed: {new Date(request.processed_at).toLocaleString()}</span>
                     )}
                   </div>
-
-                  {request.status === "pending" && (
-                    <div className="flex gap-2 mt-4">
-                      <Button
-                        onClick={() => handleProcessWithdrawal(request, "approve")}
-                        className="bg-green-600 hover:bg-green-700"
-                        disabled={processWithdrawalMutation.isPending}
-                      >
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Approve
-                      </Button>
-                      <Button
-                        onClick={() => handleProcessWithdrawal(request, "reject")}
-                        variant="destructive"
-                        disabled={processWithdrawalMutation.isPending}
-                      >
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Reject
-                      </Button>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             ))}
@@ -314,58 +241,6 @@ export default function AdminWithdrawals() {
             </CardContent>
           </Card>
         )}
-
-        {/* Confirmation Dialog */}
-        <Dialog open={!!selectedRequest} onOpenChange={() => setSelectedRequest(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {actionType === "approve" ? "Approve" : "Reject"} Withdrawal Request
-              </DialogTitle>
-              <DialogDescription>
-                {actionType === "approve"
-                  ? "This will deduct credits from the coach's wallet and mark the withdrawal as approved."
-                  : "This will reject the withdrawal request. The coach's credits will remain in their wallet."
-                }
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedRequest && (
-              <div className="space-y-4">
-                <div className="bg-muted p-4 rounded-lg">
-                  <p className="font-medium">{selectedRequest.profiles?.full_name}</p>
-                  <p className="text-sm text-muted-foreground">{selectedRequest.credits_amount} Credits → {formatMWK(selectedRequest.amount)}</p>
-                  <p className="text-sm text-muted-foreground capitalize">{selectedRequest.payment_method}: {typeof selectedRequest.payment_details === 'object' ? JSON.stringify(selectedRequest.payment_details) : selectedRequest.payment_details}</p>
-                </div>
-
-                <div>
-                  <Label htmlFor="admin-notes">Admin Notes (Optional)</Label>
-                  <Textarea
-                    id="admin-notes"
-                    placeholder="Add any notes about this decision..."
-                    value={adminNotes}
-                    onChange={(e) => setAdminNotes(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => setSelectedRequest(null)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={confirmProcessWithdrawal}
-                    disabled={processWithdrawalMutation.isPending}
-                    variant={actionType === "approve" ? "default" : "destructive"}
-                  >
-                    {processWithdrawalMutation.isPending ? "Processing..." :
-                     actionType === "approve" ? "Approve Withdrawal" : "Reject Withdrawal"}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
       </div>
     </DashboardLayout>
   );
