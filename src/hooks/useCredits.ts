@@ -45,9 +45,23 @@ export function useCredits() {
         .from("credit_wallets")
         .select("*")
         .eq("user_id", user!.id)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      
+      // If no wallet exists, return a default wallet structure
+      if (!data) {
+        return {
+          id: null,
+          user_id: user!.id,
+          balance: 0,
+          total_earned: 0,
+          total_spent: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+      }
+      
       return data;
     },
   });
