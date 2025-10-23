@@ -28,7 +28,13 @@ serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const paychanguSecretKey = Deno.env.get("PAYCHANGU_SECRET_KEY");
-    const appBaseUrl = Deno.env.get("APP_BASE_URL") || "http://localhost:5173";
+    const appBaseUrl = Deno.env.get("APP_BASE_URL") || "http://localhost:8080";
+
+    console.log("Environment variables:");
+    console.log("- SUPABASE_URL:", supabaseUrl ? "SET" : "NOT SET");
+    console.log("- SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "SET" : "NOT SET");
+    console.log("- PAYCHANGU_SECRET_KEY:", paychanguSecretKey ? "SET" : "NOT SET");
+    console.log("- APP_BASE_URL:", appBaseUrl);
 
     if (!supabaseUrl || !supabaseKey || !paychanguSecretKey) {
       throw new Error("Missing required environment variables");
@@ -109,12 +115,35 @@ serve(async (req: Request) => {
     }
 
     // Call PayChangu API
+    console.log("About to call PayChangu API for credit purchase");
+    console.log("Payment payload:", JSON.stringify({
+        amount: String(amount),
+        currency: "MWK",
+        email: user.email,
+        first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
+        last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
+        callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
+        return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
+        tx_ref: tx_ref,
+        customization: {
+          title: `Purchase ${creditPackage.name}`,
+          description: `${totalCredits} credits`,
+        },
+        meta: {
+          mode: "credit_purchase",
+          user_id: user.id,
+          package_id: package_id,
+          credits_amount: totalCredits,
+        },
+      }, null, 2));
+    console.log("Using payment secret (first 10 chars):", paychanguSecretKey!.substring(0, 10) + "...");
+
     const paychanguResponse = await fetch("https://api.paychangu.com/payment", {
       method: "POST",
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${paychanguSecretKey}`,
+        "Authorization": `Bearer ${paychanguSecretKey!}`,
       },
       body: JSON.stringify({
         amount: String(amount),
@@ -122,7 +151,7 @@ serve(async (req: Request) => {
         email: user.email,
         first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
         last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
-        callback_url: `${supabaseUrl}/functions/v1/credits-webhook`,
+        callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
         return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
         tx_ref: tx_ref,
         customization: {
@@ -138,7 +167,11 @@ serve(async (req: Request) => {
       }),
     });
 
+    console.log("PayChangu response status:", paychanguResponse.status);
+    console.log("PayChangu response headers:", Object.fromEntries(paychanguResponse.headers.entries()));
+
     const paychanguData = await paychanguResponse.json();
+    console.log("PayChangu response data:", JSON.stringify(paychanguData, null, 2));
 
     if (!paychanguResponse.ok || paychanguData.status !== "success") {
       // Update transaction to failed
