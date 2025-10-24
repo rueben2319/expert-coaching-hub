@@ -12,6 +12,7 @@ interface InteractiveContentProps {
     type: "iframe" | "embed";
     height?: number;
     allowFullscreen?: boolean;
+    required_interaction_minutes?: number; // Optional: custom completion time
   };
   contentId: string;
   onComplete?: () => void;
@@ -27,9 +28,9 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
   const interactionStartTime = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Check completion status on mount
+  // Check completion status and load saved progress on mount
   useEffect(() => {
-    const checkCompletionStatus = async () => {
+    const loadProgress = async () => {
       if (!user || !contentId) return;
 
       const { data } = await supabase
@@ -41,35 +42,59 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
 
       if (data?.is_completed) {
         setIsCompleted(true);
+      } else if (data?.interaction_data?.interaction_time) {
+        // Resume from previous session
+        const savedTime = data.interaction_data.interaction_time;
+        setInteractionTime(savedTime);
+        setHasInteracted(true);
+        console.log('Restored interaction time:', savedTime);
       }
     };
 
-    checkCompletionStatus();
+    loadProgress();
   }, [user, contentId]);
 
   // Track interaction time
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
-    if (hasInteracted && !isCompleted) {
-      interactionStartTime.current = Date.now();
+    if (hasInteracted && !isCompleted && !document.hidden) {
+      if (!interactionStartTime.current) {
+        interactionStartTime.current = Date.now();
+      }
+
       interval = setInterval(() => {
         if (interactionStartTime.current) {
-          const currentInteractionTime = (Date.now() - interactionStartTime.current) / 1000; // in seconds
-          setInteractionTime(currentInteractionTime);
+          const sessionTime = (Date.now() - interactionStartTime.current) / 1000;
+          const totalTime = interactionTime + sessionTime;
+          setInteractionTime(totalTime);
 
-          // Mark as complete after 5 minutes of interaction (adjustable)
-          if (currentInteractionTime >= 300 && !isCompleted) { // 5 minutes
+          // Use configurable completion time or default to 5 minutes
+          const requiredTime = (content.required_interaction_minutes || 5) * 60;
+          if (totalTime >= requiredTime && !isCompleted) {
             handleContentComplete();
           }
         }
       }, 1000);
+    } else {
+      // Save accumulated time when paused
+      if (interactionStartTime.current) {
+        const sessionTime = (Date.now() - interactionStartTime.current) / 1000;
+        setInteractionTime(prev => prev + sessionTime);
+        interactionStartTime.current = null;
+      }
     }
 
     return () => {
       if (interval) clearInterval(interval);
+      // Save time on cleanup
+      if (interactionStartTime.current) {
+        const sessionTime = (Date.now() - interactionStartTime.current) / 1000;
+        setInteractionTime(prev => prev + sessionTime);
+        interactionStartTime.current = null;
+      }
     };
-  }, [hasInteracted, isCompleted]);
+  }, [hasInteracted, isCompleted, content.required_interaction_minutes]);
 
   // Handle fullscreen changes
   useEffect(() => {
@@ -82,6 +107,52 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
+
+  // Visibility API - pause tracking when tab is hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && interactionStartTime.current) {
+        console.log('Tab hidden - pausing interaction tracking');
+        // Save accumulated time
+        const sessionTime = (Date.now() - interactionStartTime.current) / 1000;
+        setInteractionTime(prev => prev + sessionTime);
+        interactionStartTime.current = null;
+      } else if (!document.hidden && hasInteracted && !isCompleted) {
+        console.log('Tab visible - resuming interaction tracking');
+        // Resume tracking
+        interactionStartTime.current = Date.now();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [hasInteracted, isCompleted]);
+
+  // Periodic progress saving (every 10 seconds while interacting)
+  useEffect(() => {
+    let saveInterval: NodeJS.Timeout;
+
+    if (hasInteracted && !isCompleted && user) {
+      saveInterval = setInterval(async () => {
+        await supabase
+          .from("content_interactions")
+          .upsert({
+            user_id: user.id,
+            content_id: contentId,
+            is_completed: false,
+            interaction_data: {
+              interaction_time: interactionTime,
+              last_interaction: new Date().toISOString(),
+            },
+          });
+        console.log('Saved interaction progress:', interactionTime);
+      }, 10000); // Save every 10 seconds
+    }
+
+    return () => {
+      if (saveInterval) clearInterval(saveInterval);
+    };
+  }, [hasInteracted, interactionTime, isCompleted, user, contentId]);
 
   const toggleFullscreen = () => {
     const container = document.getElementById(`interactive-${contentId}`);
@@ -228,7 +299,7 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
 
       {!isCompleted && (
         <p className="text-xs text-muted-foreground">
-          💡 Interact with the content above. It will be marked complete after 5 minutes of interaction, or click "Mark Complete" when done.
+          💡 Interact with the content above. It will be marked complete after {content.required_interaction_minutes || 5} minutes of interaction, or click "Mark Complete" when done.
         </p>
       )}
     </div>
