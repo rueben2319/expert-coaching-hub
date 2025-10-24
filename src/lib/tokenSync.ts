@@ -121,12 +121,16 @@ export async function syncTokens(): Promise<TokenSyncResult> {
 export function setupTokenSync(intervalMs: number = 60000): () => void {
   logger.log('Setting up automatic token synchronization');
 
-  // Periodic check for token refresh needs (removed auth state listener to prevent duplicates)
+  // Periodic check for token refresh needs
   const intervalId = setInterval(async () => {
-    const needsRefresh = await checkTokenRefreshNeeded();
-    if (needsRefresh) {
-      logger.log('Proactive token refresh triggered');
-      await syncTokens();
+    try {
+      const needsRefresh = await checkTokenRefreshNeeded();
+      if (needsRefresh) {
+        logger.log('Proactive token refresh triggered');
+        await syncTokens();
+      }
+    } catch (error) {
+      logger.error('Error during periodic token check:', error);
     }
   }, intervalMs);
 
@@ -138,25 +142,32 @@ export function setupTokenSync(intervalMs: number = 60000): () => void {
 }
 
 /**
- * Notify token sync of auth state changes
- * Call this from auth state change handlers instead of setting up duplicate listeners
+ * Manually trigger token synchronization after operations that may have refreshed tokens
+ * Call this explicitly when you need to sync tokens (e.g., after OAuth operations)
  */
-export async function notifyAuthStateChange(event: string, session: any): Promise<void> {
-  if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+export async function manualTokenSync(): Promise<TokenSyncResult> {
+  try {
     // Only sync tokens for users who have Google OAuth
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const hasGoogleIdentity = user?.identities?.some(identity => identity.provider === 'google');
-      
-      if (hasGoogleIdentity) {
-        logger.log('Auth state changed, syncing tokens:', event);
-        await syncTokens();
-      } else {
-        logger.log('Skipping token sync - user does not have Google OAuth');
-      }
-    } catch (error) {
-      logger.error('Error checking Google identity for token sync:', error);
+    const { data: { user } } = await supabase.auth.getUser();
+    const hasGoogleIdentity = user?.identities?.some(identity => identity.provider === 'google');
+
+    if (hasGoogleIdentity) {
+      logger.log('Manual token sync triggered for Google OAuth user');
+      return await syncTokens();
+    } else {
+      logger.log('Skipping manual token sync - user does not have Google OAuth');
+      return {
+        success: true,
+        tokenRefreshed: false,
+      };
     }
+  } catch (error: any) {
+    logger.error('Manual token sync failed:', error);
+    return {
+      success: false,
+      tokenRefreshed: false,
+      error: error.message,
+    };
   }
 }
 
@@ -211,4 +222,19 @@ export async function forceTokenRefresh(): Promise<TokenSyncResult> {
       error: error.message,
     };
   }
+}
+
+/**
+ * Notify components about authentication state changes
+ * This is useful for triggering token synchronization when auth state changes
+ */
+export function notifyAuthStateChange() {
+  // Trigger a custom event that components can listen to
+  const event = new CustomEvent('authStateChanged', {
+    detail: {
+      timestamp: new Date().toISOString(),
+    },
+  });
+  window.dispatchEvent(event);
+  logger.log('Auth state change notification sent');
 }

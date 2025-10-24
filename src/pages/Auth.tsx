@@ -46,6 +46,13 @@ export default function Auth() {
     if (!user) return;
 
     // If role already set, navigate immediately
+    // But only if we're not explicitly on the auth page (prevent redirect loop)
+    if (role && window.location.pathname === '/auth') {
+      // User is logged in and trying to access auth page
+      // Don't redirect automatically - let them see they're already logged in
+      return;
+    }
+    
     if (role) {
       navigate(`/${role}`);
       return;
@@ -194,7 +201,6 @@ export default function Auth() {
               full_name: sanitizedFullName,
               role: selectedRole
             },
-            emailRedirectTo: `${window.location.origin}/`,
           },
         });
 
@@ -202,7 +208,7 @@ export default function Auth() {
 
         // Note: User role is automatically created by the handle_new_user trigger
         // based on the role passed in user metadata
-        toast.success("Account created! Please check your email to verify.");
+        toast.success("Account created successfully!");
       }
     } catch (error: any) {
       toast.error(error.message || "An error occurred");
@@ -293,6 +299,46 @@ export default function Auth() {
       setSubmittingRole(false);
     }
   };
+
+  // If user is already logged in and has a role, show a message instead of the form
+  if (user && role) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="space-y-3 text-center">
+            <div className="mx-auto w-12 h-12 rounded-xl overflow-hidden">
+              <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
+            </div>
+            <CardTitle className="text-2xl">Already Logged In</CardTitle>
+            <CardDescription>
+              You're currently signed in. Choose an option below.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button 
+              onClick={() => navigate(`/${role}`)} 
+              className="w-full"
+            >
+              Go to Dashboard
+            </Button>
+            <Button 
+              onClick={async () => {
+                await signOut();
+                toast.success("Signed out successfully");
+              }} 
+              variant="outline"
+              className="w-full"
+            >
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">

@@ -6,6 +6,7 @@ import { notifyAuthStateChange } from "@/lib/tokenSync";
 
 type UserRole = "client" | "coach" | "admin";
 
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -32,21 +33,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   const fetchUserRole = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .single();
 
-    if (error) {
-      console.error("Failed to fetch user role:", error);
-      setRole(null);
-      return;
-    }
+      if (error) {
+        console.error("Failed to fetch user role:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        console.error("Error details:", error.details);
+        setRole(null);
+        return;
+      }
 
-    if (data) {
-      setRole(data.role as UserRole);
-    } else {
+      if (data) {
+        console.log("✅ Successfully fetched role:", data.role);
+        setRole(data.role as UserRole);
+      } else {
+        console.warn("⚠️ No role data found for user:", userId);
+        setRole(null);
+      }
+    } catch (err) {
+      console.error("❌ Exception while fetching role:", err);
       setRole(null);
     }
   };
@@ -54,11 +65,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // Notify token sync system of auth state changes (non-blocking)
-        notifyAuthStateChange(event, session).catch((error) => {
-          console.error('Token sync notification failed:', error);
-        });
-
         setSession(session);
         setUser(session?.user ?? null);
 
