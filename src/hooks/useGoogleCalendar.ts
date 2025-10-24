@@ -1,7 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { googleCalendarService, GoogleCalendarEvent, GoogleCalendarResponse } from '@/integrations/google/calendar';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './useAuth';
 
 export interface CreateMeetingData {
   summary: string;
@@ -15,6 +17,18 @@ export interface CreateMeetingData {
 export const useGoogleCalendar = () => {
   const [isValidating, setIsValidating] = useState(false);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Clear calendar cache when user changes
+  useEffect(() => {
+    if (user?.id) {
+      // Clear cache for previous user (if any) and ensure current user cache is fresh
+      googleCalendarService.clearUserCache(user.id);
+    } else {
+      // Clear all caches on logout
+      googleCalendarService.clearAllCaches();
+    }
+  }, [user?.id]);
 
   // Check if user has valid Google Calendar access
   const validateAccess = useCallback(async () => {
@@ -125,6 +139,10 @@ export const useGoogleCalendar = () => {
     createMeeting: createMeetingMutation.mutateAsync,
     updateEvent: updateEventMutation.mutateAsync,
     deleteEvent: deleteEventMutation.mutateAsync,
+
+    // Cache management
+    clearUserCache: (userId: string) => googleCalendarService.clearUserCache(userId),
+    clearAllCaches: () => googleCalendarService.clearAllCaches(),
 
     // Loading states
     isCreatingMeeting: createMeetingMutation.isPending,

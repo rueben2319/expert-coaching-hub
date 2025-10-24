@@ -57,25 +57,57 @@ export interface GoogleCalendarResponse {
 }
 
 class GoogleCalendarService {
-  // Cache to prevent redundant session fetches
-  private sessionCache: { session: any; timestamp: number } | null = null;
+  // User-scoped cache to prevent serving stale sessions across different users
+  private sessionCache: Map<string, { session: any; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 5000; // 5 seconds
+  // Prevent race conditions in concurrent token requests
+  private pendingTokenFetches: Map<string, Promise<string>> = new Map();
   private readonly SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
 
   private async getAccessToken(): Promise<string> {
+    // Get current user ID for cache key
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    if (!userId) {
+      throw new Error('No authenticated user');
+    }
+
     const now = Date.now();
-    
-    // Use cached session if recent and has token
-    if (this.sessionCache && (now - this.sessionCache.timestamp) < this.CACHE_DURATION) {
-      if (this.sessionCache.session?.provider_token) {
-        return this.sessionCache.session.provider_token;
+
+    // Check if there's already an in-flight request for this user
+    const existingRequest = this.pendingTokenFetches.get(userId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    // Check user-specific cached session
+    const cached = this.sessionCache.get(userId);
+    if (cached && (now - cached.timestamp) < this.CACHE_DURATION) {
+      if (cached.session?.provider_token) {
+        return cached.session.provider_token;
       }
     }
 
+    // Create and cache the token fetch promise to prevent race conditions
+    const tokenPromise = this.fetchFreshToken(userId);
+    this.pendingTokenFetches.set(userId, tokenPromise);
+
+    try {
+      const token = await tokenPromise;
+      return token;
+    } finally {
+      // Clean up the pending request
+      this.pendingTokenFetches.delete(userId);
+    }
+  }
+
+  private async fetchFreshToken(userId: string): Promise<string> {
+    const now = Date.now();
+
     // Fetch fresh session
     const { data: { session } } = await supabase.auth.getSession();
-    this.sessionCache = { session, timestamp: now };
-    
+    this.sessionCache.set(userId, { session, timestamp: now });
+
     if (!session) {
       throw new Error('No active session. Please sign in.');
     }
@@ -126,33 +158,53 @@ class GoogleCalendarService {
       }
 
       const result = await response.json();
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Token refresh failed');
       }
 
-      // Clear session cache to force refetch with new token
-      this.sessionCache = null;
-      
+      // Clear session cache for current user to force refetch with new token
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        this.sessionCache.delete(user.id);
+        this.pendingTokenFetches.delete(user.id);
+      }
+
       // CRITICAL: Refresh the Supabase session to get updated provider tokens
       // This ensures the frontend has access to the newly refreshed token
       const { error: refreshError } = await supabase.auth.refreshSession();
-      
+
       if (refreshError) {
         logger.error('Failed to refresh Supabase session:', refreshError);
         // Don't throw - we can still try to use the updated token from metadata
       } else {
         logger.log('Supabase session refreshed successfully');
       }
-      
+
       // Wait a bit for the session to be fully updated
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       logger.log('Access token refreshed and synchronized successfully');
     } catch (error: any) {
       logger.error('Failed to refresh access token:', error);
       throw error;
     }
+  }
+
+  /**
+   * Clear cache for a specific user (call on logout or auth state change)
+   */
+  clearUserCache(userId: string): void {
+    this.sessionCache.delete(userId);
+    this.pendingTokenFetches.delete(userId);
+  }
+
+  /**
+   * Clear all caches (call on global auth state reset)
+   */
+  clearAllCaches(): void {
+    this.sessionCache.clear();
+    this.pendingTokenFetches.clear();
   }
 
   private async makeCalendarRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {

@@ -12,12 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle, Loader2, AlertCircle } from "lucide-react";
 import { CreditWallet } from "@/components/CreditWallet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { WITHDRAWAL_LIMITS } from "@/lib/withdrawalLimits";
 
-const CONVERSION_RATE = 100; // 1 credit = 100 MWK
-const MIN_WITHDRAWAL = 10; // Minimum 10 credits
-const MAX_WITHDRAWAL = 10000; // Maximum 10,000 credits per transaction
-const DAILY_LIMIT = 50000; // Maximum 50,000 credits per day
-const CREDIT_AGING_DAYS = 3; // Credits must age 3 days before withdrawal
+const CONVERSION_RATE = WITHDRAWAL_LIMITS.CONVERSION_RATE; // 1 credit = 100 MWK
+const MIN_WITHDRAWAL = WITHDRAWAL_LIMITS.MIN_WITHDRAWAL; // Minimum 10 credits
+const MAX_WITHDRAWAL = WITHDRAWAL_LIMITS.MAX_WITHDRAWAL; // Maximum credits per transaction
+const DAILY_LIMIT = WITHDRAWAL_LIMITS.DAILY_LIMIT; // Maximum credits per day
+const CREDIT_AGING_DAYS = WITHDRAWAL_LIMITS.CREDIT_AGING_DAYS; // Credits must age 3 days
 
 export default function Withdrawals() {
   const { balance, requestWithdrawal, withdrawalRequests, withdrawalsLoading } = useCredits();

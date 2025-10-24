@@ -25,6 +25,31 @@ COMMENT ON INDEX idx_withdrawal_requests_coach_created IS
 COMMENT ON INDEX idx_credit_transactions_user_type_created IS 
   'Optimizes credit aging and fraud detection queries';
 
+CREATE OR REPLACE FUNCTION get_aged_credits(p_user_id UUID, p_min_age_days INTEGER DEFAULT 3)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  aging_date TIMESTAMPTZ := NOW() - (p_min_age_days || ' days')::INTERVAL;
+  aged_net NUMERIC := 0;
+  current_balance NUMERIC := 0;
+BEGIN
+  SELECT COALESCE(SUM(amount), 0)
+  INTO aged_net
+  FROM credit_transactions
+  WHERE user_id = p_user_id
+    AND created_at <= aging_date; -- include positive and negative types
+
+  SELECT COALESCE(balance,0)
+  INTO current_balance
+  FROM credit_wallets
+  WHERE user_id = p_user_id;
+
+  RETURN GREATEST(0, LEAST(aged_net, current_balance));
+END;
+$$;  
+
 -- Add function to get aged credits (credits older than X days)
 CREATE OR REPLACE FUNCTION get_aged_credits(
   p_user_id UUID,

@@ -11,7 +11,9 @@ import { useMemo } from "react";
 
 // Helper function to safely divide numbers and avoid division by zero
 const safeDivide = (numerator: number, denominator: number, defaultValue = 0): number => {
-  return denominator === 0 ? defaultValue : numerator / denominator;
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) return defaultValue;
+  if (denominator <= 0) return defaultValue;
+  return numerator / denominator;
 };
 
 export default function Analytics() {
@@ -213,6 +215,20 @@ export default function Analytics() {
       popularLessons
     };
   }, [courses, enrollments, lessonProgress, enrollmentProfiles]);
+
+  // Precompute student progress distribution for performance
+  const allStudents = useMemo(
+    () => analyticsData?.courseAnalytics.flatMap(c => c.students) ?? [],
+    [analyticsData]
+  );
+
+  const studentsByProgress = useMemo(() => ({
+    "0-25": allStudents.filter(s => s.progress < 25).length,
+    "25-50": allStudents.filter(s => s.progress >= 25 && s.progress < 50).length,
+    "50-75": allStudents.filter(s => s.progress >= 50 && s.progress < 75).length,
+    "75-100": allStudents.filter(s => s.progress >= 75 && s.progress < 100).length,
+    "completed": allStudents.filter(s => s.progress >= 100).length,
+  }), [allStudents]);
 
   // Fetch recent activity for coach's courses
   const { data: recentActivityData, isLoading: activityLoading } = useQuery({
@@ -571,41 +587,41 @@ export default function Analytics() {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>0-25%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress < 25).length} students</span>
+                      <span>{studentsByProgress["0-25"]} students</span>
                     </div>
-                    <Progress value={safeDivide(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress < 25).length, analyticsData.totalEnrollments, 0) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["0-25"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>25-50%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 25 && s.progress < 50).length} students</span>
+                      <span>{studentsByProgress["25-50"]} students</span>
                     </div>
-                    <Progress value={safeDivide(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 25 && s.progress < 50).length, analyticsData.totalEnrollments, 0) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["25-50"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>50-75%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 50 && s.progress < 75).length} students</span>
+                      <span>{studentsByProgress["50-75"]} students</span>
                     </div>
-                    <Progress value={safeDivide(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 50 && s.progress < 75).length, analyticsData.totalEnrollments, 0) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["50-75"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>75-100%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 75 && s.progress < 100).length} students</span>
+                      <span>{studentsByProgress["75-100"]} students</span>
                     </div>
-                    <Progress value={safeDivide(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 75 && s.progress < 100).length, analyticsData.totalEnrollments, 0) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["75-100"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Completed (100%)</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 100).length} students</span>
+                      <span>{studentsByProgress["completed"]} students</span>
                     </div>
-                    <Progress value={safeDivide(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 100).length, analyticsData.totalEnrollments, 0) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["completed"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
                 </div>
               ) : (

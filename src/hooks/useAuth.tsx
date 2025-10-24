@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { notifyAuthStateChange } from "@/lib/tokenSync";
 
 type UserRole = "client" | "coach" | "admin";
 
@@ -14,7 +15,14 @@ interface AuthContextType {
   refreshRole: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>({
+  user: null,
+  session: null,
+  role: null,
+  loading: true,
+  signOut: async () => {},
+  refreshRole: async () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -46,15 +54,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        // Notify token sync system of auth state changes (non-blocking)
+        notifyAuthStateChange(event, session).catch((error) => {
+          console.error('Token sync notification failed:', error);
+        });
+
         setSession(session);
         setUser(session?.user ?? null);
-        
+
         if (session?.user) {
           fetchUserRole(session.user.id);
         } else {
           setRole(null);
         }
-        
+
         setLoading(false);
       }
     );
@@ -97,7 +110,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    // This should never happen with our default value, but fallback for safety
+    return {
+      user: null,
+      session: null,
+      role: null,
+      loading: true,
+      signOut: async () => {},
+      refreshRole: async () => {},
+    };
   }
   return context;
 }

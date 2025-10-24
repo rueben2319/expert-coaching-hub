@@ -121,15 +121,7 @@ export async function syncTokens(): Promise<TokenSyncResult> {
 export function setupTokenSync(intervalMs: number = 60000): () => void {
   logger.log('Setting up automatic token synchronization');
 
-  // Check for token sync on auth state changes
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-      logger.log('Auth state changed, syncing tokens:', event);
-      await syncTokens();
-    }
-  });
-
-  // Periodic check for token refresh needs
+  // Periodic check for token refresh needs (removed auth state listener to prevent duplicates)
   const intervalId = setInterval(async () => {
     const needsRefresh = await checkTokenRefreshNeeded();
     if (needsRefresh) {
@@ -141,9 +133,19 @@ export function setupTokenSync(intervalMs: number = 60000): () => void {
   // Return cleanup function
   return () => {
     logger.log('Cleaning up token synchronization');
-    subscription.unsubscribe();
     clearInterval(intervalId);
   };
+}
+
+/**
+ * Notify token sync of auth state changes
+ * Call this from auth state change handlers instead of setting up duplicate listeners
+ */
+export async function notifyAuthStateChange(event: string, session: any): Promise<void> {
+  if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+    logger.log('Auth state changed, syncing tokens:', event);
+    await syncTokens();
+  }
 }
 
 /**

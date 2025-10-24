@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -24,9 +25,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/auth" replace />;
   }
 
-  // If user is authenticated but role is still null after loading, redirect to home
-  if (user && role === null && !loading) {
-    console.warn("User authenticated but no role found");
+  // If user is authenticated but role is still null/undefined after loading, redirect to home
+  if (user && role == null && !loading) {
+    logger.warn("User authenticated but no role found");
     return <Navigate to="/" replace />;
   }
 

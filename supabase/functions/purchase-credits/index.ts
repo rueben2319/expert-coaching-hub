@@ -2,8 +2,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { logRateLimitHit, logHighValueTransaction, createLogEntry } from "../_shared/monitoring.ts";
 
-// Deno global type declaration for IDE
+// Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
@@ -30,11 +31,14 @@ serve(async (req: Request) => {
     const paychanguSecretKey = Deno.env.get("PAYCHANGU_SECRET_KEY");
     const appBaseUrl = Deno.env.get("APP_BASE_URL") || "http://localhost:8080";
 
-    console.log("Environment variables:");
-    console.log("- SUPABASE_URL:", supabaseUrl ? "SET" : "NOT SET");
-    console.log("- SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "SET" : "NOT SET");
-    console.log("- PAYCHANGU_SECRET_KEY:", paychanguSecretKey ? "SET" : "NOT SET");
-    console.log("- APP_BASE_URL:", appBaseUrl);
+    const isDebug = (Deno.env.get("APP_ENV") ?? "production") !== "production";
+    if (isDebug) {
+      console.log("Environment variables:");
+      console.log("- SUPABASE_URL:", supabaseUrl ? "SET" : "NOT SET");
+      console.log("- SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "SET" : "NOT SET");
+      console.log("- PAYCHANGU_SECRET_KEY:", paychanguSecretKey ? "SET" : "NOT SET");
+      console.log("- APP_BASE_URL:", appBaseUrl);
+    }
 
     if (!supabaseUrl || !supabaseKey || !paychanguSecretKey) {
       throw new Error("Missing required environment variables");
@@ -74,16 +78,28 @@ serve(async (req: Request) => {
 
     // 🔒 SECURITY: Rate limiting on purchases (10 per hour)
     const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
-    const { data: recentPurchases } = await supabase
+    const { count: purchaseCount, error: rlError } = await supabase
       .from("transactions")
-      .select("id")
+      .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .eq("transaction_mode", "credit_purchase")
       .gte("created_at", oneHourAgo);
     
-    const purchaseCount = recentPurchases?.length || 0;
-    if (purchaseCount >= 10) {
-      console.warn(`⚠️ Purchase rate limit exceeded for user ${user.id}`);
+    if (rlError) {
+      // Fail closed or degrade gracefully based on your policy
+      console.error("Rate-limit check failed:", rlError.message);
+      // For security, fail closed on rate limit errors
+      await logRateLimitHit(user.id, "credit_purchase", 10, 0);
+      return new Response(JSON.stringify({ 
+        error: "Service temporarily unavailable. Please try again later." 
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    if ((purchaseCount || 0) >= 10) {
+      await logRateLimitHit(user.id, "credit_purchase", 10, purchaseCount || 0);
       return new Response(JSON.stringify({ 
         error: "Too many purchase attempts. Please try again later." 
       }), {
@@ -91,7 +107,9 @@ serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    console.log(`✓ Purchase rate limit check passed (${purchaseCount}/10 in last hour)`);
+    if (isDebug) {
+      console.log(`✓ Purchase rate limit check passed (${purchaseCount || 0}/10 in last hour)`);
+    }
 
     // Fetch credit package
     const { data: creditPackage, error: packageError } = await supabase
@@ -117,22 +135,24 @@ serve(async (req: Request) => {
       .select("id")
       .eq("user_id", user.id)
       .eq("transaction_mode", "credit_purchase")
-      .eq("status", "success");
+      .eq("status", "success")
+      .limit(1);
     
     const isFirstPurchase = !pastSuccessful || pastSuccessful.length === 0;
     
     if (isFirstPurchase && totalCredits > 1000) {
-      console.warn(`⚠️ Large first purchase flagged`, {
-        user_id: user.id,
-        credits: totalCredits,
-        amount: creditPackage.price_mwk,
-      });
+      if (isDebug) {
+        createLogEntry('warn', 'purchase-credits', 'Large first purchase flagged', {
+          user_id: user.id,
+          credits: totalCredits,
+          amount: creditPackage.price_mwk,
+        });
+      }
       // Log for monitoring, but allow the purchase
       // In production, you might want to require additional verification
     }
 
-    // Calculate total credits (base + bonus)
-    const totalCredits = Number(creditPackage.credits) + Number(creditPackage.bonus_credits || 0);
+    // Calculate payment amount in MWK
     const amount = creditPackage.price_mwk;
 
     // Generate unique transaction reference
@@ -158,29 +178,33 @@ serve(async (req: Request) => {
       throw new Error("Failed to create transaction: " + txError?.message);
     }
 
+    // Log high-value transactions
+    await logHighValueTransaction('purchase', user.id, totalCredits, amount);
+
     // Call PayChangu API
-    console.log("About to call PayChangu API for credit purchase");
-    console.log("Payment payload:", JSON.stringify({
-        amount: String(amount),
-        currency: "MWK",
-        email: user.email,
-        first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
-        last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
-        callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
-        return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
-        tx_ref: tx_ref,
-        customization: {
-          title: `Purchase ${creditPackage.name}`,
-          description: `${totalCredits} credits`,
-        },
-        meta: {
-          mode: "credit_purchase",
-          user_id: user.id,
-          package_id: package_id,
-          credits_amount: totalCredits,
-        },
-      }, null, 2));
-    console.log("Using payment secret (first 10 chars):", paychanguSecretKey!.substring(0, 10) + "...");
+    if (isDebug) {
+      console.log("About to call PayChangu API for credit purchase");
+      console.log("Payment payload (redacted):", JSON.stringify({
+          amount: String(amount),
+          currency: "MWK",
+          email: "<redacted>",
+          first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
+          last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
+          callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
+          return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
+          tx_ref: tx_ref,
+          customization: {
+            title: `Purchase ${creditPackage.name}`,
+            description: `${totalCredits} credits`,
+          },
+          meta: {
+            mode: "credit_purchase",
+            user_id: "<redacted>",
+            package_id: package_id,
+            credits_amount: totalCredits,
+          },
+        }, null, 2));
+    }
 
     const paychanguResponse = await fetch("https://api.paychangu.com/payment", {
       method: "POST",
@@ -211,11 +235,11 @@ serve(async (req: Request) => {
       }),
     });
 
-    console.log("PayChangu response status:", paychanguResponse.status);
-    console.log("PayChangu response headers:", Object.fromEntries(paychanguResponse.headers.entries()));
-
     const paychanguData = await paychanguResponse.json();
-    console.log("PayChangu response data:", JSON.stringify(paychanguData, null, 2));
+    if (isDebug) {
+      console.log("PayChangu response status:", paychanguResponse.status);
+      console.log("PayChangu response data:", JSON.stringify(paychanguData, null, 2));
+    }
 
     if (!paychanguResponse.ok || paychanguData.status !== "success") {
       // Update transaction to failed
@@ -245,9 +269,12 @@ serve(async (req: Request) => {
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
-    console.error("Error in purchase-credits:", msg);
+    createLogEntry('error', 'purchase-credits', `Purchase credits error: ${msg}`, {
+      error: msg,
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     return new Response(JSON.stringify({ error: msg }), {
-      status: 400,
+      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

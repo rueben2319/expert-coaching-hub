@@ -5,7 +5,7 @@
  * in the credit system.
  */
 
-// Deno global type declaration
+// Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
@@ -21,18 +21,46 @@ export interface AlertPayload {
   timestamp?: string;
 }
 
-export interface FraudAlert extends AlertPayload {
+export interface FraudAlert extends Omit<AlertPayload, 'level'> {
   fraud_score: number;
   fraud_reasons: string[];
   amount: number;
   transaction_type: string;
 }
 
+// Rate limiting for alert spam prevention
+const alertCache = new Map<string, number>();
+
 /**
  * Send alert to monitoring system
  * In production, integrate with Sentry, Slack, PagerDuty, etc.
  */
 export async function sendAlert(payload: AlertPayload): Promise<void> {
+  const alertKey = `${payload.level}:${payload.title}`;
+  const now = Date.now();
+  const lastSent = alertCache.get(alertKey);
+  
+  // Configurable cooldown period (default 1 minute)
+  const ALERT_COOLDOWN = parseInt(
+    Deno.env.get('ALERT_COOLDOWN_MS') || '60000',
+    10
+  );
+  
+  // Skip if same alert was sent recently (except critical alerts which bypass rate limiting)
+  if (lastSent && (now - lastSent) < ALERT_COOLDOWN && payload.level !== 'critical') {
+    console.log(`[RATE LIMITED] Skipping duplicate alert: ${alertKey}`);
+    return;
+  }
+  
+  alertCache.set(alertKey, now);
+  
+  // Clean up old entries from cache (keep cache from growing indefinitely)
+  for (const [key, timestamp] of alertCache.entries()) {
+    if (now - timestamp > ALERT_COOLDOWN * 10) { // Clean entries older than 10x cooldown
+      alertCache.delete(key);
+    }
+  }
+  
   const timestamp = payload.timestamp || new Date().toISOString();
   
   // Console logging for all environments
@@ -121,7 +149,10 @@ export async function logHighValueTransaction(
   amount: number,
   amountMWK: number
 ): Promise<void> {
-  const LARGE_AMOUNT_THRESHOLD = 10000; // 10k credits = MWK 1M
+  const LARGE_AMOUNT_THRESHOLD = parseInt(
+    Deno.env.get('LARGE_TRANSACTION_THRESHOLD') || '10000',
+    10
+  );
   
   if (amount >= LARGE_AMOUNT_THRESHOLD) {
     await sendAlert({
@@ -133,6 +164,7 @@ export async function logHighValueTransaction(
         user_id: userId,
         credits: amount,
         mwk: amountMWK,
+        threshold: LARGE_AMOUNT_THRESHOLD,
       },
       user_id: userId,
     });
