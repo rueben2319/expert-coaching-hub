@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { coachSidebarSections } from "@/config/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Plus, BookOpen, Users, BarChart3, Calendar, Video } from "lucide-react";
+import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
@@ -81,34 +82,8 @@ export default function CreateCourse() {
     createMutation.mutate(data);
   };
 
-  const navItems = [
-    { label: "Dashboard", href: "/coach" },
-    { label: "Courses", href: "/coach/courses" },
-    { label: "Students", href: "/coach/students" },
-    { label: "Analytics", href: "/coach/analytics" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Course Management",
-      items: [
-        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
-        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
-        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
-      ],
-    },
-    {
-      title: "Students",
-      items: [
-        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
-        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
-      ],
-    },
-  ];
-
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+    <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="max-w-2xl mx-auto">
         <Card>
           <CardHeader>

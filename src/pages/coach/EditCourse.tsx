@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { coachSidebarSections } from "@/config/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { CourseOverview } from "@/components/course/CourseOverview";
 import { CourseCurriculum } from "@/components/course/CourseCurriculum";
-import { Eye, Save, Plus, BookOpen, Users, BarChart3, Calendar, Video } from "lucide-react";
+import { Eye } from "lucide-react";
 
 export default function EditCourse() {
   const { courseId } = useParams();
@@ -23,12 +24,35 @@ export default function EditCourse() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("courses")
-        .select("*")
+        .select(`
+          *,
+          course_modules(
+            lessons(
+              estimated_duration
+            )
+          )
+        `)
         .eq("id", courseId)
         .single();
 
       if (error) throw error;
-      return data;
+      
+      // Calculate total duration
+      let totalMinutes = 0;
+      if (data.course_modules) {
+        data.course_modules.forEach((module: any) => {
+          if (module.lessons) {
+            module.lessons.forEach((lesson: any) => {
+              totalMinutes += lesson.estimated_duration || 0;
+            });
+          }
+        });
+      }
+      
+      return {
+        ...data,
+        total_duration: totalMinutes
+      };
     },
     enabled: !!courseId,
   });
@@ -47,35 +71,9 @@ export default function EditCourse() {
     },
   });
 
-  const navItems = [
-    { label: "Dashboard", href: "/coach" },
-    { label: "Courses", href: "/coach/courses" },
-    { label: "Students", href: "/coach/students" },
-    { label: "Analytics", href: "/coach/analytics" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Course Management",
-      items: [
-        { icon: <Plus className="h-4 w-4" />, label: "Create Course", href: "/coach/courses/create" },
-        { icon: <BookOpen className="h-4 w-4" />, label: "My Courses", href: "/coach/courses" },
-        { icon: <Video className="h-4 w-4" />, label: "Live Sessions", href: "/coach/sessions" },
-      ],
-    },
-    {
-      title: "Students",
-      items: [
-        { icon: <Users className="h-4 w-4" />, label: "All Students", href: "/coach/students" },
-        { icon: <Calendar className="h-4 w-4" />, label: "Schedule", href: "/coach/schedule" },
-        { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/coach/analytics" },
-      ],
-    },
-  ];
-
   if (isLoading) {
     return (
-      <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+      <DashboardLayout sidebarSections={coachSidebarSections}>
         <div className="text-center py-12">Loading course...</div>
       </DashboardLayout>
     );
@@ -83,23 +81,23 @@ export default function EditCourse() {
 
   if (!course) {
     return (
-      <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+      <DashboardLayout sidebarSections={coachSidebarSections}>
         <div className="text-center py-12">Course not found</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+    <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{course.title}</h1>
-            <Badge variant={course.status === "published" ? "default" : "secondary"}>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-bold truncate">{course.title}</h1>
+            <Badge variant={course.status === "published" ? "default" : "secondary"} className="flex-shrink-0">
               {course.status}
             </Badge>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-shrink-0">
             {course.status === "draft" ? (
               <Button onClick={() => publishMutation.mutate("published")}>
                 <Eye className="mr-2 h-4 w-4" />

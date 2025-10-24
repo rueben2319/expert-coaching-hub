@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardLayout } from '@/components/DashboardLayout';
-import { clientNavItems, clientSidebarSections } from '@/config/navigation';
+import { clientSidebarSections } from "@/config/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,7 +45,16 @@ export default function ClientSessions() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+
+  // Update search query when URL params change
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    if (urlSearch !== searchQuery) {
+      setSearchQuery(urlSearch);
+    }
+  }, [searchParams]);
 
   // Fetch meetings where user is an attendee
   const { data: meetings, isLoading, error } = useQuery({
@@ -98,7 +107,8 @@ export default function ClientSessions() {
       console.log(`Filtered to ${userMeetings.length} meetings for this client`);
       if (userMeetings.length > 0) {
         userMeetings.forEach((meeting, index) => {
-          console.log(`${index + 1}. "${meeting.summary}" - ${meeting.attendees?.length || 0} attendees`);
+          const attendeesArray = Array.isArray(meeting.attendees) ? meeting.attendees : [];
+          console.log(`${index + 1}. "${meeting.summary}" - ${attendeesArray.length} attendees`);
         });
       }
 
@@ -289,7 +299,6 @@ export default function ClientSessions() {
   if (isLoading) {
     return (
       <DashboardLayout
-        navItems={clientNavItems}
         sidebarSections={clientSidebarSections}
         brandName="Experts Coaching Hub"
       >
@@ -316,7 +325,6 @@ export default function ClientSessions() {
   if (error) {
     return (
       <DashboardLayout
-        navItems={clientNavItems}
         sidebarSections={clientSidebarSections}
         brandName="Experts Coaching Hub"
       >
@@ -332,7 +340,6 @@ export default function ClientSessions() {
 
   return (
     <DashboardLayout
-      navItems={clientNavItems}
       sidebarSections={clientSidebarSections}
       brandName="Experts Coaching Hub"
     >
@@ -354,7 +361,14 @@ export default function ClientSessions() {
           <Input
             placeholder="Search sessions..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (e.target.value) {
+                setSearchParams({ search: e.target.value });
+              } else {
+                setSearchParams({});
+              }
+            }}
             className="pl-10"
           />
         </div>

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { clientSidebarSections } from "@/config/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -153,11 +153,7 @@ export default function ClientDashboard() {
   const hasCourses = !!enrichedEnrollments && enrichedEnrollments.length > 0;
 
   return (
-    <DashboardLayout
-      navItems={clientNavItems}
-      sidebarSections={clientSidebarSections}
-      brandName="Experts Coaching Hub"
-    >
+    <DashboardLayout sidebarSections={clientSidebarSections} brandName="Experts Coaching Hub">
       <div className="flex flex-col gap-2 mb-8">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
           Welcome back, {user?.user_metadata?.full_name || "Learner"}

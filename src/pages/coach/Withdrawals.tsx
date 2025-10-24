@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { useCredits } from "@/hooks/useCredits";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,7 @@ export default function Withdrawals() {
   };
 
   return (
-    <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+    <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Withdrawals</h1>

@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Plus, Users, BarChart3, Calendar, Video, TrendingUp, TrendingDown, Eye, Clock, Target, Award } from "lucide-react";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
@@ -360,7 +360,6 @@ export default function Analytics() {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >

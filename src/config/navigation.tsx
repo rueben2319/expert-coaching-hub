@@ -15,19 +15,7 @@ import {
   ArrowDownToLine
 } from "lucide-react";
 
-// Coach Navigation Configuration
-export const coachNavItems = [
-  { label: "Dashboard", href: "/coach" },
-  { label: "Courses", href: "/coach/courses" },
-  { label: "Students", href: "/coach/students" },
-  { label: "Sessions", href: "/coach/sessions" },
-  { label: "Schedule", href: "/coach/schedule" },
-  { label: "Analytics", href: "/coach/analytics" },
-  { label: "Withdrawals", href: "/coach/withdrawals" },
-  { label: "Billing", href: "/coach/billing" },
-  { label: "Settings", href: "/coach/settings" },
-];
-
+// Coach Sidebar Configuration
 export const coachSidebarSections = [
   {
     title: "Course Management",
@@ -54,16 +42,7 @@ export const coachSidebarSections = [
   },
 ];
 
-// Client Navigation Configuration
-export const clientNavItems = [
-  { label: "Dashboard", href: "/client" },
-  { label: "Explore", href: "/client/courses" },
-  { label: "My Courses", href: "/client/my-courses" },
-  { label: "Credits", href: "/client/credits" },
-  { label: "Analytics", href: "/client/analytics" },
-  { label: "Sessions", href: "/client/sessions" },
-];
-
+// Client Sidebar Configuration
 export const clientSidebarSections = [
   {
     title: "Learning",
@@ -82,15 +61,7 @@ export const clientSidebarSections = [
   },
 ];
 
-// Admin Navigation Configuration
-export const adminNavItems = [
-  { label: "Dashboard", href: "/admin" },
-  { label: "Users", href: "/admin/users" },
-  { label: "Courses", href: "/admin/courses" },
-  { label: "Analytics", href: "/admin/analytics" },
-  { label: "Settings", href: "/admin/settings" },
-];
-
+// Admin Sidebar Configuration
 export const adminSidebarSections = [
   {
     title: "Management",
@@ -103,20 +74,7 @@ export const adminSidebarSections = [
   },
 ];
 
-// Profile Navigation (role-based)
-export const getProfileNavItems = (role: string) => {
-  switch (role) {
-    case "coach":
-      return coachNavItems;
-    case "client":
-      return clientNavItems;
-    case "admin":
-      return adminNavItems;
-    default:
-      return [];
-  }
-};
-
+// Get sidebar sections based on role
 export const getProfileSidebarSections = (role: string) => {
   switch (role) {
     case "coach":

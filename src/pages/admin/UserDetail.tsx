@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { callSupabaseFunction } from '@/lib/supabaseFunctions';
 import { toast } from 'sonner';
-import { adminNavItems, adminSidebarSections } from '@/config/navigation';
+import { adminSidebarSections } from '@/config/navigation';
 
 export default function UserDetail() {
   const { id } = useParams();
@@ -48,7 +48,10 @@ export default function UserDetail() {
     mutationFn: (payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload),
     onSuccess: async () => {
       toast.success('Role updated');
-      queryClient.invalidateQueries(['admin-user-role', 'admin-user-role-history', 'admin-users']);
+      // Invalidate multiple queries using the correct v5 syntax
+      queryClient.invalidateQueries({ queryKey: ['admin-user-role'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-user-role-history'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       // reload data
       await queryClient.refetchQueries({ queryKey: ['admin-user', id] });
       await queryClient.refetchQueries({ queryKey: ['admin-user-role', id] });
@@ -66,10 +69,8 @@ export default function UserDetail() {
     mutation.mutate({ user_id: id, role: newRole });
   };
 
-  const navItems = adminNavItems;
-
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={adminSidebarSections} brandName="Admin Panel">
+    <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">User Detail</h1>

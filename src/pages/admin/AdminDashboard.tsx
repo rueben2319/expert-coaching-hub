@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, Users, Shield, Settings, BarChart3, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { adminSidebarSections } from "@/config/navigation";
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -15,67 +16,6 @@ export default function AdminDashboard() {
   const [pendingWithdrawals, setPendingWithdrawals] = useState<number | null>(null);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const navItems = [
-    { label: "Dashboard", href: "/admin" },
-    { label: "Users", href: "/admin/users" },
-    { label: "Withdrawals", href: "/admin/withdrawals" },
-    { label: "Courses", href: "/admin/courses" },
-    { label: "Settings", href: "/admin/settings" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Management",
-      items: [
-        {
-          icon: <Users className="h-4 w-4" />,
-          label: "User Management",
-          href: "/admin/users",
-        },
-        {
-          icon: <BookOpen className="h-4 w-4" />,
-          label: "Course Management",
-          href: "/admin/courses",
-        },
-        {
-          icon: <Shield className="h-4 w-4" />,
-          label: "Roles & Permissions",
-          href: "/admin/roles",
-        },
-      ],
-    },
-    {
-      title: "Finance",
-      items: [
-        {
-          icon: <AlertCircle className="h-4 w-4" />,
-          label: "Withdrawal Requests",
-          href: "/admin/withdrawals",
-        },
-      ],
-    },
-    {
-      title: "System",
-      items: [
-        {
-          icon: <BarChart3 className="h-4 w-4" />,
-          label: "Analytics",
-          href: "/admin/analytics",
-        },
-        {
-          icon: <Settings className="h-4 w-4" />,
-          label: "System Settings",
-          href: "/admin/settings",
-        },
-        {
-          icon: <AlertCircle className="h-4 w-4" />,
-          label: "Reports",
-          href: "/admin/reports",
-        },
-      ],
-    },
-  ];
 
   useEffect(() => {
     let mounted = true;
@@ -136,8 +76,7 @@ export default function AdminDashboard() {
 
   return (
     <DashboardLayout
-      navItems={navItems}
-      sidebarSections={sidebarSections}
+      sidebarSections={adminSidebarSections}
       brandName="Admin Panel"
     >
       <div className="mb-8">

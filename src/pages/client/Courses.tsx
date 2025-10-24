@@ -1,14 +1,17 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, Clock, TrendingUp, Calendar, User, Coins } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { BookOpen, Clock, Coins, Search, ArrowRight, Signal } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
-import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { clientSidebarSections } from "@/config/navigation";
 import { useCredits } from "@/hooks/useCredits";
 import { CreditWallet } from "@/components/CreditWallet";
 
@@ -17,6 +20,11 @@ export default function Courses() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { enrollWithCredits, balance } = useCredits();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get('search') || '';
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const [levelFilter, setLevelFilter] = useState<string>('all');
+  const [priceFilter, setPriceFilter] = useState<string>('all');
 
   const { data: courses, isLoading } = useQuery({
     queryKey: ["published-courses"],
@@ -25,13 +33,39 @@ export default function Courses() {
         .from("courses")
         .select(`
           *,
-          course_enrollments!left(*)
+          course_enrollments!left(*),
+          course_modules(
+            lessons(
+              estimated_duration
+            )
+          )
         `)
         .eq("status", "published")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data;
+      
+      // Calculate total duration for each course
+      const coursesWithDuration = data?.map(course => {
+        let totalMinutes = 0;
+        
+        if (course.course_modules) {
+          course.course_modules.forEach((module: any) => {
+            if (module.lessons) {
+              module.lessons.forEach((lesson: any) => {
+                totalMinutes += lesson.estimated_duration || 0;
+              });
+            }
+          });
+        }
+        
+        return {
+          ...course,
+          total_duration: totalMinutes
+        };
+      });
+      
+      return coursesWithDuration;
     },
   });
 
@@ -93,86 +127,237 @@ export default function Courses() {
     }
   };
 
+  // Filter courses based on search query and filters
+  const filteredCourses = useMemo(() => {
+    if (!courses) return [];
+    
+    let filtered = courses;
+    
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(course => 
+        course.title?.toLowerCase().includes(query) ||
+        course.description?.toLowerCase().includes(query) ||
+        course.category?.toLowerCase().includes(query) ||
+        course.tag?.toLowerCase().includes(query)
+      );
+    }
+    
+    // Level filter
+    if (levelFilter !== 'all') {
+      filtered = filtered.filter(course => course.level === levelFilter);
+    }
+    
+    // Price filter
+    if (priceFilter === 'free') {
+      filtered = filtered.filter(course => course.is_free || !course.price_credits || course.price_credits === 0);
+    } else if (priceFilter === 'paid') {
+      filtered = filtered.filter(course => !course.is_free && course.price_credits && course.price_credits > 0);
+    }
+    
+    return filtered;
+  }, [courses, searchQuery, levelFilter, priceFilter]);
+
+  const handleSearch = (value: string) => {
+    setLocalSearch(value);
+    if (value) {
+      setSearchParams({ search: value });
+    } else {
+      setSearchParams({});
+    }
+  };
+
+  // Level indicator component
+  const LevelIndicator = ({ level }: { level?: string }) => {
+    if (!level) return null;
+    
+    const bars = level === 'introduction' ? 1 : level === 'intermediate' ? 2 : 3;
+    
+    return (
+      <div className="flex items-center gap-1">
+        {[1, 2, 3].map((bar) => (
+          <div
+            key={bar}
+            className={`w-1 rounded-full transition-colors ${
+              bar <= bars 
+                ? 'bg-primary h-3' 
+                : 'bg-muted h-2'
+            }`}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  // Format duration helper
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
+
   return (
-    <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
-      <div className="space-y-6">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold">Browse Courses</h1>
-            <p className="text-muted-foreground mt-2">
-              Discover and enroll in courses
-            </p>
+    <DashboardLayout sidebarSections={clientSidebarSections}>
+      <div className="space-y-8 max-w-7xl mx-auto">
+        {/* Hero Section */}
+        <div className="text-center space-y-4 py-8">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+            Discover learning for in-demand skills
+          </h1>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Your home for building AI skills and more. Get hands-on with courses and learn directly from the experts.
+          </p>
+        </div>
+
+        {/* Search Bar */}
+        <div className="max-w-2xl mx-auto">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search catalog..."
+              value={localSearch}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-12 pr-4 h-12 text-base rounded-full border-2 focus:border-primary"
+            />
           </div>
+        </div>
+
+        {/* Filters and Credit Wallet */}
+        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+            <Select value={priceFilter} onValueChange={setPriceFilter}>
+              <SelectTrigger className="w-[140px] rounded-full">
+                <SelectValue placeholder="Price" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Courses</SelectItem>
+                <SelectItem value="free">Free</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={levelFilter} onValueChange={setLevelFilter}>
+              <SelectTrigger className="w-[140px] rounded-full">
+                <SelectValue placeholder="Level" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Levels</SelectItem>
+                <SelectItem value="introduction">Introduction</SelectItem>
+                <SelectItem value="intermediate">Intermediate</SelectItem>
+                <SelectItem value="advanced">Advanced</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <CreditWallet compact />
+        </div>
+
+        {/* Results Count */}
+        <div className="text-sm text-muted-foreground">
+          {filteredCourses.length} result{filteredCourses.length !== 1 ? 's' : ''}
         </div>
 
         {isLoading ? (
           <div className="text-center py-12">Loading courses...</div>
-        ) : courses && courses.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {courses.map((course) => (
-              <Card key={course.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex gap-2">
-                      {course.level && (
-                        <Badge variant="outline" className="capitalize">
-                          {course.level}
-                        </Badge>
-                      )}
-                      {course.is_free || !course.price_credits || course.price_credits === 0 ? (
-                        <Badge variant="secondary" className="bg-green-100 text-green-700">
-                          Free
+        ) : filteredCourses && filteredCourses.length > 0 ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredCourses.map((course) => {
+              const enrolled = isEnrolled(course);
+              const isFree = course.is_free || !course.price_credits || course.price_credits === 0;
+              
+              return (
+                <Card 
+                  key={course.id} 
+                  className="group hover:shadow-xl transition-all duration-300 border-2 hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col"
+                  onClick={() => enrolled ? navigate(`/client/course/${course.id}`) : handleEnrollClick(course)}
+                >
+                  <CardHeader className="space-y-3 pb-4 flex-shrink-0">
+                    {/* Badges and Level Indicator */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {course.level && <LevelIndicator level={course.level} />}
+                      
+                      {enrolled ? (
+                        <Badge variant="secondary" className="rounded-full px-3">
+                          Enrolled
                         </Badge>
                       ) : (
-                        <Badge variant="default" className="flex items-center gap-1">
-                          <Coins className="h-3 w-3" />
-                          {course.price_credits} Credits
-                        </Badge>
+                        <>
+                          {isFree ? (
+                            <Badge className="bg-green-100 text-green-700 hover:bg-green-100 rounded-full px-3">
+                              Free
+                            </Badge>
+                          ) : (
+                            <Badge className="rounded-full px-3 flex items-center gap-1">
+                              <Coins className="h-3 w-3" />
+                              {course.price_credits} Credits
+                            </Badge>
+                          )}
+                        </>
                       )}
                     </div>
-                  </div>
-                  <CardTitle className="line-clamp-2">{course.title}</CardTitle>
-                  <CardDescription className="line-clamp-3">
-                    {course.description}
-                  </CardDescription>
-                  <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
-                    {course.category && (
-                      <span>
-                        <span className="font-medium">Category:</span> {course.category}
-                      </span>
+
+                    {/* Title */}
+                    <CardTitle className="line-clamp-2 text-xl group-hover:text-primary transition-colors">
+                      {course.title}
+                    </CardTitle>
+
+                    {/* Description */}
+                    <CardDescription className="line-clamp-3 text-sm leading-relaxed">
+                      {course.description}
+                    </CardDescription>
+                  </CardHeader>
+
+                  <CardContent className="flex flex-col flex-grow mt-auto pt-0">
+                    {/* Duration */}
+                    {course.total_duration > 0 && (
+                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4">
+                        <Clock className="h-4 w-4" />
+                        <span>{formatDuration(course.total_duration)}</span>
+                      </div>
                     )}
-                    {course.tag && (
-                      <span>
-                        <span className="font-medium">Tag:</span> {course.tag}
-                      </span>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {isEnrolled(course) ? (
-                      <Button
-                        className="w-full"
-                        onClick={() => navigate(`/client/course/${course.id}`)}
-                      >
-                        Continue Learning
-                      </Button>
-                    ) : (
-                      <Button
-                        className="w-full"
-                        onClick={() => handleEnrollClick(course)}
-                        disabled={enrollMutation.isPending || enrollWithCredits.isPending}
-                      >
-                        {(enrollMutation.isPending || enrollWithCredits.isPending) ? "Enrolling..." : 
-                         (course.is_free || !course.price_credits || course.price_credits === 0) ? "Enroll Free" : 
-                         `Enroll for ${course.price_credits} Credits`}
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+
+                    {/* Action Button */}
+                    <div className="flex items-center justify-between mt-auto">
+                      {enrolled ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex-1 group-hover:bg-primary/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/client/course/${course.id}`);
+                          }}
+                        >
+                          Continue Learning
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex-1 group-hover:bg-primary/10"
+                          disabled={enrollMutation.isPending || enrollWithCredits.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEnrollClick(course);
+                          }}
+                        >
+                          {(enrollMutation.isPending || enrollWithCredits.isPending) ? "Enrolling..." : 
+                           isFree ? "Enroll Free" : 
+                           `Enroll for ${course.price_credits} Credits`}
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         ) : (
           <Card className="text-center py-12">

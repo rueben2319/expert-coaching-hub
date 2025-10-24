@@ -3,67 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { CheckCircle, XCircle, Clock, AlertCircle, Users, BookOpen, Shield, Settings, BarChart3, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { adminSidebarSections } from "@/config/navigation";
 
 export default function AdminWithdrawals() {
   const { user } = useAuth();
-
-  const navItems = [
-    { label: "Dashboard", href: "/admin" },
-    { label: "Users", href: "/admin/users" },
-    { label: "Withdrawals", href: "/admin/withdrawals" },
-    { label: "Courses", href: "/admin/courses" },
-    { label: "Settings", href: "/admin/settings" },
-  ];
-
-  const sidebarSections = [
-    {
-      title: "Management",
-      items: [
-        {
-          icon: <Users className="h-4 w-4" />,
-          label: "User Management",
-          href: "/admin/users",
-        },
-        {
-          icon: <BookOpen className="h-4 w-4" />,
-          label: "Course Management",
-          href: "/admin/courses",
-        },
-        {
-          icon: <Shield className="h-4 w-4" />,
-          label: "Roles & Permissions",
-          href: "/admin/roles",
-        },
-      ],
-    },
-    {
-      title: "Finance",
-      items: [
-        {
-          icon: <AlertCircle className="h-4 w-4" />,
-          label: "Withdrawal Requests",
-          href: "/admin/withdrawals",
-        },
-      ],
-    },
-    {
-      title: "System",
-      items: [
-        {
-          icon: <BarChart3 className="h-4 w-4" />,
-          label: "Analytics",
-          href: "/admin/analytics",
-        },
-        {
-          icon: <Settings className="h-4 w-4" />,
-          label: "System Settings",
-          href: "/admin/settings",
-        },
-      ],
-    },
-  ];
 
   const { data: withdrawalRequests, isLoading } = useQuery({
     queryKey: ["admin-withdrawal-requests"],
@@ -135,14 +80,14 @@ export default function AdminWithdrawals() {
 
   if (isLoading) {
     return (
-      <DashboardLayout navItems={navItems} sidebarSections={sidebarSections}>
+      <DashboardLayout sidebarSections={adminSidebarSections}>
         <div className="text-center py-12">Loading withdrawal requests...</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections} brandName="Admin Panel">
+    <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>

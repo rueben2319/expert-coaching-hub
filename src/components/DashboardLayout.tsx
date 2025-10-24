@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft, ChevronRight, GraduationCap, LogOut, Menu, User, Search, HelpCircle, Globe, Shield } from "lucide-react";
@@ -19,12 +20,6 @@ import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TokenManagementDashboard } from "@/components/TokenManagementDashboard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-interface NavItem {
-  label: string;
-  href: string;
-  current?: boolean;
-}
-
 interface SidebarItem {
   icon: ReactNode;
   label: string;
@@ -39,7 +34,6 @@ interface SidebarSection {
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  navItems: NavItem[];
   sidebarSections?: SidebarSection[];
   brandName?: string;
 }
@@ -58,13 +52,14 @@ const TokenManagementDialog = ({ children }: { children: ReactNode }) => (
 
 export function DashboardLayout({
   children,
-  navItems,
   sidebarSections = [],
   brandName = "Experts Coaching Hub",
 }: DashboardLayoutProps) {
   const { user, signOut, role } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -258,58 +253,69 @@ export function DashboardLayout({
           )}
 
           {/* Logo/Brand */}
-          <div className="flex items-center gap-2 mr-6">
-            <div className="w-8 h-8 rounded-lg overflow-hidden">
+          <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg overflow-hidden flex-shrink-0">
               <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
             </div>
-            <span className="font-semibold text-lg hidden sm:inline">{brandName}</span>
+            <span className="font-semibold text-sm sm:text-base md:text-lg hidden sm:inline truncate max-w-[120px] md:max-w-[180px] lg:max-w-none">
+              {brandName}
+            </span>
           </div>
 
-          {/* Navigation Items - Hidden on mobile */}
-          <nav className="hidden md:flex items-center gap-1 flex-1">
-            {navItems.map((item) => (
-              <Button
-                key={item.href}
-                variant="ghost"
-                className={cn(
-                  "text-sm font-medium transition-colors hover:text-primary",
-                  isCurrentPath(item.href)
-                    ? "text-primary bg-primary/5"
-                    : "text-muted-foreground"
-                )}
-                onClick={() => navigate(item.href)}
-              >
-                {item.label}
-              </Button>
-            ))}
-
-            {/* Admin quick link */}
-            {role === 'admin' && (
-              <Button
-                variant="ghost"
-                className="text-sm font-medium ml-2 text-primary"
-                onClick={() => navigate('/admin')}
-              >
-                Admin
-              </Button>
-            )}
-          </nav>
+          {/* Search Bar - Responsive */}
+          <div className="flex-1 max-w-xl mx-2 md:mx-4 hidden sm:block">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder={
+                  role === 'coach' 
+                    ? "Search..."
+                    : role === 'client'
+                    ? "Search..."
+                    : role === 'admin'
+                    ? "Search..."
+                    : "Search..."
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 h-9 w-full"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery.trim()) {
+                    // Handle search based on role
+                    if (role === 'coach') {
+                      navigate(`/coach/courses?search=${encodeURIComponent(searchQuery)}`);
+                    } else if (role === 'client') {
+                      navigate(`/client/courses?search=${encodeURIComponent(searchQuery)}`);
+                    } else if (role === 'admin') {
+                      navigate(`/admin/users?search=${encodeURIComponent(searchQuery)}`);
+                    }
+                  }
+                }}
+              />
+            </div>
+          </div>
 
           {/* Right Side Actions */}
-          <div className="flex items-center gap-1 ml-auto">
-            {/* Search Button */}
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <Search className="h-4 w-4" />
-            </Button>
-
-            {/* Help Button */}
-            <Button variant="ghost" size="icon" className="h-9 w-9">
+          <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+            {/* Help Button - Hidden on mobile */}
+            <Button variant="ghost" size="icon" className="h-9 w-9 hidden md:flex">
               <HelpCircle className="h-4 w-4" />
             </Button>
 
-            {/* Language/Globe Button */}
-            <Button variant="ghost" size="icon" className="h-9 w-9">
+            {/* Language/Globe Button - Hidden on mobile */}
+            <Button variant="ghost" size="icon" className="h-9 w-9 hidden md:flex">
               <Globe className="h-4 w-4" />
+            </Button>
+
+            {/* Search Icon for Mobile - Opens search on small screens */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-9 w-9 sm:hidden"
+              onClick={() => setSearchOpen(!searchOpen)}
+            >
+              <Search className="h-4 w-4" />
             </Button>
 
             {/* Theme Toggle */}
@@ -368,25 +374,45 @@ export function DashboardLayout({
           </div>
         </div>
 
-        {/* Mobile Navigation */}
-        <nav className="md:hidden border-t px-4 py-2 flex gap-2 overflow-x-auto">
-          {navItems.map((item) => (
-            <Button
-              key={item.href}
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "text-sm whitespace-nowrap",
-                isCurrentPath(item.href)
-                  ? "text-primary bg-primary/5"
-                  : "text-muted-foreground"
-              )}
-              onClick={() => navigate(item.href)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </nav>
+        {/* Mobile Search Bar - Shows below header on small screens when search is open */}
+        {searchOpen && (
+          <div className="sm:hidden border-t px-4 py-3 bg-background">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder={
+                  role === 'coach' 
+                    ? "Search courses, students..."
+                    : role === 'client'
+                    ? "Search courses..."
+                    : role === 'admin'
+                    ? "Search users..."
+                    : "Search..."
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 h-10 w-full"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery.trim()) {
+                    setSearchOpen(false);
+                    // Handle search based on role
+                    if (role === 'coach') {
+                      navigate(`/coach/courses?search=${encodeURIComponent(searchQuery)}`);
+                    } else if (role === 'client') {
+                      navigate(`/client/courses?search=${encodeURIComponent(searchQuery)}`);
+                    } else if (role === 'admin') {
+                      navigate(`/admin/users?search=${encodeURIComponent(searchQuery)}`);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setSearchOpen(false);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Layout */}
