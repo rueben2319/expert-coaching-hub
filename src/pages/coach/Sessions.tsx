@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format, isAfter, isBefore, addMinutes } from "date-fns";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
 import { MeetingManager } from "@/lib/meetingUtils";
 import { TokenDebugger, addTokenDebugToWindow } from "@/lib/tokenDebug";
@@ -32,6 +32,8 @@ export default function Sessions() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [filter, setFilter] = useState<"all" | "upcoming" | "past" | "today">("upcoming");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
@@ -44,6 +46,14 @@ export default function Sessions() {
     startTime: "",
     endTime: "",
   });
+
+  // Update search query when URL params change
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    if (urlSearch !== searchQuery) {
+      setSearchQuery(urlSearch);
+    }
+  }, [searchParams]);
 
   const { data: meetings, isLoading, refetch } = useQuery({
     queryKey: ["coach-meetings"],
@@ -246,7 +256,6 @@ export default function Sessions() {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >
@@ -352,16 +361,31 @@ export default function Sessions() {
                 Past
               </Button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshMeetings}
-              disabled={isRefreshing}
-              className="w-full sm:w-auto"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                placeholder="Search sessions..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (e.target.value) {
+                    setSearchParams({ search: e.target.value });
+                  } else {
+                    setSearchParams({});
+                  }
+                }}
+                className="pl-10"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshMeetings}
+                disabled={isRefreshing}
+                className="w-full sm:w-auto"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
 

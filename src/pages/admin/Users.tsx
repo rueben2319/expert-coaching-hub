@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { callSupabaseFunction } from '@/lib/supabaseFunctions';
 import { DashboardLayout } from '@/components/DashboardLayout';
@@ -7,13 +8,27 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { adminNavItems, adminSidebarSections } from '@/config/navigation';
+import { adminSidebarSections } from '@/config/navigation';
+
+interface UserData {
+  data: any[];
+  total: number;
+}
 
 export default function AdminUsers() {
-  const [search, setSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('search') || '');
   const [page, setPage] = useState(0);
   const pageSize = 20;
   const queryClient = useQueryClient();
+
+  // Update search when URL params change
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    if (urlSearch !== search) {
+      setSearch(urlSearch);
+    }
+  }, [searchParams]);
 
   const fetchUsers = async ({ queryKey }: any) => {
     const [_key, page, search] = queryKey;
@@ -49,13 +64,17 @@ export default function AdminUsers() {
     return { data: enriched, total: enriched.length };
   };
 
-  const { data, isLoading, refetch } = useQuery({ queryKey: ['admin-users', page, search], queryFn: fetchUsers, keepPreviousData: true });
+  const { data, isLoading, refetch } = useQuery<UserData>({
+    queryKey: ['admin-users', page, search],
+    queryFn: fetchUsers,
+    placeholderData: (previousData) => previousData, // Replaces keepPreviousData in v5
+  });
 
   const mutation = useMutation({
     mutationFn: (payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload),
     onSuccess: async () => {
       toast.success('Role updated');
-      queryClient.invalidateQueries(['admin-users']);
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       refetch();
     },
     onError: (err: any) => {
@@ -69,18 +88,26 @@ export default function AdminUsers() {
     mutation.mutate({ user_id: userId, role });
   };
 
-  const navItems = adminNavItems;
-  const sidebarSections = adminSidebarSections;
-
   return (
-    <DashboardLayout navItems={navItems} sidebarSections={sidebarSections} brandName="Admin Panel">
+    <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">User Management</h1>
           <p className="text-muted-foreground">Search and manage platform users</p>
         </div>
         <div className="flex items-center gap-2">
-          <Input placeholder="Search by name or email" value={search} onChange={(e) => setSearch((e.target as HTMLInputElement).value)} />
+          <Input 
+            placeholder="Search by name or email" 
+            value={search} 
+            onChange={(e) => {
+              setSearch(e.target.value);
+              if (e.target.value) {
+                setSearchParams({ search: e.target.value });
+              } else {
+                setSearchParams({});
+              }
+            }} 
+          />
           <Button onClick={() => { setPage(0); refetch(); }}>Search</Button>
         </div>
       </div>

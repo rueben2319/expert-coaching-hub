@@ -103,6 +103,23 @@ serve(async (req: Request) => {
       throw new Error('Failed to update token refresh metadata.');
     }
 
+    // CRITICAL: Update the user's session with the new provider token
+    // This ensures frontend has access to the refreshed token
+    try {
+      // Note: This updates the provider_token in the session
+      // Frontend should call supabase.auth.refreshSession() to get the updated token
+      await supabase.auth.admin.updateUserById(user.id, {
+        app_metadata: {
+          provider_token: newAccessToken,
+          provider_refresh_token: refreshToken,
+        }
+      });
+      console.log('Updated session provider tokens for user:', user.id);
+    } catch (sessionUpdateError) {
+      console.error('Failed to update session provider tokens:', sessionUpdateError);
+      // Don't fail the entire request, but log the issue
+    }
+
     // Log analytics event
     try {
       await supabase.from('meeting_analytics').insert({
@@ -128,6 +145,9 @@ serve(async (req: Request) => {
         expires_at: new Date(Date.now() + (expiresIn * 1000)).toISOString(),
         scope: tokenInfo.scope,
         timestamp: new Date().toISOString(),
+        // Signal to frontend that session should be refreshed
+        session_updated: true,
+        action_required: 'refresh_session',
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

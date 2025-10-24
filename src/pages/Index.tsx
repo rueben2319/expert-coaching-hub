@@ -93,11 +93,8 @@ const Index = () => {
   const navigate = useNavigate();
   const { user, role, loading } = useAuth();
 
-  useEffect(() => {
-    if (user && role && !loading) {
-      navigate(`/${role}`);
-    }
-  }, [user, role, loading, navigate]);
+  // Removed automatic redirect - now showing dashboard button instead
+  // This allows logged-in users to view the landing page
 
   if (loading) {
     return (
@@ -121,15 +118,26 @@ const Index = () => {
             <span className="font-semibold text-lg">Experts Coaching Hub</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => navigate("/auth")}>
-              Sign In
-            </Button>
-            <Button
-              className="bg-gradient-to-r from-primary to-accent hover:opacity-90"
-              onClick={() => navigate("/auth")}
-            >
-              Get Started
-            </Button>
+            {user && role ? (
+              <Button
+                className="bg-gradient-to-r from-primary to-accent hover:opacity-90"
+                onClick={() => navigate(`/${role}`)}
+              >
+                Go to Dashboard
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => navigate("/auth")}>
+                  Sign In
+                </Button>
+                <Button
+                  className="bg-gradient-to-r from-primary to-accent hover:opacity-90"
+                  onClick={() => navigate("/auth")}
+                >
+                  Get Started
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -147,21 +155,33 @@ const Index = () => {
               Connect with expert coaches, create engaging courses, and accelerate your growth journey
             </p>
             <div className="flex flex-wrap gap-4 justify-center">
-              <Button
-                size="lg"
-                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-lg px-8"
-                onClick={() => navigate("/auth")}
-              >
-                Start Learning
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="text-lg px-8"
-                onClick={() => navigate("/auth")}
-              >
-                Become a Coach
-              </Button>
+              {user && role ? (
+                <Button
+                  size="lg"
+                  className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-lg px-8"
+                  onClick={() => navigate(`/${role}`)}
+                >
+                  Go to Dashboard
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="lg"
+                    className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-lg px-8"
+                    onClick={() => navigate("/auth")}
+                  >
+                    Start Learning
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="text-lg px-8"
+                    onClick={() => navigate("/auth")}
+                  >
+                    Become a Coach
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -198,12 +218,23 @@ const Index = () => {
             <h3 className="text-2xl font-semibold mb-4">Ready to start?</h3>
             <p className="text-muted-foreground mb-6">Join thousands of learners and start accelerating your growth with expert coaches.</p>
             <div className="flex gap-4 justify-center">
-              <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 px-8" onClick={() => navigate('/auth')}>
-                Get Started
-              </Button>
-              <Button variant="outline" className="px-8" onClick={() => navigate('/auth')}>
-                Learn More
-              </Button>
+              {user && role ? (
+                <Button 
+                  className="bg-gradient-to-r from-primary to-accent hover:opacity-90 px-8" 
+                  onClick={() => navigate(`/${role}`)}
+                >
+                  Go to Dashboard
+                </Button>
+              ) : (
+                <>
+                  <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 px-8" onClick={() => navigate('/auth')}>
+                    Get Started
+                  </Button>
+                  <Button variant="outline" className="px-8" onClick={() => navigate('/auth')}>
+                    Learn More
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </section>

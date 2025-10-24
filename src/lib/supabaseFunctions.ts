@@ -84,7 +84,11 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
     console.log('Session token present:', !!session.access_token);
 
     // Use direct fetch instead of supabase.functions.invoke
-    const functionUrl = `https://vbrxgaxjmpwusbbbzzgl.supabase.co/functions/v1/${functionName}`;
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    if (!SUPABASE_URL) {
+      throw new Error('VITE_SUPABASE_URL environment variable is not set');
+    }
+    const functionUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
     console.log(`Calling function '${functionName}' with params:`, JSON.stringify(params, null, 2));
     console.log(`Function URL: ${functionUrl}`);
 

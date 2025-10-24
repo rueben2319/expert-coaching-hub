@@ -2,8 +2,10 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { notifyAuthStateChange } from "@/lib/tokenSync";
 
 type UserRole = "client" | "coach" | "admin";
+
 
 interface AuthContextType {
   user: User | null;
@@ -14,7 +16,14 @@ interface AuthContextType {
   refreshRole: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>({
+  user: null,
+  session: null,
+  role: null,
+  loading: true,
+  signOut: async () => {},
+  refreshRole: async () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -24,14 +33,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   const fetchUserRole = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .single();
 
-    if (!error && data) {
-      setRole(data.role as UserRole);
+      if (error) {
+        console.error("Failed to fetch user role:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        console.error("Error details:", error.details);
+        setRole(null);
+        return;
+      }
+
+      if (data) {
+        console.log("✅ Successfully fetched role:", data.role);
+        setRole(data.role as UserRole);
+      } else {
+        console.warn("⚠️ No role data found for user:", userId);
+        setRole(null);
+      }
+    } catch (err) {
+      console.error("❌ Exception while fetching role:", err);
+      setRole(null);
     }
   };
 
@@ -40,13 +67,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
-        
+
         if (session?.user) {
           fetchUserRole(session.user.id);
         } else {
           setRole(null);
         }
-        
+
         setLoading(false);
       }
     );
@@ -89,7 +116,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    // This should never happen with our default value, but fallback for safety
+    return {
+      user: null,
+      session: null,
+      role: null,
+      loading: true,
+      signOut: async () => {},
+      refreshRole: async () => {},
+    };
   }
   return context;
 }

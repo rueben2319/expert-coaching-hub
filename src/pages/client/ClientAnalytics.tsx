@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Award, Target, Clock, TrendingUp, Calendar, Flame, BarChart3 } from "lucide-react";
-import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { clientSidebarSections } from "@/config/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
@@ -97,7 +97,7 @@ export default function ClientAnalytics() {
     // Calculate current learning streak (consecutive days with activity)
     const progressByDate = new Map();
     lessonProgress.forEach(progress => {
-      const date = new Date(progress.completed_at || progress.created_at).toDateString();
+      const date = new Date(progress.completed_at || progress.started_at).toDateString();
       progressByDate.set(date, (progressByDate.get(date) || 0) + 1);
     });
 
@@ -168,11 +168,7 @@ export default function ClientAnalytics() {
   const isLoading = enrollmentsLoading || progressLoading;
 
   return (
-    <DashboardLayout
-      navItems={clientNavItems}
-      sidebarSections={clientSidebarSections}
-      brandName="Experts Coaching Hub"
-    >
+    <DashboardLayout sidebarSections={clientSidebarSections} brandName="Experts Coaching Hub">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">My Learning Analytics</h1>

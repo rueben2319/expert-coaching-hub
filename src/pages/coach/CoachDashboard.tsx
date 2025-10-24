@@ -3,7 +3,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Users, BarChart3, Calendar, Video, Plus, TrendingUp, Clock } from "lucide-react";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -73,7 +73,6 @@ export default function CoachDashboard() {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >

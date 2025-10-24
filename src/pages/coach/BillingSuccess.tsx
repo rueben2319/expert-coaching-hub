@@ -4,7 +4,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, ArrowRight } from "lucide-react";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 
 const BillingSuccess = () => {
   const [searchParams] = useSearchParams();
@@ -27,7 +27,7 @@ const BillingSuccess = () => {
 
   if (status === 'loading') {
     return (
-      <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+      <DashboardLayout sidebarSections={coachSidebarSections}>
         <div className="flex items-center justify-center min-h-96">
           <div className="text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
@@ -40,7 +40,7 @@ const BillingSuccess = () => {
 
   if (status === 'failed') {
     return (
-      <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+      <DashboardLayout sidebarSections={coachSidebarSections}>
         <div className="max-w-2xl mx-auto">
           <Card>
             <CardHeader className="text-center">
@@ -74,7 +74,7 @@ const BillingSuccess = () => {
   }
 
   return (
-    <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+    <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="max-w-2xl mx-auto">
         <Card>
           <CardHeader className="text-center">

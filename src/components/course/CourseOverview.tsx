@@ -12,6 +12,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
+import { Clock } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
 const courseSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
@@ -45,6 +47,16 @@ export function CourseOverview({ course }: CourseOverviewProps) {
     },
   });
 
+  // Format duration helper
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
+
   const updateMutation = useMutation({
     mutationFn: async (data: CourseFormData) => {
       const { error } = await supabase
@@ -67,6 +79,22 @@ export function CourseOverview({ course }: CourseOverviewProps) {
       <div>
         <h2 className="text-2xl font-bold">Course Information</h2>
       </div>
+
+      {/* Course Duration Display */}
+      {course.total_duration > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Total Course Duration</p>
+                <p className="text-2xl font-bold text-primary">{formatDuration(course.total_duration)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Form {...form}>
         <form onSubmit={form.handleSubmit((data) => updateMutation.mutate(data))} className="space-y-6">
           <FormField
@@ -76,8 +104,11 @@ export function CourseOverview({ course }: CourseOverviewProps) {
               <FormItem>
                 <FormLabel>Course Title</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  <Input {...field} maxLength={200} />
                 </FormControl>
+                <FormDescription>
+                  {field.value?.length || 0}/200 characters
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -108,12 +139,34 @@ export function CourseOverview({ course }: CourseOverviewProps) {
 
           <FormField
             control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Textarea 
+                    {...field} 
+                    rows={4}
+                    maxLength={2000}
+                    placeholder="Describe what students will learn in this course..."
+                  />
+                </FormControl>
+                <FormDescription>
+                  {field.value?.length || 0}/2000 characters
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
             name="category"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Category</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., Business, Technology, Health" {...field} />
+                  <Input placeholder="e.g., Business, Technology, Health" {...field} maxLength={100} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -127,7 +180,7 @@ export function CourseOverview({ course }: CourseOverviewProps) {
               <FormItem>
                 <FormLabel>Tag</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., Productivity, Leadership, Marketing" {...field} />
+                  <Input placeholder="e.g., Productivity, Leadership, Marketing" {...field} maxLength={100} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

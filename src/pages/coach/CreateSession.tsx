@@ -6,7 +6,7 @@ import * as z from "zod";
 import { format, addHours } from "date-fns";
 import { Calendar, Clock, Users, Video, AlertCircle, CheckCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -135,7 +135,6 @@ const CreateSession = () => {
   if (meetLink && createdMeeting) {
     return (
       <DashboardLayout
-        navItems={coachNavItems}
         sidebarSections={coachSidebarSections}
         brandName="Experts Coaching Hub"
       >
@@ -210,7 +209,6 @@ const CreateSession = () => {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >

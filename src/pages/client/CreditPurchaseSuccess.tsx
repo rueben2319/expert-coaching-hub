@@ -1,5 +1,5 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { clientSidebarSections } from "@/config/navigation";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,7 +21,7 @@ export default function CreditPurchaseSuccess() {
   }, [queryClient]);
 
   return (
-    <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
+    <DashboardLayout sidebarSections={clientSidebarSections}>
       <div className="max-w-2xl mx-auto space-y-6 py-8">
         <Card className="border-green-200 bg-green-50/50">
           <CardContent className="pt-6">

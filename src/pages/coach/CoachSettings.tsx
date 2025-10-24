@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { AlertCircle, CheckCircle, CreditCard, Settings } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -76,7 +76,7 @@ export default function CoachSettings() {
 
   if (isLoading) {
     return (
-      <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+      <DashboardLayout sidebarSections={coachSidebarSections}>
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
@@ -88,7 +88,7 @@ export default function CoachSettings() {
   }
 
   return (
-    <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+    <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Coach Settings</h1>

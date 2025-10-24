@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 
 const CoachBilling = () => {
   const { user } = useAuth();
@@ -148,7 +148,7 @@ const CoachBilling = () => {
   const isActiveSubscription = currentSub && currentSub.status === 'active';
 
   return (
-    <DashboardLayout navItems={coachNavItems} sidebarSections={coachSidebarSections}>
+    <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Billing & Subscriptions</h1>

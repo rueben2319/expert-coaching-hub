@@ -5,14 +5,24 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BookOpen, Users, BarChart3, Calendar, Video, Search, Filter, MoreHorizontal, TrendingUp, Clock, CheckCircle, Plus, Mail, MessageCircle } from "lucide-react";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
-import { useState, useMemo } from "react";
+import { coachSidebarSections } from "@/config/navigation";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function Students() {
   const { user } = useAuth();
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || "");
+
+  // Update search term when URL params change
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    if (urlSearch !== searchTerm) {
+      setSearchTerm(urlSearch);
+    }
+  }, [searchParams]);
 
   // Fetch students enrolled in coach's courses
   const { data: enrollments, isLoading: enrollmentsLoading } = useQuery({
@@ -173,7 +183,6 @@ export default function Students() {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >
@@ -185,12 +194,19 @@ export default function Students() {
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search students..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-64"
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (e.target.value) {
+                    setSearchParams({ search: e.target.value });
+                  } else {
+                    setSearchParams({});
+                  }
+                }}
+                className="pl-10"
               />
             </div>
           </div>

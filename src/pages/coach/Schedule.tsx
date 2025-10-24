@@ -4,7 +4,7 @@ import { GoogleCalendarView } from "@/components/GoogleCalendarView";
 import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 
 const Schedule = () => {
@@ -14,7 +14,6 @@ const Schedule = () => {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >

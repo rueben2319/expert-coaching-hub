@@ -1,5 +1,5 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { clientNavItems, clientSidebarSections } from "@/config/navigation";
+import { clientSidebarSections } from "@/config/navigation";
 import { useCredits } from "@/hooks/useCredits";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ export default function CreditPackages() {
   const { packages, packagesLoading, purchaseCredits } = useCredits();
 
   return (
-    <DashboardLayout navItems={clientNavItems} sidebarSections={clientSidebarSections}>
+    <DashboardLayout sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Buy Credits</h1>

@@ -41,21 +41,21 @@ export function LessonItem({ lesson, moduleId }: LessonItemProps) {
     <>
       <Collapsible open={isContentOpen} onOpenChange={setIsContentOpen}>
         <div className="bg-muted/50 rounded-lg">
-          <div className="flex items-center justify-between p-3">
-            <CollapsibleTrigger className="flex items-center gap-3 flex-1 text-left">
-              <ChevronDown className={`h-4 w-4 transition-transform ${isContentOpen ? "" : "-rotate-90"}`} />
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="font-medium">{lesson.title}</p>
+          <div className="flex items-center justify-between p-3 gap-3">
+            <CollapsibleTrigger className="flex items-center gap-3 flex-1 text-left min-w-0">
+              <ChevronDown className={`h-4 w-4 transition-transform flex-shrink-0 ${isContentOpen ? "" : "-rotate-90"}`} />
+              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{lesson.title}</p>
                 {lesson.description && (
-                  <p className="text-sm text-muted-foreground">{lesson.description}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-1">{lesson.description}</p>
                 )}
                 <p className="text-xs text-muted-foreground mt-1">
                   {contentCount} content item{contentCount !== 1 ? "s" : ""}
                 </p>
               </div>
             </CollapsibleTrigger>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-shrink-0">
               <Button size="sm" variant="outline" onClick={() => setShowCreateContent(true)} className="flex items-center gap-1">
                 <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">Content</span>

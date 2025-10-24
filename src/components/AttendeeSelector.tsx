@@ -49,8 +49,15 @@ export const AttendeeSelector = ({
     );
     
     const allEmails = [...new Set([...clientEmails, ...manualEmailList])];
-    onEmailsChange(allEmails);
-  }, [manualEmails, clients]);
+    
+    // Only update if emails actually changed to prevent infinite loop
+    const currentSorted = [...selectedEmails].sort().join(',');
+    const newSorted = [...allEmails].sort().join(',');
+    
+    if (currentSorted !== newSorted) {
+      onEmailsChange(allEmails);
+    }
+  }, [manualEmails, clients, selectedEmails, onEmailsChange]);
 
   const handleClientToggle = (client: CoachClient) => {
     const isSelected = selectedEmails.includes(client.email);

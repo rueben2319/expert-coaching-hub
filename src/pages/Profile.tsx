@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { User, Lock, Trash2, Save, Camera, BookOpen, Plus, Users, BarChart3, Calendar, Video } from "lucide-react";
-import { getProfileNavItems, getProfileSidebarSections } from "@/config/navigation";
+import { getProfileSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -46,7 +46,6 @@ export default function Profile() {
   const userRole = (role as string | null) || user?.user_metadata?.role || "client";
   const dashboardPath = userRole === "coach" ? "/coach" : userRole === "admin" ? "/admin" : "/client";
 
-  const navItems = [...getProfileNavItems(userRole), { label: "Profile", href: "/profile" }];
   const sidebarSections = getProfileSidebarSections(userRole);
 
   // Fetch user profile
@@ -188,7 +187,6 @@ export default function Profile() {
   if (profileLoading) {
     return (
       <DashboardLayout
-        navItems={navItems}
         sidebarSections={sidebarSections}
         brandName="Experts Coaching Hub"
       >
@@ -202,7 +200,6 @@ export default function Profile() {
 
   return (
     <DashboardLayout
-      navItems={navItems}
       sidebarSections={sidebarSections}
       brandName="Experts Coaching Hub"
     >

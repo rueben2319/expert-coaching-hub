@@ -4,10 +4,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Plus, Users, BarChart3, Calendar, Video, TrendingUp, TrendingDown, Eye, Clock, Target, Award } from "lucide-react";
-import { coachNavItems, coachSidebarSections } from "@/config/navigation";
+import { coachSidebarSections } from "@/config/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
+
+// Helper function to safely divide numbers and avoid division by zero
+const safeDivide = (numerator: number, denominator: number, defaultValue = 0): number => {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) return defaultValue;
+  if (denominator <= 0) return defaultValue;
+  return numerator / denominator;
+};
 
 export default function Analytics() {
   const { user } = useAuth();
@@ -135,8 +142,11 @@ export default function Analytics() {
         ? studentProgresses.reduce((sum, progress) => sum + progress, 0) / studentProgresses.length
         : 0;
 
-      const completionRate = studentProgresses.filter(p => p >= 100).length /
-        (studentProgresses.length || 1) * 100;
+      const completionRate = safeDivide(
+        studentProgresses.filter(p => p >= 100).length,
+        studentProgresses.length,
+        0
+      ) * 100;
 
       return {
         id: course.id,
@@ -159,13 +169,21 @@ export default function Analytics() {
 
     // Calculate overall analytics
     const totalEnrollments = enrollments.length;
-    const overallCompletionRate = courseAnalytics.reduce((sum, course) =>
-      sum + (course.completionRate * course.enrollments), 0
-    ) / (totalEnrollments || 1);
+    const overallCompletionRate = safeDivide(
+      courseAnalytics.reduce((sum, course) =>
+        sum + (course.completionRate * course.enrollments), 0
+      ),
+      totalEnrollments,
+      0
+    );
 
-    const overallAverageProgress = courseAnalytics.reduce((sum, course) =>
-      sum + (course.averageProgress * course.enrollments), 0
-    ) / (totalEnrollments || 1);
+    const overallAverageProgress = safeDivide(
+      courseAnalytics.reduce((sum, course) =>
+        sum + (course.averageProgress * course.enrollments), 0
+      ),
+      totalEnrollments,
+      0
+    );
 
     // Most popular lessons (by completion count)
     const lessonCompletions = new Map();
@@ -197,6 +215,20 @@ export default function Analytics() {
       popularLessons
     };
   }, [courses, enrollments, lessonProgress, enrollmentProfiles]);
+
+  // Precompute student progress distribution for performance
+  const allStudents = useMemo(
+    () => analyticsData?.courseAnalytics.flatMap(c => c.students) ?? [],
+    [analyticsData]
+  );
+
+  const studentsByProgress = useMemo(() => ({
+    "0-25": allStudents.filter(s => s.progress < 25).length,
+    "25-50": allStudents.filter(s => s.progress >= 25 && s.progress < 50).length,
+    "50-75": allStudents.filter(s => s.progress >= 50 && s.progress < 75).length,
+    "75-100": allStudents.filter(s => s.progress >= 75 && s.progress < 100).length,
+    "completed": allStudents.filter(s => s.progress >= 100).length,
+  }), [allStudents]);
 
   // Fetch recent activity for coach's courses
   const { data: recentActivityData, isLoading: activityLoading } = useQuery({
@@ -328,7 +360,6 @@ export default function Analytics() {
 
   return (
     <DashboardLayout
-      navItems={coachNavItems}
       sidebarSections={coachSidebarSections}
       brandName="Experts Coaching Hub"
     >
@@ -555,41 +586,41 @@ export default function Analytics() {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>0-25%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress < 25).length} students</span>
+                      <span>{studentsByProgress["0-25"]} students</span>
                     </div>
-                    <Progress value={(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress < 25).length / analyticsData.totalEnrollments) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["0-25"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>25-50%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 25 && s.progress < 50).length} students</span>
+                      <span>{studentsByProgress["25-50"]} students</span>
                     </div>
-                    <Progress value={(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 25 && s.progress < 50).length / analyticsData.totalEnrollments) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["25-50"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>50-75%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 50 && s.progress < 75).length} students</span>
+                      <span>{studentsByProgress["50-75"]} students</span>
                     </div>
-                    <Progress value={(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 50 && s.progress < 75).length / analyticsData.totalEnrollments) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["50-75"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>75-100%</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 75 && s.progress < 100).length} students</span>
+                      <span>{studentsByProgress["75-100"]} students</span>
                     </div>
-                    <Progress value={(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 75 && s.progress < 100).length / analyticsData.totalEnrollments) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["75-100"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Completed (100%)</span>
-                      <span>{analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 100).length} students</span>
+                      <span>{studentsByProgress["completed"]} students</span>
                     </div>
-                    <Progress value={(analyticsData.courseAnalytics.flatMap(c => c.students).filter(s => s.progress >= 100).length / analyticsData.totalEnrollments) * 100} className="h-2" />
+                    <Progress value={safeDivide(studentsByProgress["completed"], analyticsData.totalEnrollments, 0) * 100} className="h-2" />
                   </div>
                 </div>
               ) : (

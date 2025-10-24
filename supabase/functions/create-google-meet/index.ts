@@ -2,6 +2,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime  
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { getValidatedGoogleToken, OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
+import { TokenStorage } from "../_shared/token-storage.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -24,14 +26,6 @@ interface MeetingRequest {
   endTime: string;
   attendees: string[];
   courseId?: string;
-}
-
-interface GoogleTokenResponse {
-  access_token: string;
-  expires_in: number;
-  refresh_token?: string;
-  scope: string;
-  token_type: string;
 }
 
 interface CalendarEvent {
@@ -78,13 +72,21 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Get user from auth header
+    
+    // Get auth header to forward it to the client
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('No authorization header');
     }
+
+    // Create client with forwarded Authorization header
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
 
     const { data: { user }, error: userError } = await supabase.auth.getUser(
       authHeader.replace('Bearer ', '')
@@ -143,53 +145,37 @@ serve(async (req: Request) => {
       throw new Error('Start time must be before end time');
     }
 
-    // Get user's session to access provider tokens
-    const { data: session, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.session?.provider_token) {
-      throw new Error('No valid Google OAuth session found. Please sign in with Google again.');
+    // Get validated Google OAuth token (with automatic refresh)
+    const { accessToken, refreshToken, wasRefreshed } = await getValidatedGoogleToken(supabase);
+
+    if (wasRefreshed) {
+      console.log('Token was refreshed for user:', user.id);
+      
+      // Store refreshed token analytics
+      try {
+        await supabase.from('meeting_analytics').insert({
+          user_id: user.id,
+          event_type: 'token_refreshed',
+          event_data: {
+            timestamp: new Date().toISOString(),
+            refresh_source: 'create_meeting',
+            trigger: 'automatic',
+          },
+        });
+      } catch (analyticsError) {
+        console.error('Analytics logging error:', analyticsError);
+      }
     }
 
-    let accessToken = session.session.provider_token;
-    const refreshToken = session.session.provider_refresh_token;
-
-    // Helper function to refresh Google OAuth token
-    const refreshAccessToken = async (refreshToken: string): Promise<string> => {
-      const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-      const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-      
-      if (!clientId || !clientSecret) {
-        throw new Error('Google OAuth credentials not configured');
-      }
-
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token',
-        }),
-      });
-
-      if (!tokenResponse.ok) {
-        throw new Error('Failed to refresh Google OAuth token');
-      }
-
-      const tokenData: GoogleTokenResponse = await tokenResponse.json();
-      return tokenData.access_token;
-    };
-
-    // Helper function to make Google Calendar API request with token refresh
-    const makeCalendarRequest = async (token: string, attempt = 1): Promise<CalendarEvent> => {
+    // Helper function to make Google Calendar API request with automatic token handling
+    const makeCalendarRequest = async (): Promise<CalendarEvent> => {
       const requestId = `meet-${Date.now()}-${crypto.randomUUID()}`;
       
-      const calendarResponse = await fetch(
-        'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+      const calendarResponse = await OAuthTokenManager.makeAuthenticatedRequest(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all',
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -210,21 +196,15 @@ serve(async (req: Request) => {
                 conferenceSolutionKey: { type: 'hangoutsMeet' },
               },
             },
-            sendUpdates: 'all',
           }),
-        }
+        },
+        accessToken,
+        refreshToken
       );
-
-      // Handle token expiration with refresh
-      if (calendarResponse.status === 401 && attempt === 1 && refreshToken) {
-        console.log('Access token expired, refreshing...');
-        const newToken = await refreshAccessToken(refreshToken);
-        return makeCalendarRequest(newToken, 2);
-      }
 
       if (!calendarResponse.ok) {
         const errorText = await calendarResponse.text();
-        console.error('Google Calendar API error:', errorText);
+        console.error('Google Calendar API error:', calendarResponse.status, errorText);
         throw new Error(`Failed to create calendar event: ${calendarResponse.status} ${errorText}`);
       }
 
@@ -232,7 +212,7 @@ serve(async (req: Request) => {
     };
 
     // Create the calendar event
-    const calendarEvent = await makeCalendarRequest(accessToken);
+    const calendarEvent = await makeCalendarRequest();
 
     // Extract Google Meet link from the response
     const meetLink = calendarEvent.conferenceData?.entryPoints?.find(
@@ -267,20 +247,21 @@ serve(async (req: Request) => {
     }
 
     // Log analytics event
-    const { error: analyticsError } = await (supabase.from('meeting_analytics') as any).insert({
-      meeting_id: meeting.id,
-      user_id: user.id,
-      event_type: 'meeting_created',
-      event_data: {
-        attendee_count: sanitizedAttendees.length,
-        course_id: courseId,
-        calendar_event_id: calendarEvent.id,
-        has_meet_link: !!meetLink,
-        created_via: 'edge_function',
-      },
-    });
-
-    if (analyticsError) {
+    try {
+      await supabase.from('meeting_analytics').insert({
+        meeting_id: meeting.id,
+        user_id: user.id,
+        event_type: 'meeting_created',
+        event_data: {
+          attendee_count: sanitizedAttendees.length,
+          course_id: courseId,
+          calendar_event_id: calendarEvent.id,
+          has_meet_link: !!meetLink,
+          created_via: 'edge_function',
+          token_was_refreshed: wasRefreshed,
+        },
+      });
+    } catch (analyticsError) {
       console.error('Failed to log analytics event:', analyticsError);
       // Don't throw here as the meeting was created successfully
     }

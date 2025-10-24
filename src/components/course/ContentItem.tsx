@@ -67,16 +67,18 @@ export function ContentItem({ content, lessonId }: ContentItemProps) {
 
   return (
     <>
-      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-        <div className="flex items-center gap-3">
-          {getContentIcon(content.content_type)}
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs">
+      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex-shrink-0">
+            {getContentIcon(content.content_type)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary" className="text-xs flex-shrink-0">
                 {content.content_type}
               </Badge>
               {content.is_required && (
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="text-xs flex-shrink-0">
                   Required
                 </Badge>
               )}
@@ -86,7 +88,7 @@ export function ContentItem({ content, lessonId }: ContentItemProps) {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-shrink-0">
           <Button size="sm" variant="ghost" onClick={() => setShowEditContent(true)}>
             <Edit className="h-4 w-4" />
           </Button>

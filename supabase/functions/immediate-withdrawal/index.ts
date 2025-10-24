@@ -2,8 +2,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { sendAlert, sendFraudAlert, logHighValueTransaction, logRateLimitHit } from "../_shared/monitoring.ts";
 
-// Deno global type declaration for IDE
+// Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
@@ -34,9 +35,9 @@ async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
     if (!operatorsResponse.ok) {
       console.error('Failed to fetch operators, status:', operatorsResponse.status);
       // Fallback to hardcoded operators for Malawi
-      if (/^(99|88)/.test(cleanNumber)) {
+      if (/^(99|9)/.test(cleanNumber)) {
         return 'AIRTEL_MW';
-      } else if (/^(77|76)/.test(cleanNumber)) {
+      } else if (/^(88|8)/.test(cleanNumber)) {
         return 'TNM_MW';
       } else {
         throw new Error('Unsupported mobile number prefix');
@@ -47,8 +48,8 @@ async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
     const operatorsList = operatorsData.data ?? [];
 
     let operatorName = '';
-    if (/^(99|88)/.test(cleanNumber)) operatorName = 'Airtel';
-    else if (/^(77|76)/.test(cleanNumber)) operatorName = 'TNM';
+    if (/^(99|9)/.test(cleanNumber)) operatorName = 'Airtel';
+    else if (/^(88|8)/.test(cleanNumber)) operatorName = 'TNM';
     else throw new Error('Unsupported mobile number prefix');
 
     let foundOperator: any = null;
@@ -97,6 +98,12 @@ async function verifyCoachRole(supabase: any, userId: string) {
   return true;
 }
 
+const MAX_WITHDRAWAL = parseInt(Deno.env.get('MAX_WITHDRAWAL') || '10000', 10);
+const MIN_WITHDRAWAL = parseInt(Deno.env.get('MIN_WITHDRAWAL') || '10', 10);
+const DAILY_LIMIT = parseInt(Deno.env.get('DAILY_WITHDRAWAL_LIMIT') || '50000', 10);
+const CREDIT_AGING_DAYS = parseInt(Deno.env.get('CREDIT_AGING_DAYS') || '3', 10);
+const RATE_LIMIT_PER_HOUR = parseInt(Deno.env.get('RATE_LIMIT_PER_HOUR') || '5', 10);
+
 function validateRequestBody(body: any) {
   const { credits_amount, payment_method, payment_details } = body;
   if (!credits_amount || !payment_method || !payment_details) {
@@ -107,13 +114,33 @@ function validateRequestBody(body: any) {
   }
 
   const creditsNum = Number(credits_amount);
-  if (isNaN(creditsNum) || creditsNum <= 0) throw new Error("Amount must be positive");
+  
+  // Comprehensive validation
+  if (isNaN(creditsNum)) {
+    throw new Error("Amount must be a valid number");
+  }
+  
+  if (creditsNum <= 0) {
+    throw new Error("Amount must be positive");
+  }
+  
+  if (creditsNum < MIN_WITHDRAWAL) {
+    throw new Error(`Minimum withdrawal is ${MIN_WITHDRAWAL} credits`);
+  }
+  
+  if (creditsNum > MAX_WITHDRAWAL) {
+    throw new Error(`Maximum withdrawal is ${MAX_WITHDRAWAL} credits`);
+  }
+  
+  if (!Number.isInteger(creditsNum)) {
+    throw new Error("Amount must be a whole number (no decimals)");
+  }
 
   if (payment_method === "mobile_money") {
     const mobile = payment_details.mobile;
     if (!mobile) throw new Error("Missing mobile number for mobile money payment");
     const cleanNumber = mobile.replace(/^\+?265/, "");
-    if (!/^(99|88|77|76)\d{7}$/.test(cleanNumber)) {
+    if (!/^(99|9|88|8)\d{7}$/.test(cleanNumber)) {
       throw new Error("Invalid mobile number format. Example: +265999123456");
     }
   }
@@ -129,33 +156,6 @@ async function getWalletBalance(supabase: any, userId: string) {
     .single();
   if (error || !wallet) throw new Error("Wallet not found");
   return Number(wallet.balance);
-}
-
-async function createWithdrawalRequest(
-  supabase: any,
-  userId: string,
-  credits: number,
-  amountMWK: number,
-  payment_method: string,
-  payment_details: any,
-  notes?: string
-) {
-  const { data, error } = await supabase
-    .from("withdrawal_requests")
-    .insert({
-      coach_id: userId,
-      credits_amount: credits,
-      amount: amountMWK,
-      status: "processing",
-      payment_method,
-      payment_details,
-      notes: notes || null,
-    })
-    .select()
-    .single();
-
-  if (error || !data) throw new Error("Failed to create withdrawal request");
-  return data;
 }
 
 async function executePayout(
@@ -181,7 +181,8 @@ async function executePayout(
     charge_id: `WD-${withdrawal.id}`,
   };
 
-  console.log('Payout payload:', JSON.stringify(payload, null, 2));
+  const redacted = { ...payload, mobile: payload.mobile.replace(/\d(?=\d{2}$)/g, "•") };
+  console.log('Payout payload:', JSON.stringify(redacted, null, 2));
 
   const resp = await fetch("https://api.paychangu.com/mobile-money/payouts/initialize", {
     method: "POST",
@@ -216,63 +217,179 @@ async function finalizeWithdrawal(
   payment_method: string,
   amountMWK: number
 ) {
-  const newBalance = walletBalance - creditsToDeduct;
-
-  // Deduct credits
-  const { error: updateError } = await supabase
-    .from("credit_wallets")
-    .update({ balance: newBalance, updated_at: new Date().toISOString() })
-    .eq("user_id", userId);
-
-  if (updateError) {
-    console.error("Failed to update wallet balance:", updateError);
-    throw new Error("Failed to update wallet balance");
-  }
-
-  // Record transaction
-  const { error: transactionError } = await supabase.from("credit_transactions").insert({
-    user_id: userId,
-    transaction_type: "withdrawal",
-    amount: -creditsToDeduct,
-    balance_before: walletBalance,
-    balance_after: newBalance,
-    reference_type: "withdrawal_request",
-    reference_id: withdrawalRequest.id,
-    description: `Immediate withdrawal: ${creditsToDeduct} credits → ${amountMWK} MWK via PayChangu`,
-    metadata: {
-      payment_method,
-      amount_mwk: amountMWK,
-      payout_ref: payoutData.ref_id,
-      payout_trans_id: payoutData.trans_id,
-    },
+  // Atomic withdrawal processing using PostgreSQL function
+  const { data, error } = await supabase.rpc('process_withdrawal', {
+    coach_id: userId,
+    credits_amount: creditsToDeduct,
+    amount_mwk: amountMWK,
+    withdrawal_id: withdrawalRequest.id,
+    payout_ref: payoutData.transaction?.ref_id,
+    payout_trans_id: payoutData.transaction?.trans_id,
+    payment_method: payment_method,
   });
 
-  if (transactionError) {
-    console.error("Failed to record transaction:", transactionError);
-    throw new Error("Failed to record transaction");
+  if (error) {
+    console.error("Failed to process withdrawal atomically:", error);
+    throw new Error("Failed to complete withdrawal: " + error.message);
   }
 
-  // Update withdrawal status
-  const { error: withdrawalError } = await supabase
+  return data.new_balance;
+}
+
+/** ---------- Security & Rate Limiting ---------- **/
+
+async function checkRateLimit(supabase: any, userId: string) {
+  // Check withdrawals in last hour
+  const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  
+  const { data: recentWithdrawals, error } = await supabase
     .from("withdrawal_requests")
-    .update({
-      status: "completed",
-      processed_at: new Date().toISOString(),
-      processed_by: userId,
-    })
-    .eq("id", withdrawalRequest.id);
+    .select("id")
+    .eq("coach_id", userId)
+    .gte("created_at", oneHourAgo);
+  
+  if (error) {
+    console.error("Rate limit check error:", error);
+    return; // Don't block on error
+  }
+  
+  const withdrawalCount = recentWithdrawals?.length || 0;
+  
+  if (withdrawalCount >= RATE_LIMIT_PER_HOUR) {
+    // Log rate limit hit
+    await logRateLimitHit(userId, "withdrawal", RATE_LIMIT_PER_HOUR, withdrawalCount);
+    throw new Error(`Rate limit exceeded. Maximum ${RATE_LIMIT_PER_HOUR} withdrawal requests per hour. Please try again later.`);
+  }
+  
+  return withdrawalCount;
+}
 
-  if (withdrawalError) {
-    console.error("Failed to update withdrawal status:", withdrawalError);
-    throw new Error("Failed to update withdrawal status");
+async function checkDailyLimit(supabase: any, userId: string, requestedAmount: number) {
+  const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
+  
+  const { data: todayWithdrawals, error } = await supabase
+    .from("withdrawal_requests")
+    .select("credits_amount")
+    .eq("coach_id", userId)
+    .in("status", ["completed", "processing"])
+    .gte("created_at", oneDayAgo);
+  
+  if (error) {
+    console.error("Daily limit check error:", error);
+    // Fail closed for security - block withdrawal on rate limit errors
+    throw new Error("Service temporarily unavailable. Please try again later.");
+  }
+  
+  const totalToday = todayWithdrawals?.reduce((sum: number, w: any) => sum + Number(w.credits_amount), 0) || 0;
+  
+  if (totalToday + requestedAmount > DAILY_LIMIT) {
+    throw new Error(`Daily withdrawal limit exceeded. You have withdrawn ${totalToday} credits today. Daily limit: ${DAILY_LIMIT} credits.`);
+  }
+  
+  return totalToday;
+}
+
+async function checkCreditAge(supabase: any, userId: string, requestedAmount: number) {
+  // Get current balance first
+  const { data: wallet, error: walletError } = await supabase
+    .from("credit_wallets")
+    .select("balance")
+    .eq("user_id", userId)
+    .single();
+
+  if (walletError || !wallet) {
+    console.error("Credit age check - wallet error:", walletError);
+    throw new Error("Service temporarily unavailable. Please try again later.");
   }
 
-  return newBalance;
+  const currentBalance = Number(wallet.balance);
+
+  // Call database function to calculate available withdrawable credits
+  const { data: availableCredits, error: rpcError } = await supabase.rpc('get_available_withdrawable_credits', {
+    user_id_param: userId,
+    credit_aging_days_param: CREDIT_AGING_DAYS
+  });
+
+  if (rpcError) {
+    console.error("Credit age check - RPC error:", rpcError);
+    throw new Error("Service temporarily unavailable. Please try again later.");
+  }
+
+  // Clamp result between 0 and current balance for safety
+  const clampedAvailableCredits = Math.min(Math.max(Number(availableCredits), 0), currentBalance);
+
+  if (requestedAmount > clampedAvailableCredits) {
+    const recentCredits = Math.max(0, currentBalance - clampedAvailableCredits);
+    throw new Error(
+      `Only ${clampedAvailableCredits.toFixed(2)} credits are available for withdrawal. ` +
+      `${recentCredits.toFixed(2)} credits are too recent (must age ${CREDIT_AGING_DAYS} days).`
+    );
+  }
+
+  return clampedAvailableCredits;
+}
+
+async function calculateFraudScore(supabase: any, userId: string, amount: number) {
+  let score = 0;
+  let reasons = [];
+  
+  // Check account age
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("created_at")
+    .eq("id", userId)
+    .single();
+  
+  if (profile) {
+    const accountAgeDays = Math.floor((Date.now() - new Date(profile.created_at).getTime()) / 86400000);
+    
+    // New account (< 7 days)
+    if (accountAgeDays < 7) {
+      score += 20;
+      reasons.push(`New account (${accountAgeDays} days old)`);
+    }
+  }
+  
+  // Check for rapid buy-withdraw pattern
+  const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  const { data: recentPurchases } = await supabase
+    .from("credit_transactions")
+    .select("created_at, amount")
+    .eq("user_id", userId)
+    .eq("transaction_type", "purchase")
+    .gte("created_at", oneHourAgo);
+  
+  if (recentPurchases && recentPurchases.length > 0) {
+    score += 30;
+    reasons.push("Rapid buy-withdraw pattern (< 1 hour)");
+  }
+  
+  // Large withdrawal (> MAX_WITHDRAWAL credits)
+  if (amount > MAX_WITHDRAWAL) {
+    score += 25;
+    reasons.push(`Large withdrawal (${amount} credits)`);
+  }
+  
+  // Check if this is first withdrawal
+  const { data: pastWithdrawals } = await supabase
+    .from("withdrawal_requests")
+    .select("id")
+    .eq("coach_id", userId)
+    .eq("status", "completed");
+  
+  if (!pastWithdrawals || pastWithdrawals.length === 0) {
+    if (amount > 5000) {
+      score += 20;
+      reasons.push("First withdrawal with large amount");
+    }
+  }
+  
+  return { score, reasons };
 }
 
 /** ---------- Main Server ---------- **/
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST")
     return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
@@ -301,33 +418,123 @@ serve(async (req) => {
     const { creditsToWithdraw, payment_method, payment_details } =
       validateRequestBody(body);
 
-    // Wallet & balance
+    // 🔒 SECURITY CHECKS (NEW)
+    
+    // 1. Rate limiting (5 requests per hour)
+    await checkRateLimit(supabase, user.id);
+    console.log("✓ Rate limit check passed");
+    
+    // 2. Daily withdrawal limit (50k credits)
+    const todayTotal = await checkDailyLimit(supabase, user.id, creditsToWithdraw);
+    console.log(`✓ Daily limit check passed (${todayTotal} used today)`);
+    
+    // 3. Credit aging (3-day cooldown)
+    const availableCredits = await checkCreditAge(supabase, user.id, creditsToWithdraw);
+    console.log(`✓ Credit age check passed (${availableCredits} available)`);
+    
+    // 4. Fraud detection
+    const fraudCheck = await calculateFraudScore(supabase, user.id, creditsToWithdraw);
+    console.log(`✓ Fraud score: ${fraudCheck.score}/100`, fraudCheck.reasons);
+    
+    // Flag high-risk transactions for manual review
+    const HIGH_RISK_THRESHOLD = 50;
+    if (fraudCheck.score >= HIGH_RISK_THRESHOLD) {
+      console.warn(`⚠️ HIGH RISK WITHDRAWAL FLAGGED`, {
+        user_id: user.id,
+        amount: creditsToWithdraw,
+        score: fraudCheck.score,
+        reasons: fraudCheck.reasons,
+      });
+      
+      // Send fraud alert
+      await sendFraudAlert({
+        title: 'High-Risk Withdrawal Detected',
+        message: `Withdrawal of ${creditsToWithdraw} credits flagged with score ${fraudCheck.score}/100`,
+        fraud_score: fraudCheck.score,
+        fraud_reasons: fraudCheck.reasons,
+        amount: creditsToWithdraw,
+        transaction_type: 'withdrawal',
+        user_id: user.id,
+      });
+      
+      // Optionally block very high scores
+      if (fraudCheck.score >= 75) {
+        throw new Error(
+          "This withdrawal has been flagged for manual review due to unusual activity. " +
+          "Please contact support for assistance."
+        );
+      }
+    }
+    
     const walletBalance = await getWalletBalance(supabase, user.id);
     if (walletBalance < creditsToWithdraw) throw new Error("Insufficient balance");
 
-    // Convert credits → MWK
+    // Convert credits → MWK (needed for logging)
     const amountMWK = creditsToWithdraw * 100;
 
-    // Create withdrawal request
-    const withdrawalRequest = await createWithdrawalRequest(
-      supabase,
-      user.id,
-      creditsToWithdraw,
-      amountMWK,
-      payment_method,
-      payment_details,
-      body.notes
-    );
+    // Log high-value transactions
+    await logHighValueTransaction('withdrawal', user.id, creditsToWithdraw, amountMWK);
+
+    // Create withdrawal request with fraud tracking
+    const { data: withdrawalRequest, error: withdrawalError } = await supabase
+      .from("withdrawal_requests")
+      .insert({
+        coach_id: user.id,
+        credits_amount: creditsToWithdraw,
+        amount: amountMWK,
+        status: "processing",
+        payment_method,
+        payment_details,
+        notes: body.notes || null,
+        fraud_score: fraudCheck.score,
+        fraud_reasons: fraudCheck.reasons,
+        ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || null,
+        user_agent: req.headers.get("user-agent") || null,
+      })
+      .select()
+      .single();
+    
+    if (withdrawalError || !withdrawalRequest) {
+      throw new Error("Failed to create withdrawal request");
+    }
 
     // Operator & payout
     const operatorId = await getOperatorId(payChanguSecret, payment_details.mobile);
-    const payoutData = await executePayout(
-      payChanguSecret,
-      withdrawalRequest,
-      payment_details,
-      operatorId,
-      amountMWK
-    );
+    let payoutData;
+    try {
+      payoutData = await executePayout(
+        payChanguSecret,
+        withdrawalRequest,
+        payment_details,
+        operatorId,
+        amountMWK
+      );
+    } catch (err) {
+      // Mark withdrawal as failed
+      await supabase
+        .from("withdrawal_requests")
+        .update({
+          status: "failed",
+          processed_at: new Date().toISOString(),
+          processed_by: user.id,
+        })
+        .eq("id", withdrawalRequest.id);
+
+      // Optional: Refund credits to wallet
+      const refundAmount = creditsToWithdraw;
+      const { error: refundError } = await supabase.rpc('refund_failed_withdrawal', {
+        coach_id: user.id,
+        credits_amount: refundAmount,
+        withdrawal_id: withdrawalRequest.id,
+      });
+
+      if (refundError) {
+        console.error("Failed to refund credits:", refundError);
+        // Log but don't throw - we already have the main error
+      }
+
+      throw err;
+    }
 
     const newBalance = await finalizeWithdrawal(
       supabase,

@@ -1,4 +1,6 @@
+import React from "react";
 import { Toaster } from "@/components/ui/toaster";
+import { setupTokenSync } from "@/lib/tokenSync";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -41,12 +43,19 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="system" storageKey="experts-coaching-hub-theme">
-        <TooltipProvider>
-          <Toaster />
+const App = () => {
+  // Set up automatic token synchronization
+  React.useEffect(() => {
+    const cleanup = setupTokenSync(60000); // Check every 60 seconds
+    return cleanup;
+  }, []);
+
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider defaultTheme="system" storageKey="experts-coaching-hub-theme">
+          <TooltipProvider>
+            <Toaster />
           <Sonner />
           <BrowserRouter>
             <AuthProvider>
@@ -298,6 +307,7 @@ const App = () => (
       </ThemeProvider>
     </QueryClientProvider>
   </ErrorBoundary>
-);
+  );
+};
 
 export default App;

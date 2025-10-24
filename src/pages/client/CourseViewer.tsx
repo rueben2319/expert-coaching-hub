@@ -33,16 +33,51 @@ export default function CourseViewer() {
           *,
           course_modules(
             *,
-            lessons(*)
+            lessons(
+              *,
+              estimated_duration
+            )
           )
         `)
         .eq("id", courseId)
         .single();
 
       if (error) throw error;
-      return data;
+      
+      // Calculate total duration
+      let totalMinutes = 0;
+      if (data.course_modules) {
+        data.course_modules.forEach((module: any) => {
+          if (module.lessons) {
+            module.lessons.forEach((lesson: any) => {
+              totalMinutes += lesson.estimated_duration || 0;
+            });
+          }
+        });
+      }
+      
+      return {
+        ...data,
+        total_duration: totalMinutes
+      };
     },
     enabled: !!courseId,
+  });
+
+  // Fetch coach profile
+  const { data: coachProfile } = useQuery({
+    queryKey: ["coach-profile", course?.coach_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", course?.coach_id)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!course?.coach_id,
   });
 
   // Fetch enrollment
@@ -327,10 +362,20 @@ export default function CourseViewer() {
       )
     : false;
 
+  // Format duration helper
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
+
   return (
     <CourseTemplateLayout
       courseName={course.title}
-      providerName="Instructor" // You can fetch this from user_roles or profiles
+      providerName={coachProfile?.full_name || "Instructor"}
       modules={modules}
       currentView={currentView}
       currentModuleId={currentModuleId}
@@ -346,6 +391,20 @@ export default function CourseViewer() {
         <div className="space-y-6">
           <div>
             <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
+              {coachProfile?.full_name && (
+                <span>By {coachProfile.full_name}</span>
+              )}
+              {course.total_duration > 0 && (
+                <>
+                  <span>•</span>
+                  <div className="flex items-center gap-1">
+                    <Clock className="h-4 w-4" />
+                    <span>{formatDuration(course.total_duration)}</span>
+                  </div>
+                </>
+              )}
+            </div>
             <p className="text-muted-foreground">{course.description}</p>
           </div>
 
