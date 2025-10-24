@@ -416,7 +416,38 @@ class GoogleCalendarService {
   // Helper method to check if user has valid Google Calendar access
   async validateAccess(): Promise<boolean> {
     try {
+      logger.log('Starting calendar access validation...');
+
+      // First check if user has Google OAuth identity
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        logger.log('Calendar validation: Error getting user:', error.message);
+        return false;
+      }
+      if (!user) {
+        logger.log('Calendar validation: No user found');
+        return false;
+      }
+
+      const googleIdentity = user.identities?.find(identity => identity.provider === 'google');
+      if (!googleIdentity) {
+        logger.log('Calendar validation: No Google identity found for user');
+        return false;
+      }
+
+      logger.log('Calendar validation: Google identity found, checking session...');
+
+      // Double-check that we have a valid session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        logger.log('Calendar validation: No valid session or access token');
+        return false;
+      }
+
+      logger.log('Calendar validation: Session valid, testing calendar API access...');
+
       await this.listEvents('primary', { maxResults: 1 });
+      logger.log('Calendar validation: Access confirmed');
       return true;
     } catch (error) {
       logger.error('Google Calendar access validation failed:', error);

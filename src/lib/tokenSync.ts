@@ -143,8 +143,20 @@ export function setupTokenSync(intervalMs: number = 60000): () => void {
  */
 export async function notifyAuthStateChange(event: string, session: any): Promise<void> {
   if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-    logger.log('Auth state changed, syncing tokens:', event);
-    await syncTokens();
+    // Only sync tokens for users who have Google OAuth
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const hasGoogleIdentity = user?.identities?.some(identity => identity.provider === 'google');
+      
+      if (hasGoogleIdentity) {
+        logger.log('Auth state changed, syncing tokens:', event);
+        await syncTokens();
+      } else {
+        logger.log('Skipping token sync - user does not have Google OAuth');
+      }
+    } catch (error) {
+      logger.error('Error checking Google identity for token sync:', error);
+    }
   }
 }
 
