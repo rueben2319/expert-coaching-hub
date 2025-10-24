@@ -10,7 +10,8 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, role, loading } = useAuth();
 
-  if (loading) {
+  // Show loading state while checking authentication or fetching role
+  if (loading || (user && role === null)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center">
@@ -23,12 +24,6 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
   if (!user) {
     return <Navigate to="/auth" replace />;
-  }
-
-  // If user is authenticated but role is still null/undefined after loading, redirect to home
-  if (user && role == null && !loading) {
-    logger.warn("User authenticated but no role found");
-    return <Navigate to="/" replace />;
   }
 
   // Check role-based access

@@ -43,13 +43,17 @@ const contentSchema = z.object({
       return data.video_url && data.video_url.trim().length > 0;
     case "quiz":
       return data.quiz_questions && Array.isArray(data.quiz_questions) && data.quiz_questions.length > 0 &&
-             data.quiz_questions.every(q => q && q.question && q.question.trim().length > 0 && 
-             q.options && Array.isArray(q.options) && q.options.length >= 2);
+             data.quiz_questions.every(q => {
+               if (!q || !q.question || q.question.trim().length === 0) return false;
+               if (!q.options || !Array.isArray(q.options) || q.options.length < 2) return false;
+               // Check that all options have content
+               return q.options.every(opt => opt && opt.trim().length > 0);
+             });
     default:
       return true;
   }
 }, {
-  message: "Please fill in all required fields for the selected content type",
+  message: "Please fill in all required fields for the selected content type. For quizzes, ensure all questions have text and at least 2 non-empty options.",
   path: ["content_type"],
 });
 
@@ -114,12 +118,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       // Extract content based on type
       let textContent = "";
       let videoUrl = "";
-      let quizQuestions = [{
-        question: "",
-        options: ["", ""],
-        correct_answer: 0,
-        explanation: "",
-      }];
+      let quizQuestions = undefined; // Default to undefined
       let quizTitle = "";
       let quizDescription = "";
       let passingScore = 70;
@@ -154,7 +153,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
           is_required: editContent.is_required ?? true,
           text_content: textContent,
           video_url: videoUrl,
-          quiz_questions: quizQuestions,
+          quiz_questions: quizQuestions, // Only set if it's quiz content
           quiz_title: quizTitle,
           quiz_description: quizDescription,
           passing_score: passingScore,
@@ -270,9 +269,24 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => {
+            console.log('✅ Form validation passed, submitting data:', data);
             createMutation.mutate(data);
           }, (errors) => {
-            console.error('Form validation errors:', errors);
+            console.error('❌ Form validation errors:', errors);
+            console.error('❌ Error details:', JSON.stringify(errors, null, 2));
+            
+            // Get specific error messages
+            const errorMessages = Object.entries(errors).map(([field, error]: [string, any]) => {
+              return `${field}: ${error?.message || 'Invalid'}`;
+            }).join('\n');
+            
+            console.error('❌ Specific errors:', errorMessages);
+            
+            toast({
+              title: "Validation Error",
+              description: errorMessages || "Please check all required fields and try again.",
+              variant: "destructive"
+            });
           })} className="space-y-4 px-1">
             <FormField
               control={form.control}
@@ -283,6 +297,15 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                   <Select
                     onValueChange={(value) => {
                       field.onChange(value);
+                      // Initialize quiz questions when quiz is selected
+                      if (value === "quiz" && !form.getValues("quiz_questions")) {
+                        form.setValue("quiz_questions", [{
+                          question: "",
+                          options: ["", ""],
+                          correct_answer: 0,
+                          explanation: "",
+                        }]);
+                      }
                     }}
                     value={field.value}
                   >
