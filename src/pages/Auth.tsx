@@ -200,21 +200,8 @@ export default function Auth() {
 
         if (error) throw error;
 
-        // Create user role record if user was created
-        if (data.user) {
-          const { error: roleError } = await supabase
-            .from("user_roles")
-            .insert({
-              user_id: data.user.id,
-              role: selectedRole,
-            });
-
-          if (roleError) {
-            console.error("Error creating user role:", roleError);
-            // Don't throw here as the user was created successfully
-          }
-        }
-
+        // Note: User role is automatically created by the handle_new_user trigger
+        // based on the role passed in user metadata
         toast.success("Account created! Please check your email to verify.");
       }
     } catch (error: any) {

@@ -50,7 +50,7 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Invalid role' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Upsert role
+    // Upsert role (user can only have one role, so we update on user_id conflict)
     const { data, error } = await supabase.from('user_roles').upsert(
       { user_id, role },
       { onConflict: 'user_id' }
