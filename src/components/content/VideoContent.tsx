@@ -61,22 +61,27 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   const isDirectVideo = isVideoFile(content.url);
   const videoType = getVideoType(content.url);
 
-  // Check completion status on mount
+  // Check completion status and load saved progress on mount
   useEffect(() => {
-    const checkCompletionStatus = async () => {
+    const loadProgress = async () => {
       if (!user || !contentId) return;
 
       try {
         const { data } = await supabase
           .from("content_interactions")
-          .select("is_completed")
+          .select("is_completed, interaction_data")
           .eq("user_id", user.id)
           .eq("content_id", contentId)
           .single();
 
-
         if (data?.is_completed) {
           setIsCompleted(true);
+        } else if (data?.interaction_data?.watch_time) {
+          // Restore previous watch time
+          const savedWatchTime = data.interaction_data.watch_time;
+          setWatchTime(savedWatchTime);
+          totalWatchTime.current = savedWatchTime;
+          console.log('Restored watch time:', savedWatchTime);
         }
       } catch (err) {
         console.error('Exception fetching content interaction:', err);
@@ -84,7 +89,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
       }
     };
 
-    checkCompletionStatus();
+    loadProgress();
   }, [user, contentId]);
 
   // Listen for YouTube and Vimeo player events
@@ -229,16 +234,86 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
     };
   }, [isPlaying, isCompleted, content.duration]);
 
+  // Periodic progress saving (every 10 seconds while playing)
+  useEffect(() => {
+    let saveInterval: NodeJS.Timeout;
+
+    if (isPlaying && !isCompleted && user) {
+      saveInterval = setInterval(() => {
+        const estimatedDuration = content.duration ? content.duration * 60 : 600;
+        const progressPercentage = (watchTime / estimatedDuration) * 100;
+        saveProgress(progressPercentage);
+      }, 10000); // Save every 10 seconds
+    }
+
+    return () => {
+      if (saveInterval) clearInterval(saveInterval);
+    };
+  }, [isPlaying, watchTime, isCompleted, user, content.duration]);
+
+  // Fallback heartbeat tracking for embedded videos (YouTube/Vimeo)
+  // This ensures tracking continues even if postMessage events don't fire
+  useEffect(() => {
+    let heartbeatInterval: NodeJS.Timeout;
+
+    if (!isDirectVideo && hasStarted && !isCompleted) {
+      heartbeatInterval = setInterval(() => {
+        const iframe = iframeRef.current;
+        if (iframe) {
+          // Check if iframe is visible in viewport
+          const rect = iframe.getBoundingClientRect();
+          const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+          
+          if (isVisible && !document.hidden) {
+            // Assume video is playing if visible and tab is active
+            // Add 30 seconds to watch time as fallback
+            setWatchTime(prev => {
+              const newTime = prev + 30;
+              totalWatchTime.current = newTime;
+              return newTime;
+            });
+            console.log('Fallback tracking: +30s');
+          }
+        }
+      }, 30000); // Every 30 seconds
+    }
+
+    return () => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+    };
+  }, [isDirectVideo, hasStarted, isCompleted]);
+
+  // Visibility API - pause tracking when tab is hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && isPlaying) {
+        console.log('Tab hidden - pausing tracking');
+        setIsPlaying(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isPlaying]);
+
   const saveProgress = async (percentage: number, isComplete = false) => {
     if (!user || isCompleted) return;
 
     try {
+      const estimatedDuration = content.duration ? content.duration * 60 : 600;
       const { error } = await supabase
         .from("content_interactions")
         .upsert({
           user_id: user.id,
           content_id: contentId,
           is_completed: isComplete,
+          interaction_data: {
+            watch_time: watchTime,
+            last_position: percentage,
+            estimated_duration: estimatedDuration,
+            video_type: videoType,
+            last_updated: new Date().toISOString(),
+          },
         });
 
       if (error) {

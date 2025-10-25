@@ -17,6 +17,9 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
   const { user } = useAuth();
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [timeSpent, setTimeSpent] = useState(0);
+  const [requiredTime, setRequiredTime] = useState(0);
+  const [isShortContent, setIsShortContent] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Check if content is already completed
@@ -39,6 +42,65 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
 
     checkCompletionStatus();
   }, [user, contentId]);
+
+  // Calculate required reading time based on word count
+  useEffect(() => {
+    const text = content?.text ?? "";
+    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+    // Average reading speed: 200 words per minute
+    // Minimum 10 seconds even for short content
+    const readingTimeSeconds = Math.max((wordCount / 200) * 60, 10);
+    setRequiredTime(readingTimeSeconds);
+  }, [content]);
+
+  // Check if content is short enough to not require scrolling
+  useEffect(() => {
+    const checkContentHeight = () => {
+      if (contentRef.current) {
+        const element = contentRef.current;
+        const isShort = element.scrollHeight <= element.clientHeight + 10;
+        setIsShortContent(isShort);
+        if (isShort) {
+          // Auto-enable scroll completion for short content
+          setHasScrolledToBottom(true);
+        }
+      }
+    };
+
+    // Check after content is rendered
+    const timeoutId = setTimeout(checkContentHeight, 100);
+    return () => clearTimeout(timeoutId);
+  }, [content]);
+
+  // Track time spent on content
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (!isCompleted && !document.hidden) {
+      interval = setInterval(() => {
+        setTimeSpent(prev => prev + 1);
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isCompleted]);
+
+  // Pause timer when tab is hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      // Timer already paused by dependency in previous useEffect
+      if (!document.hidden) {
+        console.log('Tab visible - resuming time tracking');
+      } else {
+        console.log('Tab hidden - pausing time tracking');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Handle scroll events
   const handleScroll = () => {
@@ -69,7 +131,10 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
           content_id: contentId,
           is_completed: true,
           interaction_data: {
-            scrolled_to_bottom: true,
+            scrolled_to_bottom: hasScrolledToBottom,
+            time_spent: timeSpent,
+            required_time: requiredTime,
+            is_short_content: isShortContent,
             completed_at: new Date().toISOString(),
           },
         });
@@ -80,6 +145,9 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
       console.error("Error marking text content as complete:", error);
     }
   };
+
+  // Check if user can mark content as complete
+  const canMarkComplete = hasScrolledToBottom && timeSpent >= requiredTime;
 
   // Basic HTML escaping for non-HTML formats
   const escapeHtml = (input: string) =>
@@ -187,11 +255,17 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
       />
 
       {hasScrolledToBottom && !isCompleted && (
-        <div className="flex justify-center">
-          <Button onClick={handleMarkComplete} className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
-            Mark Complete
-          </Button>
+        <div className="flex flex-col items-center gap-2">
+          {timeSpent < requiredTime ? (
+            <div className="text-sm text-muted-foreground">
+              ⏱️ Keep reading... {Math.ceil(requiredTime - timeSpent)}s remaining
+            </div>
+          ) : (
+            <Button onClick={handleMarkComplete} className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Mark Complete
+            </Button>
+          )}
         </div>
       )}
 
@@ -204,9 +278,14 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
         </div>
       )}
 
-      {!hasScrolledToBottom && !isCompleted && (
+      {!hasScrolledToBottom && !isCompleted && !isShortContent && (
         <p className="text-xs text-muted-foreground text-center">
-          💡 Scroll to the bottom to mark this content as complete
+          💡 Scroll to the bottom and spend at least {Math.ceil(requiredTime)}s reading to mark this content as complete
+        </p>
+      )}
+      {isShortContent && !isCompleted && timeSpent < requiredTime && (
+        <p className="text-xs text-muted-foreground text-center">
+          💡 Spend at least {Math.ceil(requiredTime)}s reading to mark this content as complete ({Math.ceil(requiredTime - timeSpent)}s remaining)
         </p>
       )}
     </div>

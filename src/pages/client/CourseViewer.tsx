@@ -22,6 +22,7 @@ export default function CourseViewer() {
   const [currentView, setCurrentView] = useState<ViewType>("overview");
   const [currentModuleId, setCurrentModuleId] = useState<string | undefined>();
   const [currentLessonId, setCurrentLessonId] = useState<string | undefined>();
+  const [isCheckingCompletion, setIsCheckingCompletion] = useState(false);
 
   // Fetch course details
   const { data: course, isLoading: courseLoading } = useQuery({
@@ -148,9 +149,11 @@ export default function CourseViewer() {
   });
 
   // Auto-complete lesson when all required content is completed
+  // Uses debouncing and locking to prevent race conditions
   useEffect(() => {
     const checkAndCompleteLesson = async () => {
       if (!currentLessonId || !currentLesson || !user) return;
+      if (isCheckingCompletion) return; // Prevent concurrent checks
 
       const lessonContent = currentLesson?.lesson_content || [];
       const requiredContent = lessonContent.filter((content: any) => content.is_required);
@@ -172,26 +175,39 @@ export default function CourseViewer() {
         );
 
         if (!isLessonAlreadyCompleted) {
-          // Use the database function to mark lesson complete
-          const { error } = await supabase.rpc("mark_lesson_complete", {
-            _user_id: user.id,
-            _lesson_id: currentLessonId,
-          });
+          setIsCheckingCompletion(true); // Lock
+          try {
+            console.log('Marking lesson complete:', currentLessonId);
+            // Use the database function to mark lesson complete
+            const { error } = await supabase.rpc("mark_lesson_complete", {
+              _user_id: user.id,
+              _lesson_id: currentLessonId,
+            });
 
-          if (!error) {
-            // Refresh progress data
-            queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
-            queryClient.invalidateQueries({ queryKey: ["enrollment"] });
-            toast({ title: "Lesson completed!", description: "Great progress!" });
+            if (!error) {
+              // Refresh progress data
+              queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+              queryClient.invalidateQueries({ queryKey: ["enrollment"] });
+              toast({ title: "Lesson completed!", description: "Great progress!" });
+            } else {
+              console.error('Error marking lesson complete:', error);
+            }
+          } finally {
+            setIsCheckingCompletion(false); // Unlock
           }
         }
       }
     };
 
-    if (contentInteractions && currentLesson) {
-      checkAndCompleteLesson();
-    }
-  }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient]);
+    // Debounce to avoid rapid calls
+    const timeoutId = setTimeout(() => {
+      if (contentInteractions && currentLesson) {
+        checkAndCompleteLesson();
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient, isCheckingCompletion]);
 
   // Auto-create lesson progress when lesson is opened
   useEffect(() => {
@@ -264,19 +280,21 @@ export default function CourseViewer() {
         })) || [],
     })) || [];
 
-  // Calculate overall course progress based on module averages
+  // Calculate overall course progress weighted by total lessons
+  // This gives a more accurate representation than equal module weighting
   const calculateOverallProgress = () => {
     if (modules.length === 0) return 0;
 
-    const moduleProgresses = modules.map(module => {
-      const completedLessons = module.lessons.filter((l: any) => l.isCompleted).length;
-      return module.lessons.length > 0
-        ? (completedLessons / module.lessons.length) * 100
-        : 0;
-    });
+    // Count total lessons across all modules
+    const totalLessons = modules.reduce((sum, m) => sum + m.lessons.length, 0);
+    if (totalLessons === 0) return 0;
 
-    const averageProgress = moduleProgresses.reduce((sum, progress) => sum + progress, 0) / modules.length;
-    return Math.round(averageProgress);
+    // Count completed lessons
+    const completedLessons = modules.reduce((sum, m) => {
+      return sum + m.lessons.filter((l: any) => l.isCompleted).length;
+    }, 0);
+
+    return Math.round((completedLessons / totalLessons) * 100);
   };
 
   const overallProgress = calculateOverallProgress();

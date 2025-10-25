@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,6 +39,8 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
   const [answers, setAnswers] = useState<Record<string, number[]>>({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [attemptCount, setAttemptCount] = useState(0);
+  const [bestScore, setBestScore] = useState(0);
 
   // Convert new format to legacy format for compatibility
   const questions = content.questions || (content.question ? [{
@@ -49,6 +51,39 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
     correctAnswers: [content.correct || 0],
     explanation: content.explanation
   }] : []);
+
+  // Load previous quiz attempts on mount
+  useEffect(() => {
+    const loadQuizHistory = async () => {
+      if (!user || !contentId) return;
+
+      const { data } = await supabase
+        .from("content_interactions")
+        .select("is_completed, interaction_data")
+        .eq("user_id", user.id)
+        .eq("content_id", contentId)
+        .single();
+
+      if (data?.interaction_data) {
+        const attemptHistory = data.interaction_data.attempts || [];
+        setAttemptCount(attemptHistory.length);
+        
+        if (data.is_completed) {
+          // Show previous best attempt
+          setSubmitted(true);
+          setScore(data.interaction_data.score || 0);
+          setBestScore(data.interaction_data.best_score || data.interaction_data.score || 0);
+          setAnswers(data.interaction_data.answers || {});
+        } else if (attemptHistory.length > 0) {
+          // Show stats from previous failed attempts
+          const lastAttempt = attemptHistory[attemptHistory.length - 1];
+          setBestScore(data.interaction_data.best_score || 0);
+        }
+      }
+    };
+
+    loadQuizHistory();
+  }, [user, contentId]);
 
   const handleSingleAnswer = (questionId: string, answerIndex: number) => {
     setAnswers((prev) => ({
@@ -105,8 +140,28 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
 
     const passed = calculatedScore >= (content.passingScore || 70);
 
-    // Save to database
+    // Save to database with full attempt history
     if (user) {
+      // Get existing data
+      const { data: existing } = await supabase
+        .from("content_interactions")
+        .select("interaction_data")
+        .eq("user_id", user.id)
+        .eq("content_id", contentId)
+        .single();
+
+      const attempts = existing?.interaction_data?.attempts || [];
+      const newAttempt = {
+        score: calculatedScore,
+        passed,
+        timestamp: new Date().toISOString(),
+        answers,
+      };
+
+      const allScores = [...attempts.map((a: any) => a.score), calculatedScore];
+      const newBestScore = Math.max(...allScores);
+      const firstAttemptScore = attempts.length === 0 ? calculatedScore : (existing?.interaction_data?.first_attempt_score || 0);
+      
       await supabase.from("content_interactions").upsert({
         user_id: user.id,
         content_id: contentId,
@@ -115,8 +170,16 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
           score: calculatedScore,
           answers,
           passed,
+          attempts: [...attempts, newAttempt],
+          attempt_count: attempts.length + 1,
+          first_attempt_score: firstAttemptScore,
+          best_score: newBestScore,
+          last_attempt_date: new Date().toISOString(),
         },
       });
+
+      setAttemptCount(attempts.length + 1);
+      setBestScore(newBestScore);
     }
 
     if (passed) {
@@ -149,6 +212,12 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
             <h3 className="text-xl font-semibold">{content.title}</h3>
             {content.description && (
               <p className="text-sm text-muted-foreground mt-2">{content.description}</p>
+            )}
+            {attemptCount > 0 && (
+              <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
+                <span>Attempts: {attemptCount}</span>
+                {bestScore > 0 && <span>Best: {bestScore.toFixed(0)}%</span>}
+              </div>
             )}
           </div>
           {submitted && (
