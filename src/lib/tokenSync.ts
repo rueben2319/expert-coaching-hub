@@ -8,7 +8,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
 
-const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+// Use environment variable instead of hardcoded URL
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 export interface TokenSyncResult {
   success: boolean;

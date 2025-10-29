@@ -1,4 +1,4 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { setupTokenSync } from "@/lib/tokenSync";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -7,39 +7,62 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ThemeProvider } from "./hooks/useTheme";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ChunkLoadError } from "./components/ChunkLoadError";
+import { Loader2 } from "lucide-react";
+
+// Eager load critical pages
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
-import ClientDashboard from "./pages/client/ClientDashboard";
-import ClientCourses from "./pages/client/Courses";
-import MyCourses from "./pages/client/MyCourses";
-import CourseViewer from "./pages/client/CourseViewer";
-import ClientSessions from "./pages/client/Sessions";
-import ClientMeetingRoom from "./pages/client/MeetingRoom";
-import ClientAnalytics from "./pages/client/ClientAnalytics";
-import CoachDashboard from "./pages/coach/CoachDashboard";
-import CoachCourses from "./pages/coach/Courses";
-import CreateCourse from "./pages/coach/CreateCourse";
-import EditCourse from "./pages/coach/EditCourse";
-import Sessions from "./pages/coach/Sessions";
-import CreateSession from "./pages/coach/CreateSession";
-import MeetingRoom from "./pages/coach/MeetingRoom";
-import Students from "./pages/coach/Students";
-import Schedule from "./pages/coach/Schedule";
-import Analytics from "./pages/coach/Analytics";
-import CoachBilling from "./pages/coach/Billing";
-import BillingSuccess from "./pages/coach/BillingSuccess";
-import CoachSettings from "./pages/coach/CoachSettings";
-import Withdrawals from "./pages/coach/Withdrawals";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import AdminUsers from "./pages/admin/Users";
-import UserDetail from "./pages/admin/UserDetail";
-import AdminWithdrawals from "./pages/admin/Withdrawals";
-import Profile from "./pages/Profile";
-import { ThemeProvider } from "./hooks/useTheme";
-import { ErrorBoundary } from "./components/ErrorBoundary";
 
-const queryClient = new QueryClient();
+// Lazy load all other pages for code splitting
+const ClientDashboard = lazy(() => import("./pages/client/ClientDashboard"));
+const ClientCourses = lazy(() => import("./pages/client/Courses"));
+const MyCourses = lazy(() => import("./pages/client/MyCourses"));
+const CourseViewer = lazy(() => import("./pages/client/CourseViewer"));
+const ClientSessions = lazy(() => import("./pages/client/Sessions"));
+const ClientMeetingRoom = lazy(() => import("./pages/client/MeetingRoom"));
+const ClientAnalytics = lazy(() => import("./pages/client/ClientAnalytics"));
+const CoachDashboard = lazy(() => import("./pages/coach/CoachDashboard"));
+const CoachCourses = lazy(() => import("./pages/coach/Courses"));
+const CreateCourse = lazy(() => import("./pages/coach/CreateCourse"));
+const EditCourse = lazy(() => import("./pages/coach/EditCourse"));
+const Sessions = lazy(() => import("./pages/coach/Sessions"));
+const CreateSession = lazy(() => import("./pages/coach/CreateSession"));
+const MeetingRoom = lazy(() => import("./pages/coach/MeetingRoom"));
+const Students = lazy(() => import("./pages/coach/Students"));
+const Schedule = lazy(() => import("./pages/coach/Schedule"));
+const Analytics = lazy(() => import("./pages/coach/Analytics"));
+const CoachBilling = lazy(() => import("./pages/coach/Billing"));
+const BillingSuccess = lazy(() => import("./pages/coach/BillingSuccess"));
+const CoachSettings = lazy(() => import("./pages/coach/CoachSettings"));
+const Withdrawals = lazy(() => import("./pages/coach/Withdrawals"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const AdminUsers = lazy(() => import("./pages/admin/Users"));
+const UserDetail = lazy(() => import("./pages/admin/UserDetail"));
+const AdminWithdrawals = lazy(() => import("./pages/admin/Withdrawals"));
+const Profile = lazy(() => import("./pages/Profile"));
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+      refetchOnWindowFocus: false,
+      retry: 1,
+      refetchOnMount: false,
+    },
+  },
+});
 
 const App = () => {
   // Set up automatic token synchronization
@@ -57,6 +80,8 @@ const App = () => {
           <Sonner />
           <BrowserRouter>
             <AuthProvider>
+            <ErrorBoundary FallbackComponent={ChunkLoadError}>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
@@ -283,6 +308,8 @@ const App = () => {
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
+            </ErrorBoundary>
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>
