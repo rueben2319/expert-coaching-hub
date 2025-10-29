@@ -14,6 +14,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   refreshRole: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>({
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextType | undefined>({
   loading: true,
   signOut: async () => {},
   refreshRole: async () => {},
+  refreshUser: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -62,6 +64,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", userId)
+        .single();
+
+      if (error) {
+        console.error("Failed to fetch profile data:", error);
+        return;
+      }
+
+      if (data) {
+        setUser((currentUser) => {
+          if (!currentUser) return currentUser;
+
+          return {
+            ...currentUser,
+            user_metadata: {
+              ...currentUser.user_metadata,
+              full_name: data.full_name ?? currentUser.user_metadata?.full_name,
+              avatar_url: data.avatar_url ?? currentUser.user_metadata?.avatar_url,
+            },
+          } as User;
+        });
+      }
+    } catch (err) {
+      console.error("Exception while fetching profile data:", err);
+    }
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -70,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (session?.user) {
           fetchUserRole(session.user.id);
+          fetchUserProfile(session.user.id);
         } else {
           setRole(null);
         }
@@ -84,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (session?.user) {
         fetchUserRole(session.user.id);
+        fetchUserProfile(session.user.id);
       }
       
       setLoading(false);
@@ -106,8 +142,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshUser = async () => {
+    const { data } = await supabase.auth.getUser();
+    if (data.user) {
+      setUser(data.user);
+      await fetchUserRole(data.user.id);
+      await fetchUserProfile(data.user.id);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, role, loading, signOut, refreshRole }}>
+    <AuthContext.Provider value={{ user, session, role, loading, signOut, refreshRole, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -124,6 +169,7 @@ export function useAuth() {
       loading: true,
       signOut: async () => {},
       refreshRole: async () => {},
+      refreshUser: async () => {},
     };
   }
   return context;

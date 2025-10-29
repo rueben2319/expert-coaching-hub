@@ -24,15 +24,25 @@ CREATE INDEX IF NOT EXISTS idx_lesson_completion_attempted_at ON lesson_completi
 CREATE INDEX IF NOT EXISTS idx_lesson_completion_success ON lesson_completion_attempts(success);
 
 -- Create policies
-CREATE POLICY "Users can view their own completion attempts"
-ON lesson_completion_attempts
-FOR SELECT
-USING (user_id = auth.uid());
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'lesson_completion_attempts' AND policyname = 'Users can view their own completion attempts') THEN
+    CREATE POLICY "Users can view their own completion attempts"
+    ON lesson_completion_attempts
+    FOR SELECT
+    USING (user_id = auth.uid());
+  END IF;
+END $$;
 
-CREATE POLICY "System can insert completion attempts"
-ON lesson_completion_attempts
-FOR INSERT
-WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'lesson_completion_attempts' AND policyname = 'System can insert completion attempts') THEN
+    CREATE POLICY "System can insert completion attempts"
+    ON lesson_completion_attempts
+    FOR INSERT
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Grant permissions
 GRANT SELECT ON lesson_completion_attempts TO authenticated;

@@ -21,11 +21,17 @@ CREATE INDEX IF NOT EXISTS idx_content_interactions_content_id ON content_intera
 CREATE INDEX IF NOT EXISTS idx_content_interactions_completed ON content_interactions(is_completed);
 
 -- Create policies
-CREATE POLICY "Users can manage their own content interactions"
-ON content_interactions
-USING (user_id = auth.uid() OR has_role(auth.uid(), 'admin'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'content_interactions' AND policyname = 'Users can manage their own content interactions') THEN
+    CREATE POLICY "Users can manage their own content interactions"
+    ON content_interactions
+    USING (user_id = auth.uid() OR has_role(auth.uid(), 'admin'));
+  END IF;
+END $$;
 
 -- Create trigger for updated_at
+DROP TRIGGER IF EXISTS update_content_interactions_updated_at ON content_interactions;
 CREATE TRIGGER update_content_interactions_updated_at
   BEFORE UPDATE ON content_interactions
   FOR EACH ROW
