@@ -38,16 +38,19 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
         .select("is_completed, interaction_data")
         .eq("user_id", user.id)
         .eq("content_id", contentId)
-        .single();
+        .maybeSingle();
 
       if (data?.is_completed) {
         setIsCompleted(true);
-      } else if (data?.interaction_data?.interaction_time) {
+      } else if (data?.interaction_data) {
         // Resume from previous session
-        const savedTime = data.interaction_data.interaction_time;
-        setInteractionTime(savedTime);
-        setHasInteracted(true);
-        console.log('Restored interaction time:', savedTime);
+        const interactionData = data.interaction_data as { interaction_time?: number };
+        if (interactionData.interaction_time) {
+          const savedTime = interactionData.interaction_time;
+          setInteractionTime(savedTime);
+          setHasInteracted(true);
+          console.log('Restored interaction time:', savedTime);
+        }
       }
     };
 

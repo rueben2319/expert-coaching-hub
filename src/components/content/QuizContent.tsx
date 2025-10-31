@@ -62,22 +62,33 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
         .select("is_completed, interaction_data")
         .eq("user_id", user.id)
         .eq("content_id", contentId)
-        .single();
+        .maybeSingle();
 
       if (data?.interaction_data) {
-        const attemptHistory = data.interaction_data.attempts || [];
+        const interactionData = data.interaction_data as {
+          attempts?: Array<{ score: number; passed: boolean; timestamp: string; answers: Record<string, number[]> }>;
+          score?: number;
+          best_score?: number;
+          answers?: Record<string, number[]>;
+        };
+        const attemptHistory = interactionData.attempts || [];
         setAttemptCount(attemptHistory.length);
         
         if (data.is_completed) {
           // Show previous best attempt
           setSubmitted(true);
-          setScore(data.interaction_data.score || 0);
-          setBestScore(data.interaction_data.best_score || data.interaction_data.score || 0);
-          setAnswers(data.interaction_data.answers || {});
+          setScore(interactionData.score || 0);
+          setBestScore(interactionData.best_score || interactionData.score || 0);
+          setAnswers(interactionData.answers || {});
+          
+          // Show best score from all attempts
+          if (attemptHistory.length > 0) {
+            setBestScore(interactionData.best_score || 0);
+          }
         } else if (attemptHistory.length > 0) {
           // Show stats from previous failed attempts
           const lastAttempt = attemptHistory[attemptHistory.length - 1];
-          setBestScore(data.interaction_data.best_score || 0);
+          setBestScore(interactionData.best_score || 0);
         }
       }
     };
@@ -148,9 +159,13 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
         .select("interaction_data")
         .eq("user_id", user.id)
         .eq("content_id", contentId)
-        .single();
+        .maybeSingle();
 
-      const attempts = existing?.interaction_data?.attempts || [];
+      const interactionData = existing?.interaction_data as {
+        attempts?: Array<{ score: number; passed: boolean; timestamp: string; answers: Record<string, number[]> }>;
+        first_attempt_score?: number;
+      } | undefined;
+      const attempts = interactionData?.attempts || [];
       const newAttempt = {
         score: calculatedScore,
         passed,
@@ -160,7 +175,7 @@ export function QuizContent({ content, contentId, onComplete }: QuizContentProps
 
       const allScores = [...attempts.map((a: any) => a.score), calculatedScore];
       const newBestScore = Math.max(...allScores);
-      const firstAttemptScore = attempts.length === 0 ? calculatedScore : (existing?.interaction_data?.first_attempt_score || 0);
+      const firstAttemptScore = attempts.length === 0 ? calculatedScore : (interactionData?.first_attempt_score || 0);
       
       await supabase.from("content_interactions").upsert({
         user_id: user.id,

@@ -34,7 +34,6 @@ const CreateSession = lazy(() => import("./pages/coach/CreateSession"));
 const MeetingRoom = lazy(() => import("./pages/coach/MeetingRoom"));
 const Students = lazy(() => import("./pages/coach/Students"));
 const Schedule = lazy(() => import("./pages/coach/Schedule"));
-const Analytics = lazy(() => import("./pages/coach/Analytics"));
 const CoachBilling = lazy(() => import("./pages/coach/Billing"));
 const BillingSuccess = lazy(() => import("./pages/coach/BillingSuccess"));
 const CoachSettings = lazy(() => import("./pages/coach/CoachSettings"));
@@ -216,14 +215,6 @@ const App = () => {
                   <Schedule />
                 </ProtectedRoute>
               } 
-            />
-            <Route
-              path="/coach/analytics"
-              element={
-                <ProtectedRoute allowedRoles={["coach"]}>
-                  <Analytics />
-                </ProtectedRoute>
-              }
             />
             <Route
               path="/coach/billing"

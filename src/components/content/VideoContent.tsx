@@ -72,16 +72,19 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
           .select("is_completed, interaction_data")
           .eq("user_id", user.id)
           .eq("content_id", contentId)
-          .single();
+          .maybeSingle();
 
         if (data?.is_completed) {
           setIsCompleted(true);
-        } else if (data?.interaction_data?.watch_time) {
+        } else if (data?.interaction_data) {
           // Restore previous watch time
-          const savedWatchTime = data.interaction_data.watch_time;
-          setWatchTime(savedWatchTime);
-          totalWatchTime.current = savedWatchTime;
-          console.log('Restored watch time:', savedWatchTime);
+          const interactionData = data.interaction_data as { watch_time?: number };
+          if (interactionData.watch_time) {
+            const savedWatchTime = interactionData.watch_time;
+            setWatchTime(savedWatchTime);
+            totalWatchTime.current = savedWatchTime;
+            console.log('Restored watch time:', savedWatchTime);
+          }
         }
       } catch (err) {
         console.error('Exception fetching content interaction:', err);
@@ -297,11 +300,22 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   }, [isPlaying]);
 
   const saveProgress = async (percentage: number, isComplete = false) => {
-    if (!user || isCompleted) return;
+    if (!user || isCompleted) {
+      console.log('⏭️ Skipping save:', { hasUser: !!user, isCompleted });
+      return;
+    }
 
     try {
       const estimatedDuration = content.duration ? content.duration * 60 : 600;
-      const { error } = await supabase
+      console.log('💾 Saving progress:', {
+        percentage: percentage.toFixed(1),
+        isComplete,
+        watchTime: watchTime.toFixed(1),
+        estimatedDuration,
+        contentId
+      });
+      
+      const { data, error } = await supabase
         .from("content_interactions")
         .upsert({
           user_id: user.id,
@@ -314,19 +328,25 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
             video_type: videoType,
             last_updated: new Date().toISOString(),
           },
-        });
+        }, {
+          onConflict: 'user_id,content_id'
+        })
+        .select();
 
       if (error) {
-        console.error('Error saving progress:', error);
+        console.error('❌ Error saving progress:', error);
         // Continue without throwing - video still works
         return;
       }
 
+      console.log('✅ Progress saved:', data);
+
       if (isComplete && onComplete) {
+        console.log('📢 Calling onComplete callback');
         onComplete();
       }
     } catch (err) {
-      console.error('Exception saving progress:', err);
+      console.error('💥 Exception saving progress:', err);
       // Continue without throwing - video still works
     }
   };
@@ -350,8 +370,18 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   };
 
   const handleVideoComplete = async () => {
+    console.log('🎬 handleVideoComplete called');
+    console.log('Current state:', { isCompleted, watchTime, user: !!user, contentId });
+    
+    if (isCompleted) {
+      console.log('⚠️ Already completed, skipping');
+      return;
+    }
+    
     setIsCompleted(true);
+    console.log('💾 Saving progress with completion...');
     await saveProgress(100, true);
+    console.log('✅ Video completion saved');
   };
 
   // Handle direct video progress
@@ -391,9 +421,10 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
             </Button>
             {!isCompleted && (
               <Button
-                variant="outline"
+                variant="default"
                 size="sm"
                 onClick={handleMarkWatched}
+                className="bg-green-600 hover:bg-green-700"
               >
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Mark as Watched
@@ -456,12 +487,18 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
       </div>
 
       {!isCompleted && (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            💡 Watch at least 90% of the video to mark it as complete. Watch time is tracked automatically when you play the video.
-          </p>
+        <div className="space-y-3">
+          <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+              📹 To complete this video:
+            </p>
+            <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 ml-4 list-disc">
+              <li>Watch at least 90% of the video, OR</li>
+              <li>Click the green "Mark as Watched" button above</li>
+            </ul>
+          </div>
           {hasStarted && (
-            <div className="text-xs">
+            <div className="text-sm">
               <span className={isPlaying ? "text-green-600 font-medium" : "text-muted-foreground"}>
                 {isPlaying ? "⏵ Playing - watch time counting" : "⏸ Paused - watch time stopped"}
               </span>

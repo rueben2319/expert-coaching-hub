@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const initializationAttempted = useRef(false);
-  const isInitializing = useRef(false);
+  const authListenerReady = useRef(false);
 
   const fetchUserRole = async (userId: string) => {
     try {
@@ -95,169 +95,154 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Helper function to get session with retry logic
-  const getSessionWithRetry = async (maxRetries = 2, timeoutMs = 10000): Promise<Session | null> => {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        logger.log(`Attempting to get session (attempt ${attempt}/${maxRetries})...`);
-        
-        // Create an abort controller for this attempt
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        
-        try {
-          const { data, error } = await supabase.auth.getSession();
-          clearTimeout(timeoutId);
-          
-          if (error) {
-            logger.error(`Session retrieval error on attempt ${attempt}:`, error);
-            if (attempt === maxRetries) throw error;
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
-            continue;
-          }
-          
-          return data.session;
-        } catch (err: any) {
-          clearTimeout(timeoutId);
-          if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-            logger.warn(`Session request timed out on attempt ${attempt}`);
-            if (attempt === maxRetries) {
-              throw new Error(`getSession timed out after ${maxRetries} attempts`);
-            }
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            continue;
-          }
-          throw err;
-        }
-      } catch (error) {
-        if (attempt === maxRetries) {
-          throw error;
-        }
-        logger.warn(`Retry ${attempt} failed, trying again...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    return null;
-  };
-
   useEffect(() => {
     // Prevent double initialization in React strict mode
-    if (initializationAttempted.current || isInitializing.current) {
-      logger.log('Auth initialization already attempted or in progress, skipping...');
+    if (initializationAttempted.current) {
+      logger.log('Auth initialization already attempted, skipping...');
       return;
     }
     
-    isInitializing.current = true;
+    initializationAttempted.current = true;
     let isMounted = true;
 
-    // Initialize auth state from current session
-    const initializeAuth = async () => {
-      logger.log('Starting auth initialization...');
-      
-      try {
-        // First, check if we have a session in localStorage to avoid unnecessary calls
-        const localStorageKey = `sb-${supabase.auth.getSession ? new URL((supabase as any).supabaseUrl).hostname.split('.')[0] : 'unknown'}-auth-token`;
-        const hasLocalSession = localStorage.getItem(localStorageKey);
-        
-        if (!hasLocalSession) {
-          logger.log('No local session found in localStorage');
-          setSession(null);
-          setUser(null);
-          setRole(null);
-          setLoading(false);
-          return;
-        }
-
-        logger.log('Local session detected, fetching from Supabase...');
-        const session = await getSessionWithRetry();
-        
-        if (!isMounted) {
-          logger.log('Component unmounted, skipping initialization');
-          return;
-        }
-        
-        logger.log('Session retrieved:', session ? `User: ${session.user.email}` : 'No session');
-        
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          logger.log('Fetching role and profile for user:', session.user.id);
-          await Promise.all([
-            fetchUserRole(session.user.id),
-            fetchUserProfile(session.user.id)
-          ]);
-        } else {
-          logger.log('No user session, setting role to null');
-          setRole(null);
-        }
-      } catch (error: any) {
-        logger.error('Error initializing auth:', error);
-        
-        // Clear potentially corrupted auth data
-        if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
-          logger.warn('Clearing potentially corrupted auth data from localStorage');
-          try {
-            const keys = Object.keys(localStorage);
-            keys.forEach(key => {
-              if (key.startsWith('sb-') && key.includes('-auth-token')) {
-                localStorage.removeItem(key);
-                logger.log('Removed:', key);
-              }
-            });
-          } catch (e) {
-            logger.error('Failed to clear localStorage:', e);
-          }
-        }
-        
-        setSession(null);
-        setUser(null);
-        setRole(null);
-      } finally {
-        if (isMounted) {
-          logger.log('Setting loading to false');
-          setLoading(false);
-          isInitializing.current = false;
-        }
-      }
-    };
-
-    // Set up listener for auth state changes
+    // Set up listener for auth state changes FIRST - this is our primary source of truth
+    logger.log('Setting up auth state listener...');
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         logger.log('Auth state changed:', event);
+        authListenerReady.current = true;
+        
         if (!isMounted) return;
         
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          await Promise.all([
-            fetchUserRole(session.user.id),
-            fetchUserProfile(session.user.id)
-          ]);
+          // Fetch role and profile with timeout to prevent hanging
+          try {
+            const fetchPromise = Promise.all([
+              fetchUserRole(session.user.id),
+              fetchUserProfile(session.user.id)
+            ]);
+            
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Role fetch timeout')), 12000)
+            );
+            
+            await Promise.race([fetchPromise, timeoutPromise]);
+            logger.log('Role and profile fetched successfully');
+          } catch (err: any) {
+            if (err?.message === 'Role fetch timeout') {
+              logger.info('Role fetch timed out; will rely on next auth event');
+            } else {
+              logger.error('Error fetching user data in listener:', err);
+            }
+            // Do not forcibly clear role on transient timeout; allow next auth events to resolve
+          }
         } else {
           setRole(null);
         }
+
+        // Clear loading state after role fetch attempt (success or failure)
+        logger.log('Auth listener fired, clearing loading state');
+        setLoading(false);
       }
     );
 
-    // Initialize on mount
+    // Initialize auth state
+    const initializeAuth = async () => {
+      logger.log('Starting auth initialization...');
+      
+      // Set a maximum wait time - if nothing happens in 12 seconds, clear loading anyway
+      const maxWaitTimeout = setTimeout(() => {
+        if (isMounted && loading) {
+          logger.info('Max wait timeout reached, clearing loading state');
+          setLoading(false);
+        }
+      }, 12000);
+
+      try {
+        // Try to get session with a short timeout
+        const getSessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('getSession timeout')), 5000);
+        });
+
+        logger.log('Attempting to get session...');
+        const result = await Promise.race([getSessionPromise, timeoutPromise]);
+        
+        clearTimeout(maxWaitTimeout);
+        
+        if (!isMounted) {
+          logger.log('Component unmounted during session fetch');
+          return;
+        }
+
+        const session = result?.data?.session || null;
+        logger.log('Session retrieved successfully:', session ? `User: ${session.user.email}` : 'No session');
+        
+        // Only update state if the auth listener hasn't already done so
+        if (!authListenerReady.current) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          
+          if (session?.user) {
+            logger.log('Fetching role and profile for user:', session.user.id);
+            await Promise.all([
+              fetchUserRole(session.user.id),
+              fetchUserProfile(session.user.id)
+            ]).catch(err => {
+              logger.error('Error fetching user data:', err);
+            });
+          } else {
+            setRole(null);
+          }
+        }
+
+        // Clear loading state
+        if (isMounted && !authListenerReady.current) {
+          logger.log('Initialization complete via getSession, clearing loading state');
+          setLoading(false);
+        }
+      } catch (error: any) {
+        clearTimeout(maxWaitTimeout);
+        if (error?.message === 'getSession timeout') {
+          logger.log('getSession timed out, relying on auth listener');
+        } else {
+          logger.error('Error during getSession:', error);
+        }
+
+        // Don't clear loading here - let the auth listener or max timeout handle it
+        // The listener will fire eventually and set the correct state
+        logger.log('Relying on auth listener to set state');
+      }
+    };
+
+    // Start initialization but don't block on it
     initializeAuth();
-    initializationAttempted.current = true;
 
     return () => {
+      logger.log('Cleaning up auth provider');
       isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setRole(null);
-    navigate("/");
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      setRole(null);
+      navigate("/");
+    } catch (error) {
+      logger.error('Error signing out:', error);
+      // Force clear state even if signOut fails
+      setUser(null);
+      setSession(null);
+      setRole(null);
+      navigate("/");
+    }
   };
 
   const refreshRole = useCallback(async () => {

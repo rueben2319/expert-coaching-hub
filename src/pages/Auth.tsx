@@ -120,14 +120,13 @@ export default function Auth() {
 
           if (desiredRole === 'client' || desiredRole === 'coach') {
             try {
-              // upsert user role server-side
-              const { error: roleError } = await supabase
-                .from('user_roles')
-                .upsert({ user_id: user.id, role: desiredRole }, { onConflict: 'user_id' });
+              // upsert user role via secure RPC (self-only)
+              const { data: rpcData, error: rpcError } = await supabase
+                .rpc('upsert_own_role', { p_role: desiredRole });
+              if (rpcError || rpcData?.success === false) {
+                throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+              }
 
-              if (roleError) throw roleError;
-
-              await supabase.auth.updateUser({ data: { role: desiredRole } });
               await refreshRole();
               try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
               navigate(`/${desiredRole}`);
@@ -297,23 +296,11 @@ export default function Auth() {
     setSubmittingRole(true);
 
     try {
-      const { error: roleError } = await supabase
-        .from("user_roles")
-        .upsert(
-          {
-            user_id: user.id,
-            role: pendingRole,
-          },
-          { onConflict: "user_id" }
-        );
-
-      if (roleError) throw roleError;
-
-      const { error: metadataError } = await supabase.auth.updateUser({
-        data: { role: pendingRole },
-      });
-
-      if (metadataError) throw metadataError;
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('upsert_own_role', { p_role: pendingRole });
+      if (rpcError || rpcData?.success === false) {
+        throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+      }
 
       await refreshRole();
       setShowRoleDialog(false);

@@ -9,7 +9,10 @@
     "build:dev": "vite build --mode development",
     "build:analyze": "vite build --mode production && vite-bundle-visualizer",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:types": "supabase gen types typescript --linked --schema public > src/integrations/supabase/types.ts",
+    "dump:schema": "supabase db dump --linked --schema public --file supabase/migrations/remote_schema.sql",
+    "update:supabase": "npm run dump:schema && npm run gen:types"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

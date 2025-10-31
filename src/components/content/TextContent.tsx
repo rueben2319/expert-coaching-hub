@@ -34,7 +34,7 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
         .select("is_completed")
         .eq("user_id", user.id)
         .eq("content_id", contentId)
-        .single();
+        .maybeSingle();
 
       if (data?.is_completed) {
         setIsCompleted(true);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { CourseTemplateLayout } from "@/components/CourseTemplateLayout";
@@ -148,92 +148,168 @@ export default function CourseViewer() {
     enabled: !!currentLessonId && currentView === "lesson",
   });
 
+  // Track completion status to prevent race conditions
+  const completionInProgress = useRef(false);
+  const lastCompletedLesson = useRef<string | null>(null);
+
   // Auto-complete lesson when all required content is completed
-  // Uses debouncing and locking to prevent race conditions
+  // Uses debouncing, ref-based locking, and session tracking to prevent race conditions
   useEffect(() => {
     const checkAndCompleteLesson = async () => {
       if (!currentLessonId || !currentLesson || !user) return;
-      if (isCheckingCompletion) return; // Prevent concurrent checks
+      
+      // Prevent duplicate completions using ref (more reliable than state)
+      if (completionInProgress.current) {
+        console.log('Completion already in progress, skipping');
+        return;
+      }
+      
+      // Check if this lesson was already completed in this session
+      if (lastCompletedLesson.current === currentLessonId) {
+        console.log('Lesson already completed in this session');
+        return;
+      }
 
       const lessonContent = currentLesson?.lesson_content || [];
-      const requiredContent = lessonContent.filter((content: any) => content.is_required);
+      // Exclude video content from progress tracking - users prove they watched via quiz
+      const requiredContent = lessonContent.filter((content: any) => 
+        content.is_required && content.content_type !== 'video'
+      );
 
-      if (requiredContent.length === 0) return;
+      console.log('Checking lesson completion:', {
+        lessonId: currentLessonId,
+        totalContent: lessonContent.length,
+        requiredContent: requiredContent.length,
+        requiredNonVideoContent: requiredContent.length,
+        videoContent: lessonContent.filter((c: any) => c.content_type === 'video').length,
+        interactions: contentInteractions?.length || 0
+      });
 
-      // Check if all required content is completed
-      const allRequiredCompleted = requiredContent.every((content: any) => {
-        return contentInteractions?.some(
+      // If no required content, lesson can be marked complete immediately
+      // Otherwise, check if all required content is completed
+      const allRequiredCompleted = requiredContent.length === 0 ? true : requiredContent.every((content: any) => {
+        const isCompleted = contentInteractions?.some(
           (interaction: any) =>
             interaction.content_id === content.id && interaction.is_completed
         );
+        console.log(`Content ${content.id} (${content.content_type}): ${isCompleted ? 'completed' : 'not completed'}`);
+        return isCompleted;
       });
 
       if (allRequiredCompleted) {
-        // Check if lesson is already completed
+        // Check if lesson is already completed in database
         const isLessonAlreadyCompleted = lessonProgress?.some(
           (p: any) => p.lesson_id === currentLessonId && p.is_completed
         );
 
         if (!isLessonAlreadyCompleted) {
-          setIsCheckingCompletion(true); // Lock
+          completionInProgress.current = true;
+          
           try {
-            console.log('Marking lesson complete:', currentLessonId);
-            // Use the database function to mark lesson complete
-            const { error } = await supabase.rpc("mark_lesson_complete", {
+            console.log('🚀 Calling mark_lesson_complete RPC:', {
+              userId: user.id,
+              lessonId: currentLessonId,
+              requiredCount: requiredContent.length,
+              completedCount: requiredContent.filter(c => 
+                contentInteractions?.some(i => i.content_id === c.id && i.is_completed)
+              ).length
+            });
+            
+            const { data, error } = await supabase.rpc("mark_lesson_complete", {
               _user_id: user.id,
               _lesson_id: currentLessonId,
             });
 
-            if (!error) {
+            if (error) {
+              console.error('❌ Error marking lesson complete:', error);
+              toast({
+                title: "Failed to mark lesson complete",
+                description: "Please try again or contact support.",
+                variant: "destructive"
+              });
+            } else if (data === true) {
+              console.log('✅ Lesson marked complete successfully!');
+              // Mark as completed in this session
+              lastCompletedLesson.current = currentLessonId;
+              
               // Refresh progress data
               queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
               queryClient.invalidateQueries({ queryKey: ["enrollment"] });
-              toast({ title: "Lesson completed!", description: "Great progress!" });
+              queryClient.invalidateQueries({ queryKey: ["content-interactions"] });
+              
+              toast({
+                title: "🎉 Lesson completed!",
+                description: "Great progress! Keep it up!",
+              });
             } else {
-              console.error('Error marking lesson complete:', error);
+              console.warn('⚠️ Lesson completion returned false - requirements not met:', {
+                returned: data,
+                requiredContent: requiredContent.map(c => ({
+                  id: c.id,
+                  type: c.content_type,
+                  title: (c.content_data as any)?.title || 'Untitled',
+                  completed: contentInteractions?.some(i => i.content_id === c.id && i.is_completed)
+                }))
+              });
             }
+          } catch (err) {
+            console.error('Exception marking lesson complete:', err);
+            toast({
+              title: "Error",
+              description: "Failed to save progress. Please try again.",
+              variant: "destructive"
+            });
           } finally {
-            setIsCheckingCompletion(false); // Unlock
+            completionInProgress.current = false;
           }
         }
       }
     };
 
-    // Debounce to avoid rapid calls
+    // Increase debounce to 1 second for better stability
     const timeoutId = setTimeout(() => {
       if (contentInteractions && currentLesson) {
         checkAndCompleteLesson();
       }
-    }, 500); // 500ms debounce
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient, isCheckingCompletion]);
+  }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient]);
+
+  // Reset completion tracking when lesson changes
+  useEffect(() => {
+    lastCompletedLesson.current = null;
+  }, [currentLessonId]);
 
   // Auto-create lesson progress when lesson is opened
   useEffect(() => {
     const createLessonProgress = async () => {
       if (!user || !currentLessonId) return;
 
-      // Check if progress record already exists
-      const { data: existingProgress } = await supabase
-        .from("lesson_progress")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("lesson_id", currentLessonId)
-        .single();
-
-      // Create progress record if it doesn't exist
-      if (!existingProgress) {
-        await supabase
+      try {
+        // Always upsert - will create if doesn't exist, ignore if exists
+        // This prevents 409 conflicts
+        const { error } = await supabase
           .from("lesson_progress")
-          .insert({
+          .upsert({
             user_id: user.id,
             lesson_id: currentLessonId,
             is_completed: false,
+            started_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,lesson_id',
+            ignoreDuplicates: true  // Don't update if already exists
           });
+
+        if (error) {
+          console.error('Error creating lesson progress:', error);
+        }
 
         // Invalidate queries to refresh progress data
         queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+      } catch (error) {
+        console.error('Exception creating lesson progress:', error);
+        // Don't throw - lesson can still be used
       }
     };
 
@@ -261,24 +337,35 @@ export default function CourseViewer() {
     },
   });
 
+  // Create a Map for O(1) lesson progress lookups
+  const progressMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    lessonProgress?.forEach(p => {
+      if (p.is_completed) {
+        map.set(p.lesson_id, true);
+      }
+    });
+    return map;
+  }, [lessonProgress]);
+
   // Prepare modules data with completion status
-  const modules = course?.course_modules
-    ?.sort((a: any, b: any) => a.order_index - b.order_index)
-    .map((module: any) => ({
-      id: module.id,
-      title: module.title,
-      order_index: module.order_index,
-      lessons: module.lessons
-        ?.sort((a: any, b: any) => a.order_index - b.order_index)
-        .map((lesson: any) => ({
-          id: lesson.id,
-          title: lesson.title,
-          order_index: lesson.order_index,
-          isCompleted: lessonProgress?.some(
-            (p: any) => p.lesson_id === lesson.id && p.is_completed
-          ) || false,
-        })) || [],
-    })) || [];
+  const modules = useMemo(() => {
+    return course?.course_modules
+      ?.sort((a: any, b: any) => a.order_index - b.order_index)
+      .map((module: any) => ({
+        id: module.id,
+        title: module.title,
+        order_index: module.order_index,
+        lessons: module.lessons
+          ?.sort((a: any, b: any) => a.order_index - b.order_index)
+          .map((lesson: any) => ({
+            id: lesson.id,
+            title: lesson.title,
+            order_index: lesson.order_index,
+            isCompleted: progressMap.get(lesson.id) || false, // O(1) lookup!
+          })) || [],
+      })) || [];
+  }, [course?.course_modules, progressMap]);
 
   // Calculate overall course progress weighted by total lessons
   // This gives a more accurate representation than equal module weighting
@@ -375,9 +462,7 @@ export default function CourseViewer() {
   }
 
   const isLessonCompleted = currentLessonId
-    ? lessonProgress?.some(
-        (p: any) => p.lesson_id === currentLessonId && p.is_completed
-      )
+    ? progressMap.get(currentLessonId) || false
     : false;
 
   // Format duration helper

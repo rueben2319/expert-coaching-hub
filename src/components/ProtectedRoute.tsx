@@ -12,6 +12,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, role, loading } = useAuth();
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [roleCheckDelay, setRoleCheckDelay] = useState(true);
 
   // Set timeout for loading state
   useEffect(() => {
@@ -23,16 +24,40 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     const timer = setTimeout(() => {
       if (loading) {
         setLoadingTimeout(true);
-        logger.warn('Authentication loading timeout reached');
+        logger.info('Authentication loading timeout reached');
       }
-    }, 10000); // 10 second timeout
+    }, 15000); // 15 second timeout
 
     return () => clearTimeout(timer);
   }, [loading]);
 
-  // Show loading state while checking authentication
-  // Don't wait for role indefinitely - if loading is false and user exists, proceed
-  if (loading) {
+  // Add a small delay before checking role to allow fetch to complete
+  useEffect(() => {
+    if (!user) {
+      setRoleCheckDelay(false);
+      return;
+    }
+
+    // If role is already present, no need to delay
+    if (role) {
+      setRoleCheckDelay(false);
+      return;
+    }
+
+    // Start with delay enabled
+    setRoleCheckDelay(true);
+
+    // Wait up to 12 seconds for role to be fetched before deciding to redirect
+    // This accounts for potential auth listener retries
+    const timer = setTimeout(() => {
+      setRoleCheckDelay(false);
+    }, 12000);
+
+    return () => clearTimeout(timer);
+  }, [user, role]);
+
+  // Show loading state while checking authentication or waiting for role
+  if (loading || (user && roleCheckDelay)) {
     // Show timeout message if loading takes too long
     if (loadingTimeout) {
       return (
@@ -73,10 +98,26 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/auth" replace />;
   }
 
-  // If user exists but has no role, redirect to auth page to set role
-  if (!role) {
-    logger.warn('User authenticated but no role found, redirecting to auth');
+  // If user exists but has no role after delay, redirect to auth page to set role
+  if (!role && !roleCheckDelay) {
+    logger.warn('User authenticated but no role found after delay, redirecting to auth');
     return <Navigate to="/auth" replace />;
+  }
+
+  // If still waiting for role, show loading
+  if (!role) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-center">
+          <div 
+            className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"
+            role="status"
+            aria-label="Loading role"
+          ></div>
+          <p className="mt-4 text-muted-foreground">Loading your profile...</p>
+        </div>
+      </div>
+    );
   }
 
   // Check role-based access

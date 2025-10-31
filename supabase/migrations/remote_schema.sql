@@ -587,39 +587,64 @@ DECLARE
   _course_id UUID;
   required_content_count INTEGER;
   completed_content_count INTEGER;
+  result BOOLEAN;
 BEGIN
   -- Get course_id for this lesson
   SELECT cm.course_id INTO _course_id
-  FROM public.lessons l
-  JOIN public.course_modules cm ON cm.id = l.module_id
+  FROM lessons l
+  JOIN course_modules cm ON cm.id = l.module_id
   WHERE l.id = _lesson_id;
 
   -- Count required content items
   SELECT COUNT(*) INTO required_content_count
-  FROM public.lesson_content
+  FROM lesson_content
   WHERE lesson_id = _lesson_id AND is_required = true;
 
   -- Count completed required content items
   SELECT COUNT(*) INTO completed_content_count
-  FROM public.lesson_content lc
-  JOIN public.content_interactions ci ON ci.content_id = lc.id
+  FROM lesson_content lc
+  JOIN content_interactions ci ON ci.content_id = lc.id
   WHERE lc.lesson_id = _lesson_id
     AND lc.is_required = true
     AND ci.user_id = _user_id
     AND ci.is_completed = true;
 
+  -- Determine if lesson should be marked complete
+  result := (required_content_count = completed_content_count) AND (required_content_count > 0);
+
+  -- Log the attempt (helpful for debugging)
+  INSERT INTO lesson_completion_attempts (
+    user_id, lesson_id, success, required_count, completed_count, details
+  ) VALUES (
+    _user_id, 
+    _lesson_id, 
+    result, 
+    required_content_count, 
+    completed_content_count,
+    jsonb_build_object(
+      'course_id', _course_id,
+      'timestamp', now()
+    )
+  );
+
   -- Only mark as complete if all required content is completed
-  IF required_content_count = completed_content_count THEN
-    INSERT INTO public.lesson_progress (user_id, lesson_id, is_completed, completed_at)
+  IF result THEN
+    INSERT INTO lesson_progress (user_id, lesson_id, is_completed, completed_at)
     VALUES (_user_id, _lesson_id, true, now())
     ON CONFLICT (user_id, lesson_id)
     DO UPDATE SET is_completed = true, completed_at = now();
 
     -- Recalculate course progress
-    PERFORM public.calculate_course_progress(_user_id, _course_id);
+    PERFORM calculate_course_progress(_user_id, _course_id);
     
     RETURN true;
   ELSE
+    -- Still create/update progress record but keep is_completed as false
+    INSERT INTO lesson_progress (user_id, lesson_id, is_completed, started_at)
+    VALUES (_user_id, _lesson_id, false, now())
+    ON CONFLICT (user_id, lesson_id)
+    DO UPDATE SET started_at = COALESCE(lesson_progress.started_at, now());
+    
     RETURN false;
   END IF;
 END;
@@ -627,6 +652,10 @@ $$;
 
 
 ALTER FUNCTION "public"."mark_lesson_complete"("_user_id" "uuid", "_lesson_id" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."mark_lesson_complete"("_user_id" "uuid", "_lesson_id" "uuid") IS 'Marks a lesson as complete if all required content is done, with logging';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."process_withdrawal"("coach_id" "uuid", "credits_amount" integer, "amount_mwk" integer, "withdrawal_id" "uuid", "payout_ref" "text" DEFAULT NULL::"text", "payout_trans_id" "text" DEFAULT NULL::"text", "payment_method" "text" DEFAULT 'mobile_money'::"text") RETURNS json
@@ -1160,6 +1189,25 @@ CREATE TABLE IF NOT EXISTS "public"."invoices" (
 ALTER TABLE "public"."invoices" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."lesson_completion_attempts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "lesson_id" "uuid" NOT NULL,
+    "attempted_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "success" boolean NOT NULL,
+    "required_count" integer NOT NULL,
+    "completed_count" integer NOT NULL,
+    "details" "jsonb" DEFAULT '{}'::"jsonb"
+);
+
+
+ALTER TABLE "public"."lesson_completion_attempts" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."lesson_completion_attempts" IS 'Audit log of lesson completion attempts for debugging';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."lesson_content" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lesson_id" "uuid" NOT NULL,
@@ -1510,6 +1558,11 @@ ALTER TABLE ONLY "public"."invoices"
 
 
 
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "lesson_completion_attempts_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."lesson_content"
     ADD CONSTRAINT "lesson_content_lesson_id_order_index_key" UNIQUE ("lesson_id", "order_index");
 
@@ -1618,6 +1671,18 @@ CREATE INDEX "idx_coach_subscriptions_status" ON "public"."coach_subscriptions" 
 
 
 
+CREATE INDEX "idx_content_interactions_completed" ON "public"."content_interactions" USING "btree" ("is_completed");
+
+
+
+CREATE INDEX "idx_content_interactions_content_id" ON "public"."content_interactions" USING "btree" ("content_id");
+
+
+
+CREATE INDEX "idx_content_interactions_user_id" ON "public"."content_interactions" USING "btree" ("user_id");
+
+
+
 CREATE INDEX "idx_courses_category" ON "public"."courses" USING "btree" ("category");
 
 
@@ -1671,6 +1736,22 @@ CREATE INDEX "idx_invoices_transaction_id" ON "public"."invoices" USING "btree" 
 
 
 CREATE INDEX "idx_invoices_user_id" ON "public"."invoices" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_lesson_completion_attempted_at" ON "public"."lesson_completion_attempts" USING "btree" ("attempted_at" DESC);
+
+
+
+CREATE INDEX "idx_lesson_completion_lesson_id" ON "public"."lesson_completion_attempts" USING "btree" ("lesson_id");
+
+
+
+CREATE INDEX "idx_lesson_completion_success" ON "public"."lesson_completion_attempts" USING "btree" ("success");
+
+
+
+CREATE INDEX "idx_lesson_completion_user_id" ON "public"."lesson_completion_attempts" USING "btree" ("user_id");
 
 
 
@@ -1874,6 +1955,16 @@ ALTER TABLE ONLY "public"."credit_wallets"
 
 
 
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "fk_lesson_completion_lesson" FOREIGN KEY ("lesson_id") REFERENCES "public"."lessons"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "fk_lesson_completion_user" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."invoices"
     ADD CONSTRAINT "invoices_subscription_id_fkey" FOREIGN KEY ("subscription_id") REFERENCES "public"."coach_subscriptions"("id") ON DELETE SET NULL;
 
@@ -1881,6 +1972,16 @@ ALTER TABLE ONLY "public"."invoices"
 
 ALTER TABLE ONLY "public"."invoices"
     ADD CONSTRAINT "invoices_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."transactions"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "lesson_completion_attempts_lesson_id_fkey" FOREIGN KEY ("lesson_id") REFERENCES "public"."lessons"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "lesson_completion_attempts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -2113,23 +2214,6 @@ CREATE POLICY "Coaches can view enrollments for their courses" ON "public"."cour
 
 
 
-CREATE POLICY "Coaches can view interactions for their course content" ON "public"."content_interactions" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM ((("public"."lesson_content"
-     JOIN "public"."lessons" ON (("lessons"."id" = "lesson_content"."lesson_id")))
-     JOIN "public"."course_modules" ON (("course_modules"."id" = "lessons"."module_id")))
-     JOIN "public"."courses" ON (("courses"."id" = "course_modules"."course_id")))
-  WHERE (("lesson_content"."id" = "content_interactions"."content_id") AND ("courses"."coach_id" = "auth"."uid"())))));
-
-
-
-CREATE POLICY "Coaches can view student progress for their courses" ON "public"."lesson_progress" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM (("public"."lessons"
-     JOIN "public"."course_modules" ON (("course_modules"."id" = "lessons"."module_id")))
-     JOIN "public"."courses" ON (("courses"."id" = "course_modules"."course_id")))
-  WHERE (("lessons"."id" = "lesson_progress"."lesson_id") AND ("courses"."coach_id" = "auth"."uid"())))));
-
-
-
 CREATE POLICY "Coaches can view their own courses" ON "public"."courses" FOR SELECT USING ((("coach_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'admin'::"public"."app_role")));
 
 
@@ -2190,6 +2274,10 @@ CREATE POLICY "Public profiles are viewable by everyone" ON "public"."profiles" 
 
 
 
+CREATE POLICY "System can insert completion attempts" ON "public"."lesson_completion_attempts" FOR INSERT WITH CHECK (true);
+
+
+
 CREATE POLICY "System can insert subscription audit logs" ON "public"."subscription_audit_log" FOR INSERT WITH CHECK (true);
 
 
@@ -2227,14 +2315,6 @@ CREATE POLICY "Users can insert their own profile" ON "public"."profiles" FOR IN
 
 
 CREATE POLICY "Users can insert their own wallet" ON "public"."credit_wallets" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
-
-
-
-CREATE POLICY "Users can manage their own interactions" ON "public"."content_interactions" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'admin'::"public"."app_role")));
-
-
-
-CREATE POLICY "Users can manage their own progress" ON "public"."lesson_progress" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'admin'::"public"."app_role")));
 
 
 
@@ -2278,6 +2358,10 @@ CREATE POLICY "Users can view meetings they host or attend" ON "public"."meeting
 
 
 
+CREATE POLICY "Users can view their own completion attempts" ON "public"."lesson_completion_attempts" FOR SELECT USING (("user_id" = "auth"."uid"()));
+
+
+
 CREATE POLICY "Users can view their own credit balance" ON "public"."credit_wallets" FOR SELECT USING (("auth"."uid"() = "user_id"));
 
 
@@ -2316,7 +2400,23 @@ ALTER TABLE "public"."coach_settings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."coach_subscriptions" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "content_delete" ON "public"."content_interactions" FOR DELETE USING (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "content_insert" ON "public"."content_interactions" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
 ALTER TABLE "public"."content_interactions" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "content_select" ON "public"."content_interactions" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "content_update" ON "public"."content_interactions" FOR UPDATE USING (("user_id" = "auth"."uid"()));
+
 
 
 ALTER TABLE "public"."course_enrollments" ENABLE ROW LEVEL SECURITY;
@@ -2340,6 +2440,9 @@ ALTER TABLE "public"."credit_wallets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."invoices" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."lesson_completion_attempts" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."lesson_content" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2359,6 +2462,22 @@ ALTER TABLE "public"."meetings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "progress_delete" ON "public"."lesson_progress" FOR DELETE USING (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "progress_insert" ON "public"."lesson_progress" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "progress_select" ON "public"."lesson_progress" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "progress_update" ON "public"."lesson_progress" FOR UPDATE USING (("user_id" = "auth"."uid"()));
+
 
 
 ALTER TABLE "public"."subscription_audit_log" ENABLE ROW LEVEL SECURITY;
@@ -2590,6 +2709,12 @@ GRANT ALL ON SEQUENCE "public"."invoice_sequence" TO "service_role";
 GRANT ALL ON TABLE "public"."invoices" TO "anon";
 GRANT ALL ON TABLE "public"."invoices" TO "authenticated";
 GRANT ALL ON TABLE "public"."invoices" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."lesson_completion_attempts" TO "anon";
+GRANT ALL ON TABLE "public"."lesson_completion_attempts" TO "authenticated";
+GRANT ALL ON TABLE "public"."lesson_completion_attempts" TO "service_role";
 
 
 
