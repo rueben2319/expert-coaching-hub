@@ -1,7 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ExternalLink, Play, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -396,115 +393,30 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
     }
   };
 
-  const handleMarkWatched = async () => {
-    await handleVideoComplete();
-  };
-
-  const openInNewTab = () => {
-    window.open(content.url, "_blank", "noopener,noreferrer");
-  };
-
   return (
-    <div className="space-y-4">
-      {content.title && (
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{content.title}</h3>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openInNewTab}
-              title="Open in new tab"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Watch on Platform
-            </Button>
-            {!isCompleted && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleMarkWatched}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Mark as Watched
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
+    <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
       {!isDirectVideo ? (
-        // Embedded video (YouTube/Vimeo)
-        <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-          <iframe
-            ref={iframeRef}
-            src={embedUrl}
-            className="w-full h-full border-0"
-            title={content.title || "Video Content"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-            onLoad={handleVideoStart}
-          />
-        </div>
+        <iframe
+          ref={iframeRef}
+          src={embedUrl}
+          className="w-full h-full border-0"
+          title={content.title || "Video Content"}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          onLoad={handleVideoStart}
+        />
       ) : (
-        // Direct video file
-        <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-          <video
-            ref={videoRef}
-            src={content.url}
-            className="w-full h-full"
-            controls
-            onPlay={handleVideoResume}
-            onPause={handleVideoPause}
-            onTimeUpdate={handleDirectVideoProgress}
-            onEnded={handleVideoComplete}
-            title={content.title || "Video Content"}
-          />
-        </div>
-      )}
-
-      {/* Video Info and Status */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Play className="h-4 w-4" />
-          <span>
-            {content.duration ? `${content.duration} minutes` : "Video content"}
-            {hasStarted && !isCompleted && (
-              <span className="ml-2">
-                • Watched: {Math.floor(watchTime / 60)}:{Math.floor(watchTime % 60).toString().padStart(2, '0')}
-                {isPlaying && <span className="text-green-600 ml-1">▶</span>}
-              </span>
-            )}
-          </span>
-        </div>
-        {isCompleted && (
-          <div className="flex items-center gap-2 text-green-600 bg-green-50 dark:bg-green-950 px-3 py-1 rounded-lg">
-            <CheckCircle2 className="h-4 w-4" />
-            <span className="text-sm font-medium">Completed</span>
-          </div>
-        )}
-      </div>
-
-      {!isCompleted && (
-        <div className="space-y-3">
-          <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
-              📹 To complete this video:
-            </p>
-            <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 ml-4 list-disc">
-              <li>Watch at least 90% of the video, OR</li>
-              <li>Click the green "Mark as Watched" button above</li>
-            </ul>
-          </div>
-          {hasStarted && (
-            <div className="text-sm">
-              <span className={isPlaying ? "text-green-600 font-medium" : "text-muted-foreground"}>
-                {isPlaying ? "⏵ Playing - watch time counting" : "⏸ Paused - watch time stopped"}
-              </span>
-            </div>
-          )}
-        </div>
+        <video
+          ref={videoRef}
+          src={content.url}
+          className="w-full h-full"
+          controls
+          onPlay={handleVideoResume}
+          onPause={handleVideoPause}
+          onTimeUpdate={handleDirectVideoProgress}
+          onEnded={handleVideoComplete}
+          title={content.title || "Video Content"}
+        />
       )}
     </div>
   );

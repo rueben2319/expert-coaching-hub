@@ -465,6 +465,24 @@ export default function CourseViewer() {
     ? progressMap.get(currentLessonId) || false
     : false;
 
+  const lessonContentItems = currentLesson?.lesson_content ?? [];
+  const trackableLessonContent = lessonContentItems.filter(
+    (content: any) => content.content_type !== "video"
+  );
+  const completedTrackableContent = trackableLessonContent.reduce(
+    (count: number, content: any) => {
+      const isCompleted = contentInteractions?.some(
+        (interaction: any) =>
+          interaction.content_id === content.id && interaction.is_completed
+      );
+      return isCompleted ? count + 1 : count;
+    },
+    0
+  );
+  const lessonProgressPercentage = trackableLessonContent.length === 0
+    ? 100
+    : (completedTrackableContent / trackableLessonContent.length) * 100;
+
   // Format duration helper
   const formatDuration = (minutes: number) => {
     if (minutes < 60) {
@@ -691,25 +709,13 @@ export default function CourseViewer() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Lesson Progress</span>
                     <span className="font-medium">
-                      {currentLesson.lesson_content.filter((content: any) =>
-                        contentInteractions?.some(
-                          (interaction: any) =>
-                            interaction.content_id === content.id && interaction.is_completed
-                        )
-                      ).length} of {currentLesson.lesson_content.length} items completed
+                      {trackableLessonContent.length > 0
+                        ? `${completedTrackableContent} of ${trackableLessonContent.length} required items completed`
+                        : "No required items in this lesson"}
                     </span>
                   </div>
                   <Progress
-                    value={
-                      currentLesson.lesson_content.length > 0
-                        ? (currentLesson.lesson_content.filter((content: any) =>
-                            contentInteractions?.some(
-                              (interaction: any) =>
-                                interaction.content_id === content.id && interaction.is_completed
-                            )
-                          ).length / currentLesson.lesson_content.length) * 100
-                        : 0
-                    }
+                    value={lessonProgressPercentage}
                     className="h-2"
                   />
                 </div>

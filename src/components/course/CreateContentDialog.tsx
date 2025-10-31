@@ -98,7 +98,10 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
     resolver: zodResolver(contentSchema),
     defaultValues: {
       content_type: editContent?.content_type || "text",
-      is_required: editContent?.is_required ?? true,
+      is_required:
+        editContent?.content_type === "video"
+          ? false
+          : editContent?.is_required ?? true,
       text_content: editContent?.content_data?.text || editContent?.content_data?.html || "",
       video_url: editContent?.content_data?.url || "",
       quiz_questions: editContent?.content_data?.questions || undefined, // Don't set default empty quiz
@@ -109,6 +112,13 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
   });
 
   const contentType = form.watch("content_type");
+  const isVideoContent = contentType === "video";
+
+  useEffect(() => {
+    if (isVideoContent && form.getValues("is_required")) {
+      form.setValue("is_required", false, { shouldDirty: true });
+    }
+  }, [isVideoContent, form]);
 
   // Update form when dialog opens with edit data
   useEffect(() => {
@@ -150,7 +160,10 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       setTimeout(() => {
         form.reset({
           content_type: editContent.content_type,
-          is_required: editContent.is_required ?? true,
+          is_required:
+            editContent.content_type === "video"
+              ? false
+              : editContent.is_required ?? true,
           text_content: textContent,
           video_url: videoUrl,
           quiz_questions: quizQuestions, // Only set if it's quiz content
@@ -202,11 +215,13 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         contentData = { url: data.video_url || "", filename: "File" };
       }
 
+      const isVideo = data.content_type === "video";
+
       const insertData = {
         lesson_id: lessonId,
         content_type: data.content_type,
         content_data: contentData,
-        is_required: data.is_required,
+        is_required: isVideo ? false : data.is_required,
         order_index: nextOrderIndex || 0,
       };
 
@@ -220,7 +235,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
           .update({
             content_type: data.content_type,
             content_data: contentData,
-            is_required: data.is_required,
+            is_required: isVideo ? false : data.is_required,
           })
           .eq("id", editContent.id);
         if (error) {
@@ -642,11 +657,17 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                   <div className="flex-1">
                     <FormLabel className="text-sm sm:text-base">Required Content</FormLabel>
                     <p className="text-xs sm:text-sm text-muted-foreground">
-                      Students must complete this to progress
+                      {isVideoContent
+                        ? "Videos are informational. Use a quiz to verify comprehension instead."
+                        : "Students must complete this to progress"}
                     </p>
                   </div>
                   <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    <Switch
+                      checked={field.value && !isVideoContent}
+                      disabled={isVideoContent}
+                      onCheckedChange={field.onChange}
+                    />
                   </FormControl>
                 </FormItem>
               )}
