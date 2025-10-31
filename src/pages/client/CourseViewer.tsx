@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ContentRenderer } from "@/components/content/ContentRenderer";
+import { AIStudyBuddy } from "@/components/student/AIStudyBuddy";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
@@ -686,101 +687,109 @@ export default function CourseViewer() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Lesson Header */}
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold mb-2">
-                {currentLesson?.title}
-              </h1>
-              {currentLesson?.description && (
-                <p className="text-muted-foreground">
-                  {currentLesson.description}
-                </p>
-              )}
-              {currentLesson?.estimated_duration && (
-                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>{currentLesson.estimated_duration} minutes</span>
-                </div>
-              )}
-              {/* Lesson Progress */}
-              {currentLesson?.lesson_content && (
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Lesson Progress</span>
-                    <span className="font-medium">
-                      {trackableLessonContent.length > 0
-                        ? `${completedTrackableContent} of ${trackableLessonContent.length} required items completed`
-                        : "No required items in this lesson"}
-                    </span>
+            {/* Lesson Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h1 className="text-3xl font-bold mb-2">
+                  {currentLesson?.title}
+                </h1>
+                {currentLesson?.description && (
+                  <p className="text-muted-foreground">
+                    {currentLesson.description}
+                  </p>
+                )}
+                {currentLesson?.estimated_duration && (
+                  <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    <span>{currentLesson.estimated_duration} minutes</span>
                   </div>
-                  <Progress
-                    value={lessonProgressPercentage}
-                    className="h-2"
-                  />
-                </div>
+                )}
+                {/* Lesson Progress */}
+                {currentLesson?.lesson_content && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Lesson Progress</span>
+                      <span className="font-medium">
+                        {trackableLessonContent.length > 0
+                          ? `${completedTrackableContent} of ${trackableLessonContent.length} required items completed`
+                          : "No required items in this lesson"}
+                      </span>
+                    </div>
+                    <Progress
+                      value={lessonProgressPercentage}
+                      className="h-2"
+                    />
+                  </div>
+                )}
+              </div>
+              {!isLessonCompleted && (
+                <Button
+                  onClick={handleMarkComplete}
+                  disabled={completeLessonMutation.isPending}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Mark Complete
+                </Button>
+              )}
+              {isLessonCompleted && (
+                <Badge className="bg-green-600">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  Completed
+                </Badge>
               )}
             </div>
-            {!isLessonCompleted && (
-              <Button
-                onClick={handleMarkComplete}
-                disabled={completeLessonMutation.isPending}
-              >
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Mark Complete
-              </Button>
-            )}
-            {isLessonCompleted && (
-              <Badge className="bg-green-600">
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                Completed
-              </Badge>
-            )}
-          </div>
 
-          {/* Lesson Content */}
-          {currentLesson?.lesson_content &&
-          currentLesson.lesson_content.length > 0 ? (
-            <div className="space-y-6">
-              {currentLesson.lesson_content
-                .sort((a: any, b: any) => a.order_index - b.order_index)
-                .map((content: any) => {
-                  const isContentCompleted = contentInteractions?.some(
-                    (interaction: any) =>
-                      interaction.content_id === content.id && interaction.is_completed
-                  );
+            {/* Lesson Content */}
+            {currentLesson?.lesson_content &&
+            currentLesson.lesson_content.length > 0 ? (
+              <div className="space-y-6">
+                {currentLesson.lesson_content
+                  .sort((a: any, b: any) => a.order_index - b.order_index)
+                  .map((content: any) => {
+                    const isContentCompleted = contentInteractions?.some(
+                      (interaction: any) =>
+                        interaction.content_id === content.id && interaction.is_completed
+                    );
 
-                  return (
-                    <div key={content.id} className="relative">
-                      {/* Content completion indicator */}
-                      <div className="absolute -left-8 top-2 z-10">
-                        {isContentCompleted ? (
-                          <div className="flex items-center justify-center w-6 h-6 bg-green-600 rounded-full">
-                            <CheckCircle2 className="h-3 w-3 text-white" />
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center w-6 h-6 border-2 border-muted-foreground rounded-full">
-                            <div className="w-2 h-2 bg-muted-foreground rounded-full opacity-50"></div>
-                          </div>
-                        )}
+                    return (
+                      <div key={content.id} className="relative">
+                        {/* Content completion indicator */}
+                        <div className="absolute -left-8 top-2 z-10">
+                          {isContentCompleted ? (
+                            <div className="flex items-center justify-center w-6 h-6 bg-green-600 rounded-full">
+                              <CheckCircle2 className="h-3 w-3 text-white" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center w-6 h-6 border-2 border-muted-foreground rounded-full">
+                              <div className="w-2 h-2 bg-muted-foreground rounded-full opacity-50"></div>
+                            </div>
+                          )}
+                        </div>
+
+                        <ContentRenderer
+                          key={content.id}
+                          content={content}
+                          onComplete={handleMarkComplete}
+                        />
                       </div>
-
-                      <ContentRenderer
-                        key={content.id}
-                        content={content}
-                        onComplete={handleMarkComplete}
-                      />
-                    </div>
-                  );
-                })}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No content available for this lesson yet.</p>
-            </div>
-          )}
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No content available for this lesson yet.</p>
+              </div>
+            )}
         </div>
+      )}
+
+      {/* AI Study Buddy Floating Button - Only show in lesson view */}
+      {currentView === "lesson" && currentLessonId && currentLesson && (
+        <AIStudyBuddy
+          lessonId={currentLessonId}
+          lessonTitle={currentLesson.title}
+        />
       )}
     </CourseTemplateLayout>
   );

@@ -9,6 +9,8 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { CoachAIAside } from "@/components/ai/CoachAIAside";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const lessonSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
@@ -86,66 +88,111 @@ export function CreateLessonDialog({ moduleId, open, onOpenChange, editLesson }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Lesson" : "Create New Lesson"}</DialogTitle>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Lesson Title</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Getting Started" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <ScrollArea className="h-[420px] pr-4">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Lesson Title</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Getting Started" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description (Optional)</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Brief description" rows={2} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description (Optional)</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Brief description" rows={3} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="estimated_duration"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Estimated Duration (minutes)</FormLabel>
-                  <FormControl>
-                    <Input type="number" placeholder="15" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="estimated_duration"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estimated Duration (minutes)</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="15" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending 
-                  ? (isEditing ? "Updating..." : "Creating...") 
-                  : (isEditing ? "Update Lesson" : "Create Lesson")}
-              </Button>
-            </div>
-          </form>
-        </Form>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createMutation.isPending}>
+                    {createMutation.isPending
+                      ? (isEditing ? "Updating..." : "Creating...")
+                      : (isEditing ? "Update Lesson" : "Create Lesson")}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </ScrollArea>
+
+          <CoachAIAside
+            title="AI Lesson Assistant"
+            description="Get AI suggestions to refine your lesson title and description based on the module context."
+            actionKey="lesson_draft_suggest"
+            context={{
+              lessonId: editLesson?.id,
+              moduleId,
+              lessonTitle: form.watch("title"),
+              lessonDescription: form.watch("description"),
+              estimatedDuration: form.watch("estimated_duration"),
+            }}
+            customRenderer={(data) => {
+              try {
+                const suggestions = JSON.parse(data.output);
+                return (
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Title:</p>
+                      <p className="text-muted-foreground">{suggestions.title}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Description:</p>
+                      <p className="text-muted-foreground whitespace-pre-wrap">{suggestions.description}</p>
+                    </div>
+                  </div>
+                );
+              } catch (e) {
+                return <p className="text-sm text-muted-foreground">{data.output}</p>;
+              }
+            }}
+            onInsert={(output) => {
+              try {
+                const suggestions = JSON.parse(output);
+                form.setValue("title", suggestions.title, { shouldDirty: true });
+                form.setValue("description", suggestions.description, { shouldDirty: true });
+              } catch (e) {
+                console.error("Failed to parse AI suggestions:", e);
+              }
+            }}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );

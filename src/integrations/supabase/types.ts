@@ -14,6 +14,114 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_generations: {
+        Row: {
+          action_key: string
+          actor_role: string | null
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          model: string | null
+          prompt: string
+          provider: string | null
+          response: string | null
+          response_format: string | null
+          tokens_completion: number | null
+          tokens_prompt: number | null
+          user_id: string | null
+        }
+        Insert: {
+          action_key: string
+          actor_role?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          model?: string | null
+          prompt: string
+          provider?: string | null
+          response?: string | null
+          response_format?: string | null
+          tokens_completion?: number | null
+          tokens_prompt?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          action_key?: string
+          actor_role?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          model?: string | null
+          prompt?: string
+          provider?: string | null
+          response?: string | null
+          response_format?: string | null
+          tokens_completion?: number | null
+          tokens_prompt?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      client_notes: {
+        Row: {
+          ai_summary: string | null
+          content_id: string | null
+          created_at: string | null
+          id: string
+          is_ai_generated: boolean | null
+          lesson_id: string | null
+          metadata: Json | null
+          note_text: string
+          source: string | null
+          tags: string[] | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          ai_summary?: string | null
+          content_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_ai_generated?: boolean | null
+          lesson_id?: string | null
+          metadata?: Json | null
+          note_text: string
+          source?: string | null
+          tags?: string[] | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          ai_summary?: string | null
+          content_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_ai_generated?: boolean | null
+          lesson_id?: string | null
+          metadata?: Json | null
+          note_text?: string
+          source?: string | null
+          tags?: string[] | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_notes_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_content"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_notes_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coach_settings: {
         Row: {
           coach_id: string
@@ -128,6 +236,86 @@ export type Database = {
             columns: ["content_id"]
             isOneToOne: false
             referencedRelation: "lesson_content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      course_content_embeddings: {
+        Row: {
+          chunk: string
+          content_id: string | null
+          created_at: string | null
+          embedding: string | null
+          id: string
+          lesson_id: string | null
+          metadata: Json | null
+        }
+        Insert: {
+          chunk: string
+          content_id?: string | null
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          lesson_id?: string | null
+          metadata?: Json | null
+        }
+        Update: {
+          chunk?: string
+          content_id?: string | null
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          lesson_id?: string | null
+          metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_content_embeddings_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_content"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_content_embeddings_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      course_embeddings: {
+        Row: {
+          content_text: string
+          course_id: string
+          created_at: string | null
+          embedding: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          content_text: string
+          course_id: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          content_text?: string
+          course_id?: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_embeddings_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: true
+            referencedRelation: "courses"
             referencedColumns: ["id"]
           },
         ]
@@ -767,6 +955,54 @@ export type Database = {
         }
         Relationships: []
       }
+      recommended_courses: {
+        Row: {
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          reason: string | null
+          recommended_course_id: string
+          similarity_score: number | null
+          source_course_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          reason?: string | null
+          recommended_course_id: string
+          similarity_score?: number | null
+          source_course_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          reason?: string | null
+          recommended_course_id?: string
+          similarity_score?: number | null
+          source_course_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommended_courses_recommended_course_id_fkey"
+            columns: ["recommended_course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommended_courses_source_course_id_fkey"
+            columns: ["source_course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_audit_log: {
         Row: {
           change_reason: string | null
@@ -1089,6 +1325,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      cleanup_expired_recommendations: { Args: never; Returns: undefined }
       commit_transaction: { Args: never; Returns: string }
       generate_invoice_number: { Args: never; Returns: string }
       get_aged_credits: {
@@ -1154,6 +1391,10 @@ export type Database = {
           to_user_id: string
           transaction_type: string
         }
+        Returns: Json
+      }
+      upsert_own_role: {
+        Args: { p_role: Database["public"]["Enums"]["app_role"] }
         Returns: Json
       }
     }

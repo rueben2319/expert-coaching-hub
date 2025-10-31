@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { coachSidebarSections } from "@/config/navigation";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { CoachAIAside } from "@/components/ai/CoachAIAside";
 
 const courseSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
@@ -84,7 +84,7 @@ export default function CreateCourse() {
 
   return (
     <DashboardLayout sidebarSections={coachSidebarSections}>
-      <div className="max-w-2xl mx-auto">
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <Card>
           <CardHeader>
             <CardTitle>Create New Course</CardTitle>
@@ -245,6 +245,59 @@ export default function CreateCourse() {
             </Form>
           </CardContent>
         </Card>
+
+        <CoachAIAside
+          title="AI Course Assistant"
+          description="Get AI suggestions to refine your course title, description, tag, and category."
+          actionKey="course_outline_suggest"
+          context={{
+            courseTitle: form.watch("title"),
+            courseDescription: form.watch("description"),
+            courseLevel: form.watch("level"),
+            courseTag: form.watch("tag"),
+            courseCategory: form.watch("category"),
+          }}
+          customRenderer={(data) => {
+            try {
+              const suggestions = JSON.parse(data.output);
+              return (
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <p className="font-semibold text-foreground mb-1">Title:</p>
+                    <p className="text-muted-foreground">{suggestions.title}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground mb-1">Description:</p>
+                    <p className="text-muted-foreground whitespace-pre-wrap">{suggestions.description}</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <p className="font-semibold text-foreground mb-1">Tag:</p>
+                      <p className="text-muted-foreground">{suggestions.tag}</p>
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-foreground mb-1">Category:</p>
+                      <p className="text-muted-foreground">{suggestions.category}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            } catch (e) {
+              return <p className="text-sm text-muted-foreground">{data.output}</p>;
+            }
+          }}
+          onInsert={(output) => {
+            try {
+              const suggestions = JSON.parse(output);
+              form.setValue("title", suggestions.title, { shouldDirty: true });
+              form.setValue("description", suggestions.description, { shouldDirty: true });
+              form.setValue("tag", suggestions.tag, { shouldDirty: true });
+              form.setValue("category", suggestions.category, { shouldDirty: true });
+            } catch (e) {
+              console.error("Failed to parse AI suggestions:", e);
+            }
+          }}
+        />
       </div>
     </DashboardLayout>
   );
