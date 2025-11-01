@@ -45,13 +45,9 @@ export default defineConfig(({ mode }) => ({
     },
     chunkSizeWarningLimit: 1000,
     sourcemap: mode === 'development',
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: mode === 'production',
-        drop_debugger: mode === 'production',
-      },
-    },
+    // Use esbuild for faster builds (Vite's default)
+    // Only minify in production mode
+    minify: mode === 'production' ? 'esbuild' : false,
   },
   optimizeDeps: {
     include: [

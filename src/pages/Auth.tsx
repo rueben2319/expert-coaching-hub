@@ -53,16 +53,14 @@ export default function Auth() {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
-    // If role already set, navigate immediately
-    // But only if we're not explicitly on the auth page (prevent redirect loop)
-    if (role && window.location.pathname === '/auth') {
-      // User is logged in and trying to access auth page
-      // Don't redirect automatically - let them see they're already logged in
+    // Only handle redirects when explicitly on the /auth page
+    // This prevents interfering with other routes during page reload
+    if (window.location.pathname !== '/auth') {
       return;
     }
-    
+
+    // If role already set and user is on auth page, show "already logged in" message
     if (role) {
-      navigate(`/${role}`);
       return;
     }
 
@@ -123,8 +121,9 @@ export default function Auth() {
               // upsert user role via secure RPC (self-only)
               const { data: rpcData, error: rpcError } = await supabase
                 .rpc('upsert_own_role', { p_role: desiredRole });
-              if (rpcError || rpcData?.success === false) {
-                throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+              if (rpcError || (rpcData && typeof rpcData === 'object' && 'success' in rpcData && rpcData.success === false)) {
+                const errorMsg = rpcError?.message || (rpcData && typeof rpcData === 'object' && 'error' in rpcData && typeof rpcData.error === 'string' ? rpcData.error : 'Failed to set role');
+                throw new Error(errorMsg);
               }
 
               await refreshRole();
@@ -298,8 +297,9 @@ export default function Auth() {
     try {
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('upsert_own_role', { p_role: pendingRole });
-      if (rpcError || rpcData?.success === false) {
-        throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+      if (rpcError || (rpcData && typeof rpcData === 'object' && 'success' in rpcData && rpcData.success === false)) {
+        const errorMsg = rpcError?.message || (rpcData && typeof rpcData === 'object' && 'error' in rpcData && typeof rpcData.error === 'string' ? rpcData.error : 'Failed to set role');
+        throw new Error(errorMsg);
       }
 
       await refreshRole();

@@ -38,7 +38,6 @@ export function RecommendedCourses() {
           description,
           category,
           level,
-          tags,
           thumbnail_url,
           coach_id,
           profiles!courses_coach_id_fkey (
