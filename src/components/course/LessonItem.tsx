@@ -8,6 +8,9 @@ import { toast } from "@/hooks/use-toast";
 import { CreateContentDialog } from "./CreateContentDialog";
 import { CreateLessonDialog } from "./CreateLessonDialog";
 import { ContentItem } from "./ContentItem";
+import { PracticeExerciseGenerator } from "@/components/coach/PracticeExerciseGenerator";
+import { PracticeExerciseReviewPanel } from "@/components/coach/PracticeExerciseReviewPanel";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 
 interface LessonItemProps {
   lesson: any;
@@ -18,6 +21,7 @@ export function LessonItem({ lesson, moduleId }: LessonItemProps) {
   const [showCreateContent, setShowCreateContent] = useState(false);
   const [showEditLesson, setShowEditLesson] = useState(false);
   const [isContentOpen, setIsContentOpen] = useState(false);
+  const [showPracticeDialog, setShowPracticeDialog] = useState(false);
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
@@ -66,9 +70,27 @@ export function LessonItem({ lesson, moduleId }: LessonItemProps) {
               <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate()} title="Delete Lesson">
                 <Trash2 className="h-4 w-4" />
               </Button>
+              <Dialog open={showPracticeDialog} onOpenChange={setShowPracticeDialog}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="secondary" className="gap-2">
+                    Practice tools
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl">
+                  <DialogHeader>
+                    <DialogTitle className="text-base font-semibold">Practice exercises</DialogTitle>
+                    <DialogDescription className="text-sm text-muted-foreground">
+                      Generate new practice sets or review drafts for this lesson.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+                    <PracticeExerciseGenerator lessonId={lesson.id} />
+                    <PracticeExerciseReviewPanel lessonId={lesson.id} />
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
-          
           <CollapsibleContent>
             <div className="px-3 pb-3">
               {contentItems.length > 0 ? (

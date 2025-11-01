@@ -63,34 +63,124 @@ alter table public.client_notes enable row level security;
 alter table public.course_content_embeddings enable row level security;
 
 -- RLS for ai_generations: inserted via service role, authors can read their own, service role full access
-create policy if not exists "ai_generations_select_self" on public.ai_generations
-  for select using (auth.uid() = user_id or auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'ai_generations'
+      AND policyname = 'ai_generations_select_self'
+  ) THEN
+    CREATE POLICY "ai_generations_select_self" ON public.ai_generations
+      FOR SELECT USING (auth.uid() = user_id OR auth.role() = 'service_role');
+  END IF;
+END $$;
 
-create policy if not exists "ai_generations_insert_service" on public.ai_generations
-  for insert with check (auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'ai_generations'
+      AND policyname = 'ai_generations_insert_service'
+  ) THEN
+    CREATE POLICY "ai_generations_insert_service" ON public.ai_generations
+      FOR INSERT WITH CHECK (auth.role() = 'service_role');
+  END IF;
+END $$;
 
 -- RLS for client_notes: learners manage their notes, service role allowed for AI automation
-create policy if not exists "client_notes_select_owner" on public.client_notes
-  for select using (auth.uid() = user_id or auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'client_notes'
+      AND policyname = 'client_notes_select_owner'
+  ) THEN
+    CREATE POLICY "client_notes_select_owner" ON public.client_notes
+      FOR SELECT USING (auth.uid() = user_id OR auth.role() = 'service_role');
+  END IF;
+END $$;
 
-create policy if not exists "client_notes_insert_owner" on public.client_notes
-  for insert with check (auth.uid() = user_id or auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'client_notes'
+      AND policyname = 'client_notes_insert_owner'
+  ) THEN
+    CREATE POLICY "client_notes_insert_owner" ON public.client_notes
+      FOR INSERT WITH CHECK (auth.uid() = user_id OR auth.role() = 'service_role');
+  END IF;
+END $$;
 
-create policy if not exists "client_notes_update_owner" on public.client_notes
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'client_notes'
+      AND policyname = 'client_notes_update_owner'
+  ) THEN
+    CREATE POLICY "client_notes_update_owner" ON public.client_notes
+      FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  END IF;
+END $$;
 
-create policy if not exists "client_notes_delete_owner" on public.client_notes
-  for delete using (auth.uid() = user_id or auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'client_notes'
+      AND policyname = 'client_notes_delete_owner'
+  ) THEN
+    CREATE POLICY "client_notes_delete_owner" ON public.client_notes
+      FOR DELETE USING (auth.uid() = user_id OR auth.role() = 'service_role');
+  END IF;
+END $$;
 
 -- RLS for embeddings: read allowed for everyone (content discovery), modify only via service role jobs
-create policy if not exists "course_content_embeddings_select_all" on public.course_content_embeddings
-  for select using (true);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'course_content_embeddings'
+      AND policyname = 'course_content_embeddings_select_all'
+  ) THEN
+    CREATE POLICY "course_content_embeddings_select_all" ON public.course_content_embeddings
+      FOR SELECT USING (true);
+  END IF;
+END $$;
 
-create policy if not exists "course_content_embeddings_insert_service" on public.course_content_embeddings
-  for insert with check (auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'course_content_embeddings'
+      AND policyname = 'course_content_embeddings_insert_service'
+  ) THEN
+    CREATE POLICY "course_content_embeddings_insert_service" ON public.course_content_embeddings
+      FOR INSERT WITH CHECK (auth.role() = 'service_role');
+  END IF;
+END $$;
 
-create policy if not exists "course_content_embeddings_update_service" on public.course_content_embeddings
-  for update using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'course_content_embeddings'
+      AND policyname = 'course_content_embeddings_update_service'
+  ) THEN
+    CREATE POLICY "course_content_embeddings_update_service" ON public.course_content_embeddings
+      FOR UPDATE USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  END IF;
+END $$;
 
-create policy if not exists "course_content_embeddings_delete_service" on public.course_content_embeddings
-  for delete using (auth.role() = 'service_role');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'course_content_embeddings'
+      AND policyname = 'course_content_embeddings_delete_service'
+  ) THEN
+    CREATE POLICY "course_content_embeddings_delete_service" ON public.course_content_embeddings
+      FOR DELETE USING (auth.role() = 'service_role');
+  END IF;
+END $$;

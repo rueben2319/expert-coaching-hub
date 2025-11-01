@@ -6,6 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trash2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
@@ -14,7 +16,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { CoachAIAside } from "@/components/ai/CoachAIAside";
 import { ContentQualityPanel } from "@/components/coach/ContentQualityPanel";
 import type { AIResponsePayload } from "@/lib/ai/aiClient";
@@ -68,6 +70,8 @@ interface CreateContentDialogProps {
   onOpenChange: (open: boolean) => void;
   editContent?: any;
 }
+
+type TabKey = "form" | "ai" | "quality";
 
 export function CreateContentDialog({ lessonId, open, onOpenChange, editContent }: CreateContentDialogProps) {
   const queryClient = useQueryClient();
@@ -126,11 +130,25 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
   const contentType = form.watch("content_type");
   const isVideoContent = contentType === "video";
 
+  const [activeTab, setActiveTab] = useState<TabKey>("form");
+
   useEffect(() => {
     if (isVideoContent && form.getValues("is_required")) {
       form.setValue("is_required", false, { shouldDirty: true });
     }
   }, [isVideoContent, form]);
+
+  useEffect(() => {
+    if (!open) {
+      setActiveTab("form");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (contentType !== "text" && activeTab === "quality") {
+      setActiveTab("form");
+    }
+  }, [contentType, activeTab]);
 
   // Update form when dialog opens with edit data
   useEffect(() => {
@@ -318,11 +336,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         order_index: nextOrderIndex || 0,
       };
 
-      console.log('💾 Final insert data:', insertData);
-      console.log('🎯 Using order_index:', nextOrderIndex);
-
       if (isEditing) {
-        console.log('✏️ Updating existing content:', editContent.id);
         const { error } = await supabase
           .from("lesson_content")
           .update({
@@ -332,24 +346,15 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
           })
           .eq("id", editContent.id);
         if (error) {
-          console.error('❌ Update error:', error);
+          console.error("❌ Update error:", error);
           throw error;
         }
-        console.log('✅ Content updated successfully');
       } else {
-        console.log('➕ Inserting new content');
-        const { error, data: insertedData } = await supabase.from("lesson_content").insert(insertData).select();
+        const { error } = await supabase.from("lesson_content").insert(insertData);
         if (error) {
-          console.error('❌ Insert error:', error);
-          console.error('❌ Insert error details:', {
-            code: error.code,
-            details: error.details,
-            hint: error.hint,
-            message: error.message
-          });
+          console.error("❌ Insert error:", error);
           throw error;
         }
-        console.log('✅ Content inserted successfully:', insertedData);
       }
     },
     onSuccess: () => {
@@ -359,343 +364,227 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       onOpenChange(false);
     },
     onError: (error: any) => {
-      toast({ 
-        title: isEditing ? "Failed to update content" : "Failed to add content", 
+      toast({
+        title: isEditing ? "Failed to update content" : "Failed to add content",
         variant: "destructive",
-        description: error?.message || "Please check your form and try again."
+        description: error?.message || "Please check your form and try again.",
       });
     },
   });
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-lg sm:text-xl">
-            {isEditing ? `Edit Content (${editContent?.content_type})` : "Add Content to Lesson"}
-          </DialogTitle>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => {
-            console.log('✅ Form validation passed, submitting data:', data);
-            createMutation.mutate(data);
-          }, (errors) => {
-            console.error('❌ Form validation errors:', errors);
-            console.error('❌ Error details:', JSON.stringify(errors, null, 2));
-            
-            // Get specific error messages
-            const errorMessages = Object.entries(errors).map(([field, error]: [string, any]) => {
-              return `${field}: ${error?.message || 'Invalid'}`;
-            }).join('\n');
-            
-            console.error('❌ Specific errors:', errorMessages);
-            
-            toast({
-              title: "Validation Error",
-              description: errorMessages || "Please check all required fields and try again.",
-              variant: "destructive"
-            });
-          })} className="space-y-4 px-1">
+  const renderMainFields = () => {
+    switch (contentType) {
+      case "text":
+        return (
+          <FormField
+            control={form.control}
+            name="text_content"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Text Content</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Enter your lesson content"
+                    rows={12}
+                    className="border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-0 focus:outline-none"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        );
+      case "video":
+        return (
+          <FormField
+            control={form.control}
+            name="video_url"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Video URL</FormLabel>
+                <FormControl>
+                  <Input placeholder="https://youtube.com/watch?v=..." {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        );
+      case "interactive":
+        return (
+          <FormField
+            control={form.control}
+            name="video_url"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Interactive Content URL</FormLabel>
+                <FormControl>
+                  <Input placeholder="https://example.com/interactive-content" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        );
+      case "file":
+        return (
+          <FormField
+            control={form.control}
+            name="video_url"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>File URL</FormLabel>
+                <FormControl>
+                  <Input placeholder="https://example.com/file.pdf" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        );
+      case "quiz":
+        return (
+          <div className="space-y-4">
+            <h3 className="font-semibold text-base sm:text-lg">Quiz Builder</h3>
+
             <FormField
               control={form.control}
-              name="content_type"
+              name="quiz_title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Content Type</FormLabel>
-                  <Select
-                    onValueChange={(value) => {
-                      field.onChange(value);
-                      // Initialize quiz questions when quiz is selected
-                      if (value === "quiz" && !form.getValues("quiz_questions")) {
-                        form.setValue("quiz_questions", [{
-                          question: "",
-                          options: ["", ""],
-                          correct_answer: 0,
-                          explanation: "",
-                        }]);
-                      }
-                    }}
-                    value={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select content type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="video">Video</SelectItem>
-                      <SelectItem value="quiz">Quiz</SelectItem>
-                      <SelectItem value="interactive">Interactive</SelectItem>
-                      <SelectItem value="file">File</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Quiz Title (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Enter quiz title" {...field} />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {contentType === "text" && (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px_320px] lg:grid-cols-[minmax(0,1fr)_320px]">
-                <FormField
-                  control={form.control}
-                  name="text_content"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Text Content</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="Enter your lesson content" rows={12} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <CoachAIAside
-                  title="AI Content Writer"
-                  description="Generate a comprehensive blog-style article for this lesson."
-                  actionKey="content_draft_suggest"
-                  context={{
-                    lessonId,
-                    contentType: "text",
-                    contentTitle: "",
-                    contentDescription: form.watch("text_content")?.substring(0, 200),
-                  }}
-                  customRenderer={(data) => {
-                    try {
-                      const suggestions = JSON.parse(data.output);
+            <FormField
+              control={form.control}
+              name="quiz_description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Quiz Description (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="Enter quiz description" rows={2} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="passing_score"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Passing Score (%)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="70"
+                      value={field.value ?? 70}
+                      onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 70)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="quiz_questions"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Questions</FormLabel>
+                  <div className="space-y-4">
+                    {field.value?.map((question, questionIndex) => {
+                      const questionValue = question?.question ?? "";
+                      const explanationValue = question?.explanation ?? "";
+                      const options = question?.options ?? [];
+
                       return (
-                        <div className="space-y-3 text-sm">
-                          <div>
-                            <p className="font-semibold text-foreground mb-1">Title:</p>
-                            <p className="text-muted-foreground">{suggestions.title}</p>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-foreground mb-1">Content Preview:</p>
-                            <p className="text-muted-foreground whitespace-pre-wrap line-clamp-6">{suggestions.content}</p>
-                          </div>
-                        </div>
-                      );
-                    } catch (e) {
-                      return <p className="text-sm text-muted-foreground">{data.output}</p>;
-                    }
-                  }}
-                  onInsert={(output) => {
-                    try {
-                      const suggestions = JSON.parse(output);
-                      form.setValue("text_content", suggestions.content, { shouldDirty: true });
-                    } catch (e) {
-                      console.error("Failed to parse AI suggestions:", e);
-                    }
-                  }}
-                />
-                <ContentQualityPanel
-                  contentId={editContent?.id}
-                  lessonId={lessonId}
-                  draftText={form.watch("text_content") || ""}
-                  contentTitle={editContent?.content_data?.title || "Text Content"}
-                />
-              </div>
-            )}
-
-            {contentType === "video" && (
-              <div className="grid gap-4 lg:grid-cols-[1fr_350px]">
-                <div className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="video_url"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Video URL</FormLabel>
-                        <FormControl>
-                          <Input placeholder="https://youtube.com/watch?v=..." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <CoachAIAside
-                  title="AI Video Script Writer"
-                  description="Generate a detailed video script and production guide."
-                  actionKey="content_draft_suggest"
-                  context={{
-                    lessonId,
-                    contentType: "video",
-                    contentTitle: "",
-                    contentDescription: "",
-                  }}
-                  customRenderer={(data) => {
-                    try {
-                      const suggestions = JSON.parse(data.output);
-                      return (
-                        <div className="space-y-3 text-sm">
-                          <div>
-                            <p className="font-semibold text-foreground mb-1">Title:</p>
-                            <p className="text-muted-foreground">{suggestions.title}</p>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-foreground mb-1">Script Preview:</p>
-                            <p className="text-muted-foreground whitespace-pre-wrap line-clamp-4">{suggestions.script}</p>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-foreground mb-1">Layout:</p>
-                            <p className="text-muted-foreground whitespace-pre-wrap line-clamp-3">{suggestions.layout}</p>
-                          </div>
-                        </div>
-                      );
-                    } catch (e) {
-                      return <p className="text-sm text-muted-foreground">{data.output}</p>;
-                    }
-                  }}
-                  onInsert={(output) => {
-                    try {
-                      const suggestions = JSON.parse(output);
-                      // For video, we can't insert the script directly, but we can show it in a toast
-                      toast({
-                        title: "Video script generated",
-                        description: "Copy the script from the AI assistant panel to use in your video production.",
-                      });
-                    } catch (e) {
-                      console.error("Failed to parse AI suggestions:", e);
-                    }
-                  }}
-                />
-              </div>
-            )}
-
-            {contentType === "quiz" && (
-              <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-base sm:text-lg">Quiz Builder</h3>
-                
-                <FormField
-                  control={form.control}
-                  name="quiz_title"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quiz Title (Optional)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter quiz title" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="quiz_description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quiz Description (Optional)</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="Enter quiz description" rows={2} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="passing_score"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Passing Score (%)</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          max="100" 
-                          placeholder="70" 
-                          value={field.value || 70}
-                          onChange={(e) => field.onChange(parseInt(e.target.value) || 70)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="quiz_questions"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Questions</FormLabel>
-                      <div className="space-y-4">
-                        {field.value?.map((question, questionIndex) => (
-                          <div key={questionIndex} className="space-y-3 p-4 bg-muted/30 rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-medium">Question {questionIndex + 1}</h4>
-                              {field.value && field.value.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    const newQuestions = field.value?.filter((_, i) => i !== questionIndex);
-                                    field.onChange(newQuestions);
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                            
-                            <div>
-                              <Label>Question Text</Label>
-                              <Textarea
-                                placeholder="Enter your question"
-                                rows={2}
-                                value={question.question}
-                                onChange={(e) => {
-                                  const newQuestions = [...(field.value || [])];
-                                  newQuestions[questionIndex] = {
-                                    ...newQuestions[questionIndex],
-                                    question: e.target.value
-                                  };
+                        <div key={questionIndex} className="space-y-3 p-4 bg-muted/30 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-medium">Question {questionIndex + 1}</h4>
+                            {field.value && field.value.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const newQuestions = field.value?.filter((_, i) => i !== questionIndex) ?? [];
                                   field.onChange(newQuestions);
                                 }}
-                              />
-                            </div>
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
 
-                            <div>
-                              <Label>Answer Options</Label>
-                              <div className="space-y-2 mt-2">
-                                {question.options?.map((option, optionIndex) => (
+                          <div>
+                            <Label>Question Text</Label>
+                            <Textarea
+                              placeholder="Enter your question"
+                              rows={2}
+                              value={questionValue}
+                              onChange={(e) => {
+                                const newQuestions = [...(field.value ?? [])];
+                                newQuestions[questionIndex] = {
+                                  ...newQuestions[questionIndex],
+                                  question: e.target.value,
+                                };
+                                field.onChange(newQuestions);
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Answer Options</Label>
+                            <div className="space-y-2 mt-2">
+                              {options.map((option, optionIndex) => {
+                                const optionLabel = option?.trim()?.length ? option : `Option ${optionIndex + 1}`;
+                                return (
                                   <div key={optionIndex} className="flex items-center gap-2">
                                     <div className="flex-1">
                                       <Input
                                         placeholder={`Option ${optionIndex + 1}`}
-                                        value={option}
+                                        value={option ?? ""}
                                         onChange={(e) => {
-                                          const newQuestions = [...(field.value || [])];
-                                          const newOptions = [...(newQuestions[questionIndex].options || [])];
+                                          const newQuestions = [...(field.value ?? [])];
+                                          const newOptions = [...(options ?? [])];
                                           newOptions[optionIndex] = e.target.value;
                                           newQuestions[questionIndex] = {
                                             ...newQuestions[questionIndex],
-                                            options: newOptions
+                                            options: newOptions,
                                           };
                                           field.onChange(newQuestions);
                                         }}
                                       />
                                     </div>
-                                    {question.options && question.options.length > 2 && (
+                                    {options.length > 2 && (
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
                                         className="shrink-0 h-8 w-8 p-0"
                                         onClick={() => {
-                                          const newQuestions = [...(field.value || [])];
-                                          const newOptions = newQuestions[questionIndex].options?.filter((_, i) => i !== optionIndex);
+                                          const newQuestions = [...(field.value ?? [])];
+                                          const newOptions = options.filter((_, i) => i !== optionIndex);
+                                          const currentCorrect = newQuestions[questionIndex]?.correct_answer ?? 0;
                                           newQuestions[questionIndex] = {
                                             ...newQuestions[questionIndex],
                                             options: newOptions,
-                                            correct_answer: newQuestions[questionIndex].correct_answer >= optionIndex 
-                                              ? Math.max(0, newQuestions[questionIndex].correct_answer - 1)
-                                              : newQuestions[questionIndex].correct_answer
+                                            correct_answer:
+                                              currentCorrect >= optionIndex
+                                                ? Math.max(0, currentCorrect - 1)
+                                                : currentCorrect,
                                           };
                                           field.onChange(newQuestions);
                                         }}
@@ -704,195 +593,484 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                                       </Button>
                                     )}
                                   </div>
-                                ))}
-                                {question.options && question.options.length < 6 && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full sm:w-auto"
-                                    onClick={() => {
-                                      const newQuestions = [...(field.value || [])];
-                                      const newOptions = [...(newQuestions[questionIndex].options || []), ""];
-                                      newQuestions[questionIndex] = {
-                                        ...newQuestions[questionIndex],
-                                        options: newOptions
-                                      };
-                                      field.onChange(newQuestions);
-                                    }}
-                                  >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Add Option
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-
-                            <div>
-                              <Label>Correct Answer</Label>
-                              <RadioGroup
-                                value={question.correct_answer?.toString()}
-                                onValueChange={(value) => {
-                                  const newQuestions = [...(field.value || [])];
-                                  newQuestions[questionIndex] = {
-                                    ...newQuestions[questionIndex],
-                                    correct_answer: parseInt(value)
-                                  };
-                                  field.onChange(newQuestions);
-                                }}
-                                className="space-y-2 mt-2"
-                              >
-                                {question.options?.map((option, optionIndex) => (
-                                  <div key={optionIndex} className="flex items-start space-x-2 p-2 rounded border">
-                                    <RadioGroupItem 
-                                      value={optionIndex.toString()} 
-                                      id={`q${questionIndex}-option-${optionIndex}`} 
-                                      className="mt-0.5 shrink-0"
-                                    />
-                                    <Label 
-                                      htmlFor={`q${questionIndex}-option-${optionIndex}`} 
-                                      className="flex-1 text-sm leading-relaxed cursor-pointer"
-                                    >
-                                      {option || `Option ${optionIndex + 1}`}
-                                    </Label>
-                                  </div>
-                                ))}
-                              </RadioGroup>
-                            </div>
-
-                            <div>
-                              <Label>Explanation (Optional)</Label>
-                              <Textarea
-                                placeholder="Explain why this is the correct answer"
-                                rows={2}
-                                value={question.explanation || ""}
-                                onChange={(e) => {
-                                  const newQuestions = [...(field.value || [])];
-                                  newQuestions[questionIndex] = {
-                                    ...newQuestions[questionIndex],
-                                    explanation: e.target.value
-                                  };
-                                  field.onChange(newQuestions);
-                                }}
-                              />
+                                );
+                              })}
+                              {options.length < 6 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full sm:w-auto"
+                                  onClick={() => {
+                                    const newQuestions = [...(field.value ?? [])];
+                                    const newOptions = [...options, ""];
+                                    newQuestions[questionIndex] = {
+                                      ...newQuestions[questionIndex],
+                                      options: newOptions,
+                                    };
+                                    field.onChange(newQuestions);
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add Option
+                                </Button>
+                              )}
                             </div>
                           </div>
-                        ))}
-                        
-                        {field.value && field.value.length < 10 && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => {
-                              const newQuestions = [...(field.value || []), {
-                                question: "",
-                                options: ["", ""],
-                                correct_answer: 0,
-                                explanation: "",
-                              }];
-                              field.onChange(newQuestions);
-                            }}
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Question
-                          </Button>
-                        )}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                </div>
 
-                <CoachAIAside
-                  title="AI Quiz Assistant"
-                  description="Generate multiple-choice questions based on existing text/video content in this lesson. Make sure to add text or video content first for better quiz generation."
-                  actionKey="quiz_builder_suggest"
-                  context={{
-                    lessonId,
-                    quizTitle: form.watch("quiz_title") || undefined,
-                    quizDescription: form.watch("quiz_description") || undefined,
-                    existingQuestions: (form.watch("quiz_questions") || []).length,
-                  }}
-                  customRenderer={renderAIQuizPreview}
-                  onInsert={handleQuizInsert}
-                />
-              </div>
-            )}
+                          <div>
+                            <Label>Correct Answer</Label>
+                            <RadioGroup
+                              value={String(question?.correct_answer ?? 0)}
+                              onValueChange={(value) => {
+                                const newQuestions = [...(field.value ?? [])];
+                                newQuestions[questionIndex] = {
+                                  ...newQuestions[questionIndex],
+                                  correct_answer: parseInt(value, 10),
+                                };
+                                field.onChange(newQuestions);
+                              }}
+                              className="space-y-2 mt-2"
+                            >
+                              {options.map((option, optionIndex) => {
+                                const optionLabel = option?.trim()?.length ? option : `Option ${optionIndex + 1}`;
+                                return (
+                                  <div key={optionIndex} className="flex items-start space-x-2 p-2 rounded border">
+                                    <RadioGroupItem
+                                      value={optionIndex.toString()}
+                                      id={`q${questionIndex}-option-${optionIndex}`}
+                                      className="mt-0.5 shrink-0"
+                                    />
+                                    <Label
+                                      htmlFor={`q${questionIndex}-option-${optionIndex}`}
+                                      className="flex-1 text-sm leading-relaxed cursor-pointer"
+                                    >
+                                      {optionLabel}
+                                    </Label>
+                                  </div>
+                                );
+                              })}
+                            </RadioGroup>
+                          </div>
 
-            {contentType === "interactive" && (
-              <FormField
-                control={form.control}
-                name="video_url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Interactive Content URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://example.com/interactive-content" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+                          <div>
+                            <Label>Explanation (Optional)</Label>
+                            <Textarea
+                              placeholder="Explain why this is the correct answer"
+                              rows={2}
+                              value={explanationValue}
+                              onChange={(e) => {
+                                const newQuestions = [...(field.value ?? [])];
+                                newQuestions[questionIndex] = {
+                                  ...newQuestions[questionIndex],
+                                  explanation: e.target.value,
+                                };
+                                field.onChange(newQuestions);
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
 
-            {contentType === "file" && (
-              <FormField
-                control={form.control}
-                name="video_url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>File URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://example.com/file.pdf" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
-            <FormField
-              control={form.control}
-              name="is_required"
-              render={({ field }) => (
-                <FormItem className="flex flex-col sm:flex-row sm:items-center justify-between rounded-lg border p-3 sm:p-4 space-y-2 sm:space-y-0">
-                  <div className="flex-1">
-                    <FormLabel className="text-sm sm:text-base">Required Content</FormLabel>
-                    <p className="text-xs sm:text-sm text-muted-foreground">
-                      {isVideoContent
-                        ? "Videos are informational. Use a quiz to verify comprehension instead."
-                        : "Students must complete this to progress"}
-                    </p>
+                    {field.value && field.value.length < 10 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          const newQuestions = [
+                            ...(field.value ?? []),
+                            {
+                              question: "",
+                              options: ["", ""],
+                              correct_answer: 0,
+                              explanation: "",
+                            },
+                          ];
+                          field.onChange(newQuestions);
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Question
+                      </Button>
+                    )}
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value && !isVideoContent}
-                      disabled={isVideoContent}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
+                  <FormMessage />
                 </FormItem>
               )}
             />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
-            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
+  const renderAIWriter = () => {
+    switch (contentType) {
+      case "text":
+        return (
+          <CoachAIAside
+            title="AI Content Writer"
+            description="Generate a comprehensive blog-style article for this lesson."
+            actionKey="content_draft_suggest"
+            context={{
+              lessonId,
+              contentType: "text",
+              contentTitle: "",
+              contentDescription: form.watch("text_content")?.substring(0, 200),
+            }}
+            customRenderer={(data) => {
+              try {
+                const suggestions = JSON.parse(data.output);
+                return (
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Title:</p>
+                      <p className="text-muted-foreground">{suggestions.title}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Content Preview:</p>
+                      <p className="text-muted-foreground whitespace-pre-wrap">{suggestions.content}</p>
+                    </div>
+                  </div>
+                );
+              } catch (e) {
+                return <p className="text-sm text-muted-foreground">{data.output}</p>;
+              }
+            }}
+            onInsert={(output) => {
+              try {
+                const suggestions = JSON.parse(output);
+                form.setValue("text_content", suggestions.content, { shouldDirty: true });
+                setActiveTab("form");
+              } catch (e) {
+                console.error("Failed to parse AI suggestions:", e);
+              }
+            }}
+          />
+        );
+      case "video":
+        return (
+          <CoachAIAside
+            title="AI Video Script Writer"
+            description="Generate a detailed video script and production guide."
+            actionKey="content_draft_suggest"
+            context={{
+              lessonId,
+              contentType: "video",
+              contentTitle: "",
+              contentDescription: "",
+            }}
+            customRenderer={(data) => {
+              try {
+                const suggestions = JSON.parse(data.output);
+                return (
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Title:</p>
+                      <p className="text-muted-foreground">{suggestions.title}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Script Preview:</p>
+                      <p className="text-muted-foreground whitespace-pre-wrap">{suggestions.script}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Layout:</p>
+                      <p className="text-muted-foreground whitespace-pre-wrap">{suggestions.layout}</p>
+                    </div>
+                  </div>
+                );
+              } catch (e) {
+                return <p className="text-sm text-muted-foreground">{data.output}</p>;
+              }
+            }}
+            onInsert={() => {
+              toast({
+                title: "Video script generated",
+                description: "Copy the script from the AI assistant panel for your video production.",
+              });
+              setActiveTab("form");
+            }}
+          />
+        );
+      case "quiz":
+        return (
+          <CoachAIAside
+            title="AI Quiz Assistant"
+            description="Generate multiple-choice questions based on existing text/video content in this lesson."
+            actionKey="quiz_builder_suggest"
+            context={{
+              lessonId,
+              quizTitle: form.watch("quiz_title") || undefined,
+              quizDescription: form.watch("quiz_description") || undefined,
+              existingQuestions: (form.watch("quiz_questions") || []).length,
+            }}
+            customRenderer={renderAIQuizPreview}
+            onInsert={(output) => {
+              handleQuizInsert(output);
+              setActiveTab("form");
+            }}
+          />
+        );
+      default:
+        return (
+          <p className="text-sm text-muted-foreground">
+            AI support is not available for this content type.
+          </p>
+        );
+    }
+  };
+
+  const renderQualityPanel = () => {
+    if (contentType !== "text") {
+      return (
+        <p className="text-sm text-muted-foreground">
+          Quality analysis is only available for text-based content.
+        </p>
+      );
+    }
+
+    return (
+      <ContentQualityPanel
+        contentId={editContent?.id}
+        lessonId={lessonId}
+        draftText={form.watch("text_content") || ""}
+        contentTitle={editContent?.content_data?.title || "Text Content"}
+      />
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl w-[95vw]">
+        <DialogHeader>
+          <DialogTitle className="text-lg sm:text-xl">
+            {isEditing ? `Edit Content (${editContent?.content_type})` : "Add Content to Lesson"}
+          </DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit(
+              (data) => createMutation.mutate(data),
+              (errors) => {
+                console.error("❌ Form validation errors:", errors);
+                const errorMessages = Object.entries(errors)
+                  .map(([field, error]: [string, any]) => `${field}: ${error?.message || "Invalid"}`)
+                  .join("\n");
+
+                toast({
+                  title: "Validation Error",
+                  description: errorMessages || "Please check all required fields and try again.",
+                  variant: "destructive",
+                });
+              }
+            )}
+            className="space-y-6"
+          >
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as TabKey)}
+              className="space-y-4"
+            >
+              <TabsList className="grid grid-cols-3 w-full">
+                <TabsTrigger value="form">Form</TabsTrigger>
+                <TabsTrigger value="ai">AI Assistant</TabsTrigger>
+                <TabsTrigger value="quality" disabled={contentType !== "text"}>
+                  Content Quality
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="form" className={contentType === "text" ? "" : "h-[48vh]"}>
+                {contentType === "text" ? (
+                  <div className="space-y-4 pb-6">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_210px] items-center">
+                      <FormField
+                        control={form.control}
+                        name="content_type"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <FormLabel className="text-sm mb-0">Content Type</FormLabel>
+                              <Select
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  if (value === "quiz" && !form.getValues("quiz_questions")) {
+                                    form.setValue("quiz_questions", [
+                                      {
+                                        question: "",
+                                        options: ["", ""],
+                                        correct_answer: 0,
+                                        explanation: "",
+                                      },
+                                    ]);
+                                  }
+                                  if (value !== "text" && activeTab === "quality") {
+                                    setActiveTab("form");
+                                  }
+                                }}
+                                value={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="h-9 text-sm w-full sm:w-[12rem]">
+                                    <SelectValue placeholder="Select content type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="text">Text</SelectItem>
+                                  <SelectItem value="video">Video</SelectItem>
+                                  <SelectItem value="quiz">Quiz</SelectItem>
+                                  <SelectItem value="interactive">Interactive</SelectItem>
+                                  <SelectItem value="file">File</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="is_required"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between gap-3">
+                              <FormLabel className="text-sm mb-0">Required</FormLabel>
+                              <FormControl>
+                                <Switch
+                                  checked={Boolean(field.value) && !isVideoContent}
+                                  disabled={isVideoContent}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {isVideoContent
+                                ? "Videos stay optional."
+                                : "Learners must complete this item."}
+                            </p>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {renderMainFields()}
+                  </div>
+                ) : (
+                  <ScrollArea className="h-full pr-1 lg:pr-4">
+                    <div className="space-y-4 pb-6">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_210px] items-center">
+                        <FormField
+                          control={form.control}
+                          name="content_type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <FormLabel className="text-sm mb-0">Content Type</FormLabel>
+                                <Select
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    if (value === "quiz" && !form.getValues("quiz_questions")) {
+                                      form.setValue("quiz_questions", [
+                                        {
+                                          question: "",
+                                          options: ["", ""],
+                                          correct_answer: 0,
+                                          explanation: "",
+                                        },
+                                      ]);
+                                    }
+                                    if (value !== "text" && activeTab === "quality") {
+                                      setActiveTab("form");
+                                    }
+                                  }}
+                                  value={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className="h-9 text-sm w-full sm:w-[12rem]">
+                                      <SelectValue placeholder="Select content type" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="text">Text</SelectItem>
+                                    <SelectItem value="video">Video</SelectItem>
+                                    <SelectItem value="quiz">Quiz</SelectItem>
+                                    <SelectItem value="interactive">Interactive</SelectItem>
+                                    <SelectItem value="file">File</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="is_required"
+                          render={({ field }) => (
+                            <FormItem>
+                              <div className="flex items-center justify-between gap-3">
+                                <FormLabel className="text-sm mb-0">Required</FormLabel>
+                                <FormControl>
+                                  <Switch
+                                    checked={Boolean(field.value) && !isVideoContent}
+                                    disabled={isVideoContent}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {isVideoContent
+                                  ? "Videos stay optional."
+                                  : "Learners must complete this item."}
+                              </p>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {renderMainFields()}
+                    </div>
+                  </ScrollArea>
+                )}
+              </TabsContent>
+
+              <TabsContent value="ai" className="h-[48vh]">
+                <ScrollArea className="h-full pr-1">
+                  <div className="space-y-4 pb-6">
+                    {renderAIWriter()}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="quality" className="h-[48vh]">
+                <ScrollArea className="h-full pr-1">
+                  <div className="space-y-4 pb-6">
+                    {renderQualityPanel()}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => onOpenChange(false)}
                 className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 disabled={createMutation.isPending}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
-                {createMutation.isPending 
-                  ? (isEditing ? "Updating..." : "Creating...") 
+                {createMutation.isPending
+                  ? (isEditing ? "Updating..." : "Creating...")
                   : (isEditing ? "Update Content" : "Create Content")}
               </Button>
             </div>
