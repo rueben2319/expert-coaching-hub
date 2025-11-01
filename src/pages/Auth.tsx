@@ -53,16 +53,14 @@ export default function Auth() {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
-    // If role already set, navigate immediately
-    // But only if we're not explicitly on the auth page (prevent redirect loop)
-    if (role && window.location.pathname === '/auth') {
-      // User is logged in and trying to access auth page
-      // Don't redirect automatically - let them see they're already logged in
+    // Only handle redirects when explicitly on the /auth page
+    // This prevents interfering with other routes during page reload
+    if (window.location.pathname !== '/auth') {
       return;
     }
-    
+
+    // If role already set and user is on auth page, show "already logged in" message
     if (role) {
-      navigate(`/${role}`);
       return;
     }
 
