@@ -16,6 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import React, { useEffect } from "react";
 import { CoachAIAside } from "@/components/ai/CoachAIAside";
+import { ContentQualityPanel } from "@/components/coach/ContentQualityPanel";
 import type { AIResponsePayload } from "@/lib/ai/aiClient";
 
 const quizQuestionSchema = z.object({
@@ -435,7 +436,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
             />
 
             {contentType === "text" && (
-              <div className="grid gap-4 lg:grid-cols-[1fr_350px]">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px_320px] lg:grid-cols-[minmax(0,1fr)_320px]">
                 <FormField
                   control={form.control}
                   name="text_content"
@@ -486,6 +487,12 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                       console.error("Failed to parse AI suggestions:", e);
                     }
                   }}
+                />
+                <ContentQualityPanel
+                  contentId={editContent?.id}
+                  lessonId={lessonId}
+                  draftText={form.watch("text_content") || ""}
+                  contentTitle={editContent?.content_data?.title || "Text Content"}
                 />
               </div>
             )}

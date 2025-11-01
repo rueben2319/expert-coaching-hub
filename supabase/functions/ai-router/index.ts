@@ -1069,41 +1069,76 @@ Return as JSON array:
 
   "content_analyze": async ({ payload, supabase, user }) => {
     const context = payload.context ?? {};
-    const contentId = requireContextString(context, "contentId", "content_analyze");
-    
-    // Fetch content details
-    const { data: content, error: contentError } = await supabase
-      .from("lesson_content")
-      .select(`
-        id,
-        title,
-        content_type,
-        content_data,
-        order_index,
-        lessons (
+    const contentId = pickContextString(context, ["contentId", "content_id"]);
+    const draftText = pickContextString(context, ["draftText", "draft_text"]);
+    const lessonId = pickContextString(context, ["lessonId", "lesson_id"]);
+
+    if (!contentId && (!draftText || draftText.trim().length === 0)) {
+      throw new Error("Content ID or draftText is required for analysis");
+    }
+
+    let content: any | null = null;
+    let lesson: any | null = null;
+    let textContent = draftText || "";
+
+    if (contentId) {
+      const { data: fetchedContent, error: contentError } = await supabase
+        .from("lesson_content")
+        .select(`
           id,
           title,
-          description,
-          learning_objectives,
-          estimated_duration
-        )
-      `)
-      .eq("id", contentId)
-      .single();
+          content_type,
+          content_data,
+          order_index,
+          lessons (
+            id,
+            title,
+            description,
+            learning_objectives,
+            estimated_duration
+          )
+        `)
+        .eq("id", contentId)
+        .single();
 
-    if (contentError || !content) {
-      throw new Error(`Content not found: ${contentId}`);
+      if (contentError || !fetchedContent) {
+        if (!textContent) {
+          throw new Error(`Content not found: ${contentId}`);
+        }
+      } else {
+        content = fetchedContent;
+        lesson = content?.lessons ?? null;
+
+        if (!textContent) {
+          if (content?.content_type === "text" && content.content_data?.text) {
+            textContent = content.content_data.text;
+          } else if (content?.content_type === "quiz" && content.content_data?.questions) {
+            textContent = JSON.stringify(content.content_data.questions, null, 2);
+          }
+        }
+      }
     }
 
-    const lesson = content.lessons;
-    
-    // Extract text content
-    let textContent = "";
-    if (content.content_type === "text" && content.content_data?.text) {
-      textContent = content.content_data.text;
-    } else if (content.content_type === "quiz" && content.content_data?.questions) {
-      textContent = JSON.stringify(content.content_data.questions, null, 2);
+    if (!lesson && lessonId) {
+      const { data: lessonData } = await supabase
+        .from("lessons")
+        .select("id, title, description, learning_objectives, estimated_duration")
+        .eq("id", lessonId)
+        .single();
+      lesson = lessonData ?? null;
     }
+
+    if (!lesson && contentId) {
+      const { data: lessonData } = await supabase
+        .from("lesson_content")
+        .select("lessons ( id, title, description, learning_objectives, estimated_duration )")
+        .eq("id", contentId)
+        .single();
+      lesson = lessonData?.lessons ?? null;
+    }
+
+    const summarizedContentType = content?.content_type || (lesson ? "text" : "draft");
+    const contentTitle = content?.title || (lesson?.title ? `${lesson.title} draft` : "Draft Content");
 
     const prompt = `You are a content quality expert analyzing educational material. Evaluate this lesson content and provide actionable improvement suggestions.
 
@@ -1113,9 +1148,8 @@ Return as JSON array:
 - Learning Objectives: ${lesson?.learning_objectives?.join(", ") || "Not specified"}
 - Estimated Duration: ${lesson?.estimated_duration || "Not set"} minutes
 
-**Content Being Analyzed:**
-- Type: ${content.content_type}
-- Title: ${content.title}
+- Type: ${summarizedContentType}
+- Title: ${contentTitle}
 - Content: ${textContent.substring(0, 3000)}${textContent.length > 3000 ? "..." : ""}
 
 **Analyze the following aspects:**
@@ -1206,7 +1240,8 @@ Return as JSON:`;
       metadata: {
         content_id: contentId,
         lesson_id: lesson?.id,
-        content_type: content.content_type,
+        content_type: summarizedContentType,
+        has_persisted_content: Boolean(contentId && content),
         action: "content_analyze",
       },
     };

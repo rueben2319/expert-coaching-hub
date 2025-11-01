@@ -10,7 +10,7 @@ import type { AIResponsePayload } from "@/lib/ai/aiClient";
 interface CoachAIAsideProps {
   title: string;
   description?: string;
-  actionKey: "course_outline_suggest" | "module_outline_suggest" | "lesson_draft_suggest" | "content_draft_suggest" | "quiz_builder_suggest" | "lesson_summarize" | "course_recommend";
+  actionKey: "course_outline_suggest" | "module_outline_suggest" | "lesson_draft_suggest" | "content_draft_suggest" | "quiz_builder_suggest" | "lesson_summarize" | "course_recommend" | "content_analyze";
   context: Record<string, unknown>;
   prompt?: string;
   onInsert?: (output: string) => void;
