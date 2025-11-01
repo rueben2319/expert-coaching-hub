@@ -123,8 +123,9 @@ export default function Auth() {
               // upsert user role via secure RPC (self-only)
               const { data: rpcData, error: rpcError } = await supabase
                 .rpc('upsert_own_role', { p_role: desiredRole });
-              if (rpcError || rpcData?.success === false) {
-                throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+              if (rpcError || (rpcData && typeof rpcData === 'object' && 'success' in rpcData && rpcData.success === false)) {
+                const errorMsg = rpcError?.message || (rpcData && typeof rpcData === 'object' && 'error' in rpcData && typeof rpcData.error === 'string' ? rpcData.error : 'Failed to set role');
+                throw new Error(errorMsg);
               }
 
               await refreshRole();
@@ -298,8 +299,9 @@ export default function Auth() {
     try {
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('upsert_own_role', { p_role: pendingRole });
-      if (rpcError || rpcData?.success === false) {
-        throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+      if (rpcError || (rpcData && typeof rpcData === 'object' && 'success' in rpcData && rpcData.success === false)) {
+        const errorMsg = rpcError?.message || (rpcData && typeof rpcData === 'object' && 'error' in rpcData && typeof rpcData.error === 'string' ? rpcData.error : 'Failed to set role');
+        throw new Error(errorMsg);
       }
 
       await refreshRole();
