@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { RecommendedCourses } from "@/components/student/RecommendedCourses";
 import { BookOpen, Clock, Play, Sparkles, Target } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -291,6 +292,9 @@ export default function ClientDashboard() {
         </div>
 
         <aside className="space-y-6">
+          {/* Recommended Courses */}
+          <RecommendedCourses />
+
           <Card className="sticky top-28">
             <CardHeader>
               <CardTitle>Progress overview</CardTitle>

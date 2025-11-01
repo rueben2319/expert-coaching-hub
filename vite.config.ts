@@ -15,4 +15,51 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // UI library
+          'radix-ui': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-select',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-toast',
+            '@radix-ui/react-tooltip',
+          ],
+          // State management
+          'query-vendor': ['@tanstack/react-query'],
+          // Supabase
+          'supabase-vendor': ['@supabase/supabase-js'],
+          // Charts (heavy library)
+          'charts': ['recharts'],
+          // Form handling
+          'form-vendor': ['react-hook-form', '@hookform/resolvers', 'zod'],
+          // Date utilities
+          'date-vendor': ['date-fns', 'react-day-picker'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+    sourcemap: mode === 'development',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: mode === 'production',
+        drop_debugger: mode === 'production',
+      },
+    },
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      '@tanstack/react-query',
+      '@supabase/supabase-js',
+    ],
+  },
 }));

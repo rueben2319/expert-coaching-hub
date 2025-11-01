@@ -2,11 +2,11 @@ import { ReactNode, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -15,11 +15,26 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, ChevronRight, GraduationCap, LogOut, Menu, User, Search, HelpCircle, Globe, Shield } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  GraduationCap,
+  LogOut,
+  Menu,
+  User,
+  Search,
+  HelpCircle,
+  Globe,
+  Shield,
+  LayoutDashboard,
+  BarChart3,
+  Settings,
+} from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TokenManagementDashboard } from "@/components/TokenManagementDashboard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useCredits } from "@/hooks/useCredits";
 interface SidebarItem {
   icon: ReactNode;
   label: string;
@@ -56,6 +71,7 @@ export function DashboardLayout({
   brandName = "Experts Coaching Hub",
 }: DashboardLayoutProps) {
   const { user, signOut, role } = useAuth();
+  const { balance, walletLoading } = useCredits();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -161,7 +177,7 @@ export function DashboardLayout({
               )}
             >
               <Avatar className={cn("h-8 w-8", !collapsed && "mr-3")}>
-                <AvatarImage src="" alt={user?.user_metadata?.full_name} />
+                <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
                 <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs">
                   {getInitials(user?.user_metadata?.full_name)}
                 </AvatarFallback>
@@ -178,41 +194,68 @@ export function DashboardLayout({
               )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side={collapsed ? "right" : "top"} className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">
+          <DropdownMenuContent
+            align="end"
+            side={collapsed ? "right" : "top"}
+            className="w-72 p-0"
+          >
+            <div className="px-4 pt-4 pb-3 flex items-start gap-3">
+              <Avatar className="h-12 w-12">
+                <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
+                <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground">
+                  {getInitials(user?.user_metadata?.full_name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold leading-tight truncate">
                   {user?.user_metadata?.full_name || "User"}
-                </span>
-                <span className="text-xs text-muted-foreground">{user?.email}</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {role ? role.charAt(0).toUpperCase() + role.slice(1) : "Member"}
+                  {user?.created_at ? ` • Member since ${new Date(user.created_at).getFullYear()}` : ""}
+                </p>
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline" className="text-xs font-medium">
+                    {walletLoading ? "Loading credits..." : `${balance ?? 0} credits`}
+                  </Badge>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() => navigate("/profile?tab=credits")}
+                  >
+                    Buy credits
+                  </button>
+                </div>
               </div>
-            </DropdownMenuLabel>
+            </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/profile")}>
-              <User className="mr-2 h-4 w-4" />
-              Profile
-            </DropdownMenuItem>
-            <TokenManagementDialog>
-              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                <Shield className="mr-2 h-4 w-4" />
-                Token Management
+            <div className="py-1">
+              <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach" : role === "admin" ? "/admin" : "/client")}>
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                Dashboard
               </DropdownMenuItem>
-            </TokenManagementDialog>
-
-            {role === 'admin' && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/admin')}>
-                  <Shield className="mr-2 h-4 w-4" />
-                  Admin Dashboard
-                </DropdownMenuItem>
-              </>
-            )}
-
+              <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}>
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Progress
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/profile")}>
+                <Settings className="mr-2 h-4 w-4" />
+                Settings
+              </DropdownMenuItem>
+            </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut}>
+            <div className="py-1">
+              <DropdownMenuItem onClick={() => navigate("/privacy")}>
+                Privacy
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/terms")}>
+                Terms
+              </DropdownMenuItem>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
-              Sign Out
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -326,48 +369,77 @@ export function DashboardLayout({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="h-9 w-9 rounded-full p-0">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="" alt={user?.user_metadata?.full_name} />
+                    <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
                     <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs">
                       {getInitials(user?.user_metadata?.full_name)}
                     </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">
+              <DropdownMenuContent align="end" className="w-72 p-0">
+                <div className="px-4 pt-4 pb-3 flex items-start gap-3">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
+                    <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground">
+                      {getInitials(user?.user_metadata?.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-tight truncate">
                       {user?.user_metadata?.full_name || "User"}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{user?.email}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {role ? role.charAt(0).toUpperCase() + role.slice(1) : "Member"}
+                      {user?.created_at ? ` • Member since ${new Date(user.created_at).getFullYear()}` : ""}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {walletLoading ? "Loading credits..." : `${balance ?? 0} credits`}
+                      </Badge>
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-primary hover:underline"
+                        onClick={() => navigate("/profile?tab=credits")}
+                      >
+                        Buy credits
+                      </button>
+                    </div>
                   </div>
-                </DropdownMenuLabel>
+                </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/profile")}>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <TokenManagementDialog>
-              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                <Shield className="mr-2 h-4 w-4" />
-                Token Management
-              </DropdownMenuItem>
-            </TokenManagementDialog>
-
-            {role === 'admin' && (
-              <>
+                <div className="py-1">
+                  <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach" : role === "admin" ? "/admin" : "/client")}>
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    Dashboard
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Progress
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/profile")}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <TokenManagementDialog>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <Shield className="mr-2 h-4 w-4" />
+                      Token Management
+                    </DropdownMenuItem>
+                  </TokenManagementDialog>
+                </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/admin')}>
-                  <Shield className="mr-2 h-4 w-4" />
-                  Admin Dashboard
-                </DropdownMenuItem>
-              </>
-            )}
-
-            <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={signOut}>
+                <div className="py-1">
+                  <DropdownMenuItem onClick={() => navigate("/privacy")}>
+                    Privacy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/terms")}>
+                    Terms
+                  </DropdownMenuItem>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
-                  Sign Out
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

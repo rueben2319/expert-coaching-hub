@@ -49,7 +49,6 @@ export const clientSidebarSections = [
     items: [
       { icon: <Search className="w-4 h-4" />, label: "Explore", href: "/client/courses" },
       { icon: <BookOpen className="w-4 h-4" />, label: "My Courses", href: "/client/my-courses" },
-      { icon: <Wallet className="w-4 h-4" />, label: "Credits", href: "/client/credits" },
       { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", href: "/client/analytics" },
     ],
   },

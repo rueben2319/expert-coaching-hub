@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,9 +41,17 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const { user, role, refreshRole, signOut } = useAuth();
+  const hasInitialized = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      hasInitialized.current = false;
+      return;
+    }
+    
+    // Prevent infinite loop - only run once per user session
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
 
     // If role already set, navigate immediately
     // But only if we're not explicitly on the auth page (prevent redirect loop)
@@ -112,14 +120,13 @@ export default function Auth() {
 
           if (desiredRole === 'client' || desiredRole === 'coach') {
             try {
-              // upsert user role server-side
-              const { error: roleError } = await supabase
-                .from('user_roles')
-                .upsert({ user_id: user.id, role: desiredRole }, { onConflict: 'user_id' });
+              // upsert user role via secure RPC (self-only)
+              const { data: rpcData, error: rpcError } = await supabase
+                .rpc('upsert_own_role', { p_role: desiredRole });
+              if (rpcError || rpcData?.success === false) {
+                throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+              }
 
-              if (roleError) throw roleError;
-
-              await supabase.auth.updateUser({ data: { role: desiredRole } });
               await refreshRole();
               try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
               navigate(`/${desiredRole}`);
@@ -149,7 +156,7 @@ export default function Auth() {
     return () => {
       isMounted = false;
     };
-  }, [user, navigate, refreshRole]);
+  }, [user, navigate]);  // Removed refreshRole dependency to prevent infinite loop
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,17 +172,36 @@ export default function Auth() {
         if (error) throw error;
         toast.success("Welcome back!");
       } else {
-        // Client-side validation
+        // Client-side validation and sanitization
         if (!fullName || fullName.trim().length < 2) {
           toast.error("Please provide your full name.");
           setLoading(false);
           return;
         }
 
-        // Sanitize full name
-        const sanitizedFullName = fullName.trim().replace(/[<>]/g, '');
-        if (sanitizedFullName !== fullName.trim()) {
-          toast.error("Full name contains invalid characters.");
+        // Comprehensive sanitization
+        const sanitizedFullName = fullName
+          .trim()
+          .normalize('NFKC')  // Unicode normalization
+          .replace(/[^\p{L}\p{M}\s'-]/gu, '')  // Only letters, marks, spaces, hyphens, apostrophes
+          .replace(/\s+/g, ' ')  // Collapse multiple spaces
+          .slice(0, 100);  // Max length
+
+        // Validation
+        if (sanitizedFullName.length < 2 || sanitizedFullName.length > 100) {
+          toast.error("Full name must be between 2 and 100 characters.");
+          setLoading(false);
+          return;
+        }
+
+        if (!/^[\p{L}\p{M}\s'-]+$/u.test(sanitizedFullName)) {
+          toast.error("Full name can only contain letters, spaces, hyphens, and apostrophes.");
+          setLoading(false);
+          return;
+        }
+
+        if (/^\s|\s$/.test(sanitizedFullName)) {
+          toast.error("Full name cannot start or end with spaces.");
           setLoading(false);
           return;
         }
@@ -270,23 +296,11 @@ export default function Auth() {
     setSubmittingRole(true);
 
     try {
-      const { error: roleError } = await supabase
-        .from("user_roles")
-        .upsert(
-          {
-            user_id: user.id,
-            role: pendingRole,
-          },
-          { onConflict: "user_id" }
-        );
-
-      if (roleError) throw roleError;
-
-      const { error: metadataError } = await supabase.auth.updateUser({
-        data: { role: pendingRole },
-      });
-
-      if (metadataError) throw metadataError;
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('upsert_own_role', { p_role: pendingRole });
+      if (rpcError || rpcData?.success === false) {
+        throw new Error(rpcError?.message || rpcData?.error || 'Failed to set role');
+      }
 
       await refreshRole();
       setShowRoleDialog(false);

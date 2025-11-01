@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import DOMPurify from "dompurify";
+import { logger } from "@/lib/logger";
 
 interface TextContentProps {
   content: {
@@ -17,6 +19,9 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
   const { user } = useAuth();
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [timeSpent, setTimeSpent] = useState(0);
+  const [requiredTime, setRequiredTime] = useState(0);
+  const [isShortContent, setIsShortContent] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Check if content is already completed
@@ -29,7 +34,7 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
         .select("is_completed")
         .eq("user_id", user.id)
         .eq("content_id", contentId)
-        .single();
+        .maybeSingle();
 
       if (data?.is_completed) {
         setIsCompleted(true);
@@ -39,6 +44,75 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
 
     checkCompletionStatus();
   }, [user, contentId]);
+
+  // Calculate required reading time based on word count
+  useEffect(() => {
+    const text = content?.text ?? "";
+    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+    // Average reading speed: 200 words per minute
+    // Minimum 10 seconds even for short content
+    const readingTimeSeconds = Math.max((wordCount / 200) * 60, 10);
+    setRequiredTime(readingTimeSeconds);
+  }, [content]);
+
+  // Check if content is short enough to not require scrolling
+  useEffect(() => {
+    const checkContentHeight = () => {
+      if (contentRef.current) {
+        const element = contentRef.current;
+        const isShort = element.scrollHeight <= element.clientHeight + 10;
+        setIsShortContent(isShort);
+        if (isShort) {
+          // Auto-enable scroll completion for short content
+          setHasScrolledToBottom(true);
+        }
+      }
+    };
+
+    // Check after content is rendered
+    const timeoutId = setTimeout(checkContentHeight, 100);
+    return () => clearTimeout(timeoutId);
+  }, [content]);
+
+  // Track time spent on content with proper visibility handling
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    const startTimer = () => {
+      if (interval) return; // Already running
+      interval = setInterval(() => {
+        setTimeSpent(prev => prev + 1);
+      }, 1000);
+    };
+
+    const stopTimer = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopTimer();
+      } else if (!isCompleted) {
+        startTimer();
+      }
+    };
+
+    // Start timer if conditions are met
+    if (!isCompleted && !document.hidden) {
+      startTimer();
+    }
+
+    // Listen for visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopTimer();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isCompleted]);
 
   // Handle scroll events
   const handleScroll = () => {
@@ -69,7 +143,10 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
           content_id: contentId,
           is_completed: true,
           interaction_data: {
-            scrolled_to_bottom: true,
+            scrolled_to_bottom: hasScrolledToBottom,
+            time_spent: timeSpent,
+            required_time: requiredTime,
+            is_short_content: isShortContent,
             completed_at: new Date().toISOString(),
           },
         });
@@ -77,78 +154,21 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
       setIsCompleted(true);
       if (onComplete) onComplete();
     } catch (error) {
-      console.error("Error marking text content as complete:", error);
+      logger.error("Error marking text content as complete:", error);
     }
   };
+
+  // Check if user can mark content as complete
+  const canMarkComplete = hasScrolledToBottom && timeSpent >= requiredTime;
 
   // Basic HTML escaping for non-HTML formats
   const escapeHtml = (input: string) =>
     input
-      .replaceAll(/&/g, "&amp;")
-      .replaceAll(/</g, "&lt;")
-      .replaceAll(/>/g, "&gt;")
-      .replaceAll(/"/g, "&quot;")
-      .replaceAll(/'/g, "&#39;");
-
-  // Very small, conservative sanitizer for HTML content
-  const sanitizeHtml = (unsafeHtml: string) => {
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(unsafeHtml, "text/html");
-      const disallowedTags = new Set([
-        "script",
-        "style",
-        "iframe",
-        "object",
-        "embed",
-        "link",
-        "meta",
-        "form",
-      ]);
-
-      const walk = (node: Node) => {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          const el = node as HTMLElement;
-
-          // Drop disallowed elements entirely
-          if (disallowedTags.has(el.tagName.toLowerCase())) {
-            el.remove();
-            return;
-          }
-
-          // Remove event handlers and javascript/data URLs
-          // Clone array because attributes is live
-          Array.from(el.attributes).forEach((attr) => {
-            const name = attr.name.toLowerCase();
-            const value = attr.value.trim();
-            const isEventHandler = name.startsWith("on");
-            const isUriAttr = name === "src" || name === "href" || name === "xlink:href";
-            const lowerValue = value.toLowerCase();
-            const hasJsProtocol = lowerValue.startsWith("javascript:");
-            const hasDataProtocol = lowerValue.startsWith("data:");
-            if (isEventHandler || (isUriAttr && (hasJsProtocol || hasDataProtocol))) {
-              el.removeAttribute(attr.name);
-            }
-          });
-
-          // Safe defaults for links
-          if (el.tagName.toLowerCase() === "a") {
-            if (!el.getAttribute("rel")) el.setAttribute("rel", "noopener noreferrer");
-            // Do not force target; allow default behavior
-          }
-
-          // Recurse
-          Array.from(el.childNodes).forEach(walk);
-        }
-      };
-
-      Array.from(doc.body.childNodes).forEach(walk);
-      return doc.body.innerHTML;
-    } catch {
-      // Fallback to escaped text if DOMParser fails
-      return escapeHtml(unsafeHtml);
-    }
-  };
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
   // Lightweight markdown to HTML (very conservative)
   const markdownToHtml = (md: string) => {
@@ -162,7 +182,7 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
     // Paragraphs: split on blank lines, join with <p>
     const paragraphs = formatted
       .split(/\n{2,}/)
-      .map((p) => `<p>${p.replaceAll("\n", "<br/>")}</p>`) // single newlines -> <br/>
+      .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`) // single newlines -> <br/>
       .join("");
 
     return paragraphs;
@@ -171,10 +191,25 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
   const getRenderedHtml = () => {
     const text = content?.text ?? "";
     const format = content?.format ?? "plain";
-    if (format === "html") return sanitizeHtml(text);
-    if (format === "markdown") return sanitizeHtml(markdownToHtml(text));
-    // plain
-    return sanitizeHtml(`<p>${escapeHtml(text).replaceAll("\n", "<br/>")}</p>`);
+    
+    let html = "";
+    if (format === "html") {
+      html = text;
+    } else if (format === "markdown") {
+      html = markdownToHtml(text);
+    } else {
+      // plain text
+      html = `<p>${escapeHtml(text).replace(/\n/g, "<br/>")}</p>`;
+    }
+    
+    // Use DOMPurify for robust XSS protection
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre'],
+      ALLOWED_ATTR: ['href', 'rel', 'target', 'class'],
+      ALLOW_DATA_ATTR: false,
+      ADD_ATTR: ['target'],
+      ADD_TAGS: [],
+    });
   };
 
   return (
@@ -187,11 +222,17 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
       />
 
       {hasScrolledToBottom && !isCompleted && (
-        <div className="flex justify-center">
-          <Button onClick={handleMarkComplete} className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
-            Mark Complete
-          </Button>
+        <div className="flex flex-col items-center gap-2">
+          {timeSpent < requiredTime ? (
+            <div className="text-sm text-muted-foreground">
+              ⏱️ Keep reading... {Math.ceil(requiredTime - timeSpent)}s remaining
+            </div>
+          ) : (
+            <Button onClick={handleMarkComplete} className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Mark Complete
+            </Button>
+          )}
         </div>
       )}
 
@@ -204,9 +245,14 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
         </div>
       )}
 
-      {!hasScrolledToBottom && !isCompleted && (
+      {!hasScrolledToBottom && !isCompleted && !isShortContent && (
         <p className="text-xs text-muted-foreground text-center">
-          💡 Scroll to the bottom to mark this content as complete
+          💡 Scroll to the bottom and spend at least {Math.ceil(requiredTime)}s reading to mark this content as complete
+        </p>
+      )}
+      {isShortContent && !isCompleted && timeSpent < requiredTime && (
+        <p className="text-xs text-muted-foreground text-center">
+          💡 Spend at least {Math.ceil(requiredTime)}s reading to mark this content as complete ({Math.ceil(requiredTime - timeSpent)}s remaining)
         </p>
       )}
     </div>

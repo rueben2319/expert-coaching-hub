@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
@@ -81,22 +81,41 @@ export function useCredits() {
     },
   });
 
-  // Fetch credit transactions
-  const { data: transactions, isLoading: transactionsLoading } = useQuery({
+  // Fetch credit transactions with pagination
+  const PAGE_SIZE = 20;
+  const {
+    data: transactionsData,
+    isLoading: transactionsLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["credit_transactions", user?.id],
     enabled: !!user?.id,
-    queryFn: async () => {
-      const { data, error } = await supabase
+    queryFn: async ({ pageParam = 0 }) => {
+      const { data, error, count } = await supabase
         .from("credit_transactions")
-        .select("*")
+        .select("*", { count: 'exact' })
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .range(pageParam * PAGE_SIZE, (pageParam + 1) * PAGE_SIZE - 1);
 
       if (error) throw error;
-      return data;
+      return { data: data || [], count: count || 0, page: pageParam };
     },
+    getNextPageParam: (lastPage, allPages) => {
+      const totalFetched = allPages.reduce((sum, p) => sum + p.data.length, 0);
+      if (totalFetched < lastPage.count) {
+        return allPages.length;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
   });
+
+  // Flatten paginated data
+  const transactions = transactionsData?.pages.flatMap(p => p.data) || [];
+  const totalTransactions = transactionsData?.pages[0]?.count || 0;
 
   // Purchase credits mutation
   const purchaseCredits = useMutation({
@@ -178,9 +197,13 @@ export function useCredits() {
     packages,
     packagesLoading,
 
-    // Transactions
+    // Transactions with pagination
     transactions,
     transactionsLoading,
+    totalTransactions,
+    hasMoreTransactions: hasNextPage,
+    loadMoreTransactions: fetchNextPage,
+    isLoadingMore: isFetchingNextPage,
 
     // Withdrawal requests
     withdrawalRequests,

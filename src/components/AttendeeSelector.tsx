@@ -230,10 +230,10 @@ export const AttendeeSelector = ({
                       <Avatar className="h-4 w-4">
                         <AvatarImage src={client.avatar_url} />
                         <AvatarFallback className="text-xs">
-                          {client.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                          {(client.full_name || client.email).split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="truncate max-w-32">{client.full_name}</span>
+                      <span className="truncate max-w-32">{client.full_name || client.email}</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1">

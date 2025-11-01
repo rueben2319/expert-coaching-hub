@@ -15,6 +15,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import React, { useEffect } from "react";
+import { CoachAIAside } from "@/components/ai/CoachAIAside";
+import { ContentQualityPanel } from "@/components/coach/ContentQualityPanel";
+import type { AIResponsePayload } from "@/lib/ai/aiClient";
 
 const quizQuestionSchema = z.object({
   question: z.string().trim().min(1).max(500),
@@ -43,13 +46,17 @@ const contentSchema = z.object({
       return data.video_url && data.video_url.trim().length > 0;
     case "quiz":
       return data.quiz_questions && Array.isArray(data.quiz_questions) && data.quiz_questions.length > 0 &&
-             data.quiz_questions.every(q => q && q.question && q.question.trim().length > 0 && 
-             q.options && Array.isArray(q.options) && q.options.length >= 2);
+             data.quiz_questions.every(q => {
+               if (!q || !q.question || q.question.trim().length === 0) return false;
+               if (!q.options || !Array.isArray(q.options) || q.options.length < 2) return false;
+               // Check that all options have content
+               return q.options.every(opt => opt && opt.trim().length > 0);
+             });
     default:
       return true;
   }
 }, {
-  message: "Please fill in all required fields for the selected content type",
+  message: "Please fill in all required fields for the selected content type. For quizzes, ensure all questions have text and at least 2 non-empty options.",
   path: ["content_type"],
 });
 
@@ -66,7 +73,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
   const queryClient = useQueryClient();
   const isEditing = !!editContent;
 
-  const { data: nextOrderIndex } = useQuery({
+  const { data: nextOrderIndex, refetch: refetchOrderIndex } = useQuery({
     queryKey: ["next-order-index", lessonId],
     queryFn: async () => {
       console.log('🔍 Finding next order index for lesson:', lessonId);
@@ -87,14 +94,26 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       console.log('🎯 Next order index:', nextIndex);
       return nextIndex;
     },
-    enabled: !isEditing,
+    enabled: !isEditing && open, // Only fetch when dialog is open and not editing
+    staleTime: 0, // Always fetch fresh data
   });
+
+  // Refetch order index when dialog opens
+  useEffect(() => {
+    if (open && !isEditing) {
+      refetchOrderIndex();
+    }
+  }, [open, isEditing, refetchOrderIndex]);
 
   const form = useForm<ContentFormData>({
     resolver: zodResolver(contentSchema),
+    mode: "onSubmit", // Only validate on submit, not on change
     defaultValues: {
       content_type: editContent?.content_type || "text",
-      is_required: editContent?.is_required ?? true,
+      is_required:
+        editContent?.content_type === "video"
+          ? false
+          : editContent?.is_required ?? true,
       text_content: editContent?.content_data?.text || editContent?.content_data?.html || "",
       video_url: editContent?.content_data?.url || "",
       quiz_questions: editContent?.content_data?.questions || undefined, // Don't set default empty quiz
@@ -105,6 +124,13 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
   });
 
   const contentType = form.watch("content_type");
+  const isVideoContent = contentType === "video";
+
+  useEffect(() => {
+    if (isVideoContent && form.getValues("is_required")) {
+      form.setValue("is_required", false, { shouldDirty: true });
+    }
+  }, [isVideoContent, form]);
 
   // Update form when dialog opens with edit data
   useEffect(() => {
@@ -114,12 +140,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       // Extract content based on type
       let textContent = "";
       let videoUrl = "";
-      let quizQuestions = [{
-        question: "",
-        options: ["", ""],
-        correct_answer: 0,
-        explanation: "",
-      }];
+      let quizQuestions = undefined; // Default to undefined
       let quizTitle = "";
       let quizDescription = "";
       let passingScore = 70;
@@ -151,10 +172,13 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       setTimeout(() => {
         form.reset({
           content_type: editContent.content_type,
-          is_required: editContent.is_required ?? true,
+          is_required:
+            editContent.content_type === "video"
+              ? false
+              : editContent.is_required ?? true,
           text_content: textContent,
           video_url: videoUrl,
-          quiz_questions: quizQuestions,
+          quiz_questions: quizQuestions, // Only set if it's quiz content
           quiz_title: quizTitle,
           quiz_description: quizDescription,
           passing_score: passingScore,
@@ -174,6 +198,87 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
       });
     }
   }, [open, editContent, isEditing, form]);
+
+  const handleQuizInsert = (output: string) => {
+    try {
+      const parsed = JSON.parse(output) as {
+        questions: {
+          question: string;
+          options: string[];
+          answerIndex: number;
+          explanation: string;
+        }[];
+      };
+
+      if (!parsed?.questions || !Array.isArray(parsed.questions)) {
+        throw new Error("Invalid quiz format");
+      }
+
+      form.setValue(
+        "quiz_questions",
+        parsed.questions.map((q) => ({
+          question: q.question,
+          options: q.options,
+          correct_answer: q.answerIndex ?? 0,
+          explanation: q.explanation ?? "",
+        })),
+        { shouldDirty: true }
+      );
+
+      toast({
+        title: "Quiz draft inserted",
+        description: "Review and adjust the generated questions before saving.",
+      });
+    } catch (error) {
+      console.error("Failed to parse quiz output", error);
+      toast({
+        title: "Could not load AI quiz",
+        description: "The generated quiz response was not in the expected format.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const renderAIQuizPreview = (data: AIResponsePayload) => {
+    const parsed = (() => {
+      try {
+        return JSON.parse(data.output) as {
+          questions: {
+            question: string;
+            options: string[];
+            answerIndex: number;
+            explanation: string;
+          }[];
+        };
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!parsed?.questions) {
+      return <pre className="text-xs whitespace-pre-wrap">{data.output}</pre>;
+    }
+
+    return (
+      <div className="space-y-4 text-sm">
+        {parsed.questions.map((q, idx) => (
+          <div key={idx} className="border rounded-md p-3">
+            <p className="font-medium">Q{idx + 1}. {q.question}</p>
+            <ul className="list-disc ml-5 space-y-1 mt-2">
+              {q.options.map((opt, optIdx) => (
+                <li key={optIdx} className={optIdx === q.answerIndex ? "text-green-600 font-semibold" : ""}>
+                  {opt}
+                </li>
+              ))}
+            </ul>
+            {q.explanation && (
+              <p className="mt-2 text-muted-foreground text-xs">Explanation: {q.explanation}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: ContentFormData) => {
@@ -203,11 +308,13 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         contentData = { url: data.video_url || "", filename: "File" };
       }
 
+      const isVideo = data.content_type === "video";
+
       const insertData = {
         lesson_id: lessonId,
         content_type: data.content_type,
         content_data: contentData,
-        is_required: data.is_required,
+        is_required: isVideo ? false : data.is_required,
         order_index: nextOrderIndex || 0,
       };
 
@@ -221,7 +328,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
           .update({
             content_type: data.content_type,
             content_data: contentData,
-            is_required: data.is_required,
+            is_required: isVideo ? false : data.is_required,
           })
           .eq("id", editContent.id);
         if (error) {
@@ -262,7 +369,7 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg sm:text-xl">
             {isEditing ? `Edit Content (${editContent?.content_type})` : "Add Content to Lesson"}
@@ -270,9 +377,24 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => {
+            console.log('✅ Form validation passed, submitting data:', data);
             createMutation.mutate(data);
           }, (errors) => {
-            console.error('Form validation errors:', errors);
+            console.error('❌ Form validation errors:', errors);
+            console.error('❌ Error details:', JSON.stringify(errors, null, 2));
+            
+            // Get specific error messages
+            const errorMessages = Object.entries(errors).map(([field, error]: [string, any]) => {
+              return `${field}: ${error?.message || 'Invalid'}`;
+            }).join('\n');
+            
+            console.error('❌ Specific errors:', errorMessages);
+            
+            toast({
+              title: "Validation Error",
+              description: errorMessages || "Please check all required fields and try again.",
+              variant: "destructive"
+            });
           })} className="space-y-4 px-1">
             <FormField
               control={form.control}
@@ -283,6 +405,15 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                   <Select
                     onValueChange={(value) => {
                       field.onChange(value);
+                      // Initialize quiz questions when quiz is selected
+                      if (value === "quiz" && !form.getValues("quiz_questions")) {
+                        form.setValue("quiz_questions", [{
+                          question: "",
+                          options: ["", ""],
+                          correct_answer: 0,
+                          explanation: "",
+                        }]);
+                      }
                     }}
                     value={field.value}
                   >
@@ -305,40 +436,137 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
             />
 
             {contentType === "text" && (
-              <FormField
-                control={form.control}
-                name="text_content"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Text Content</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Enter your lesson content" rows={8} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px_320px] lg:grid-cols-[minmax(0,1fr)_320px]">
+                <FormField
+                  control={form.control}
+                  name="text_content"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Text Content</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Enter your lesson content" rows={12} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <CoachAIAside
+                  title="AI Content Writer"
+                  description="Generate a comprehensive blog-style article for this lesson."
+                  actionKey="content_draft_suggest"
+                  context={{
+                    lessonId,
+                    contentType: "text",
+                    contentTitle: "",
+                    contentDescription: form.watch("text_content")?.substring(0, 200),
+                  }}
+                  customRenderer={(data) => {
+                    try {
+                      const suggestions = JSON.parse(data.output);
+                      return (
+                        <div className="space-y-3 text-sm">
+                          <div>
+                            <p className="font-semibold text-foreground mb-1">Title:</p>
+                            <p className="text-muted-foreground">{suggestions.title}</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-foreground mb-1">Content Preview:</p>
+                            <p className="text-muted-foreground whitespace-pre-wrap line-clamp-6">{suggestions.content}</p>
+                          </div>
+                        </div>
+                      );
+                    } catch (e) {
+                      return <p className="text-sm text-muted-foreground">{data.output}</p>;
+                    }
+                  }}
+                  onInsert={(output) => {
+                    try {
+                      const suggestions = JSON.parse(output);
+                      form.setValue("text_content", suggestions.content, { shouldDirty: true });
+                    } catch (e) {
+                      console.error("Failed to parse AI suggestions:", e);
+                    }
+                  }}
+                />
+                <ContentQualityPanel
+                  contentId={editContent?.id}
+                  lessonId={lessonId}
+                  draftText={form.watch("text_content") || ""}
+                  contentTitle={editContent?.content_data?.title || "Text Content"}
+                />
+              </div>
             )}
 
             {contentType === "video" && (
-              <FormField
-                control={form.control}
-                name="video_url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Video URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://youtube.com/watch?v=..." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid gap-4 lg:grid-cols-[1fr_350px]">
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="video_url"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Video URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://youtube.com/watch?v=..." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <CoachAIAside
+                  title="AI Video Script Writer"
+                  description="Generate a detailed video script and production guide."
+                  actionKey="content_draft_suggest"
+                  context={{
+                    lessonId,
+                    contentType: "video",
+                    contentTitle: "",
+                    contentDescription: "",
+                  }}
+                  customRenderer={(data) => {
+                    try {
+                      const suggestions = JSON.parse(data.output);
+                      return (
+                        <div className="space-y-3 text-sm">
+                          <div>
+                            <p className="font-semibold text-foreground mb-1">Title:</p>
+                            <p className="text-muted-foreground">{suggestions.title}</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-foreground mb-1">Script Preview:</p>
+                            <p className="text-muted-foreground whitespace-pre-wrap line-clamp-4">{suggestions.script}</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-foreground mb-1">Layout:</p>
+                            <p className="text-muted-foreground whitespace-pre-wrap line-clamp-3">{suggestions.layout}</p>
+                          </div>
+                        </div>
+                      );
+                    } catch (e) {
+                      return <p className="text-sm text-muted-foreground">{data.output}</p>;
+                    }
+                  }}
+                  onInsert={(output) => {
+                    try {
+                      const suggestions = JSON.parse(output);
+                      // For video, we can't insert the script directly, but we can show it in a toast
+                      toast({
+                        title: "Video script generated",
+                        description: "Copy the script from the AI assistant panel to use in your video production.",
+                      });
+                    } catch (e) {
+                      console.error("Failed to parse AI suggestions:", e);
+                    }
+                  }}
+                />
+              </div>
             )}
 
             {contentType === "quiz" && (
-              <div className="space-y-4">
-                <h3 className="font-semibold text-base sm:text-lg">Quiz Builder</h3>
+              <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-base sm:text-lg">Quiz Builder</h3>
                 
                 <FormField
                   control={form.control}
@@ -575,7 +803,21 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                     </FormItem>
                   )}
                 />
+                </div>
 
+                <CoachAIAside
+                  title="AI Quiz Assistant"
+                  description="Generate multiple-choice questions based on existing text/video content in this lesson. Make sure to add text or video content first for better quiz generation."
+                  actionKey="quiz_builder_suggest"
+                  context={{
+                    lessonId,
+                    quizTitle: form.watch("quiz_title") || undefined,
+                    quizDescription: form.watch("quiz_description") || undefined,
+                    existingQuestions: (form.watch("quiz_questions") || []).length,
+                  }}
+                  customRenderer={renderAIQuizPreview}
+                  onInsert={handleQuizInsert}
+                />
               </div>
             )}
 
@@ -619,11 +861,17 @@ export function CreateContentDialog({ lessonId, open, onOpenChange, editContent 
                   <div className="flex-1">
                     <FormLabel className="text-sm sm:text-base">Required Content</FormLabel>
                     <p className="text-xs sm:text-sm text-muted-foreground">
-                      Students must complete this to progress
+                      {isVideoContent
+                        ? "Videos are informational. Use a quiz to verify comprehension instead."
+                        : "Students must complete this to progress"}
                     </p>
                   </div>
                   <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    <Switch
+                      checked={field.value && !isVideoContent}
+                      disabled={isVideoContent}
+                      onCheckedChange={field.onChange}
+                    />
                   </FormControl>
                 </FormItem>
               )}

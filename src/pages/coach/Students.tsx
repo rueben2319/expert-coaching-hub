@@ -75,13 +75,19 @@ export default function Students() {
       if (!enrollments?.length) return [];
       
       const studentIds = enrollments.map(e => e.user_id);
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from("lesson_progress")
         .select(`
-          *,
+          user_id,
+          lesson_id,
+          is_completed,
+          started_at,
+          completed_at,
           lessons!inner(
             id,
+            module_id,
             course_modules!inner(
+              course_id,
               courses!inner(coach_id)
             )
           )
@@ -93,6 +99,8 @@ export default function Students() {
       return data;
     },
     enabled: !!user?.id && !!enrollments?.length,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
   });
 
   // Process and group student data

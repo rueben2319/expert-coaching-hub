@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { CourseTemplateLayout } from "@/components/CourseTemplateLayout";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ContentRenderer } from "@/components/content/ContentRenderer";
+import { AIStudyBuddy } from "@/components/student/AIStudyBuddy";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
@@ -22,6 +23,7 @@ export default function CourseViewer() {
   const [currentView, setCurrentView] = useState<ViewType>("overview");
   const [currentModuleId, setCurrentModuleId] = useState<string | undefined>();
   const [currentLessonId, setCurrentLessonId] = useState<string | undefined>();
+  const [isCheckingCompletion, setIsCheckingCompletion] = useState(false);
 
   // Fetch course details
   const { data: course, isLoading: courseLoading } = useQuery({
@@ -147,77 +149,168 @@ export default function CourseViewer() {
     enabled: !!currentLessonId && currentView === "lesson",
   });
 
+  // Track completion status to prevent race conditions
+  const completionInProgress = useRef(false);
+  const lastCompletedLesson = useRef<string | null>(null);
+
   // Auto-complete lesson when all required content is completed
+  // Uses debouncing, ref-based locking, and session tracking to prevent race conditions
   useEffect(() => {
     const checkAndCompleteLesson = async () => {
       if (!currentLessonId || !currentLesson || !user) return;
+      
+      // Prevent duplicate completions using ref (more reliable than state)
+      if (completionInProgress.current) {
+        console.log('Completion already in progress, skipping');
+        return;
+      }
+      
+      // Check if this lesson was already completed in this session
+      if (lastCompletedLesson.current === currentLessonId) {
+        console.log('Lesson already completed in this session');
+        return;
+      }
 
       const lessonContent = currentLesson?.lesson_content || [];
-      const requiredContent = lessonContent.filter((content: any) => content.is_required);
+      // Exclude video content from progress tracking - users prove they watched via quiz
+      const requiredContent = lessonContent.filter((content: any) => 
+        content.is_required && content.content_type !== 'video'
+      );
 
-      if (requiredContent.length === 0) return;
+      console.log('Checking lesson completion:', {
+        lessonId: currentLessonId,
+        totalContent: lessonContent.length,
+        requiredContent: requiredContent.length,
+        requiredNonVideoContent: requiredContent.length,
+        videoContent: lessonContent.filter((c: any) => c.content_type === 'video').length,
+        interactions: contentInteractions?.length || 0
+      });
 
-      // Check if all required content is completed
-      const allRequiredCompleted = requiredContent.every((content: any) => {
-        return contentInteractions?.some(
+      // If no required content, lesson can be marked complete immediately
+      // Otherwise, check if all required content is completed
+      const allRequiredCompleted = requiredContent.length === 0 ? true : requiredContent.every((content: any) => {
+        const isCompleted = contentInteractions?.some(
           (interaction: any) =>
             interaction.content_id === content.id && interaction.is_completed
         );
+        console.log(`Content ${content.id} (${content.content_type}): ${isCompleted ? 'completed' : 'not completed'}`);
+        return isCompleted;
       });
 
       if (allRequiredCompleted) {
-        // Check if lesson is already completed
+        // Check if lesson is already completed in database
         const isLessonAlreadyCompleted = lessonProgress?.some(
           (p: any) => p.lesson_id === currentLessonId && p.is_completed
         );
 
         if (!isLessonAlreadyCompleted) {
-          // Use the database function to mark lesson complete
-          const { error } = await supabase.rpc("mark_lesson_complete", {
-            _user_id: user.id,
-            _lesson_id: currentLessonId,
-          });
+          completionInProgress.current = true;
+          
+          try {
+            console.log('🚀 Calling mark_lesson_complete RPC:', {
+              userId: user.id,
+              lessonId: currentLessonId,
+              requiredCount: requiredContent.length,
+              completedCount: requiredContent.filter(c => 
+                contentInteractions?.some(i => i.content_id === c.id && i.is_completed)
+              ).length
+            });
+            
+            const { data, error } = await supabase.rpc("mark_lesson_complete", {
+              _user_id: user.id,
+              _lesson_id: currentLessonId,
+            });
 
-          if (!error) {
-            // Refresh progress data
-            queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
-            queryClient.invalidateQueries({ queryKey: ["enrollment"] });
-            toast({ title: "Lesson completed!", description: "Great progress!" });
+            if (error) {
+              console.error('❌ Error marking lesson complete:', error);
+              toast({
+                title: "Failed to mark lesson complete",
+                description: "Please try again or contact support.",
+                variant: "destructive"
+              });
+            } else if (data === true) {
+              console.log('✅ Lesson marked complete successfully!');
+              // Mark as completed in this session
+              lastCompletedLesson.current = currentLessonId;
+              
+              // Refresh progress data
+              queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+              queryClient.invalidateQueries({ queryKey: ["enrollment"] });
+              queryClient.invalidateQueries({ queryKey: ["content-interactions"] });
+              
+              toast({
+                title: "🎉 Lesson completed!",
+                description: "Great progress! Keep it up!",
+              });
+            } else {
+              console.warn('⚠️ Lesson completion returned false - requirements not met:', {
+                returned: data,
+                requiredContent: requiredContent.map(c => ({
+                  id: c.id,
+                  type: c.content_type,
+                  title: (c.content_data as any)?.title || 'Untitled',
+                  completed: contentInteractions?.some(i => i.content_id === c.id && i.is_completed)
+                }))
+              });
+            }
+          } catch (err) {
+            console.error('Exception marking lesson complete:', err);
+            toast({
+              title: "Error",
+              description: "Failed to save progress. Please try again.",
+              variant: "destructive"
+            });
+          } finally {
+            completionInProgress.current = false;
           }
         }
       }
     };
 
-    if (contentInteractions && currentLesson) {
-      checkAndCompleteLesson();
-    }
+    // Increase debounce to 1 second for better stability
+    const timeoutId = setTimeout(() => {
+      if (contentInteractions && currentLesson) {
+        checkAndCompleteLesson();
+      }
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
   }, [currentLessonId, currentLesson, contentInteractions, lessonProgress, user, queryClient]);
+
+  // Reset completion tracking when lesson changes
+  useEffect(() => {
+    lastCompletedLesson.current = null;
+  }, [currentLessonId]);
 
   // Auto-create lesson progress when lesson is opened
   useEffect(() => {
     const createLessonProgress = async () => {
       if (!user || !currentLessonId) return;
 
-      // Check if progress record already exists
-      const { data: existingProgress } = await supabase
-        .from("lesson_progress")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("lesson_id", currentLessonId)
-        .single();
-
-      // Create progress record if it doesn't exist
-      if (!existingProgress) {
-        await supabase
+      try {
+        // Always upsert - will create if doesn't exist, ignore if exists
+        // This prevents 409 conflicts
+        const { error } = await supabase
           .from("lesson_progress")
-          .insert({
+          .upsert({
             user_id: user.id,
             lesson_id: currentLessonId,
             is_completed: false,
+            started_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,lesson_id',
+            ignoreDuplicates: true  // Don't update if already exists
           });
+
+        if (error) {
+          console.error('Error creating lesson progress:', error);
+        }
 
         // Invalidate queries to refresh progress data
         queryClient.invalidateQueries({ queryKey: ["lesson-progress"] });
+      } catch (error) {
+        console.error('Exception creating lesson progress:', error);
+        // Don't throw - lesson can still be used
       }
     };
 
@@ -245,38 +338,51 @@ export default function CourseViewer() {
     },
   });
 
-  // Prepare modules data with completion status
-  const modules = course?.course_modules
-    ?.sort((a: any, b: any) => a.order_index - b.order_index)
-    .map((module: any) => ({
-      id: module.id,
-      title: module.title,
-      order_index: module.order_index,
-      lessons: module.lessons
-        ?.sort((a: any, b: any) => a.order_index - b.order_index)
-        .map((lesson: any) => ({
-          id: lesson.id,
-          title: lesson.title,
-          order_index: lesson.order_index,
-          isCompleted: lessonProgress?.some(
-            (p: any) => p.lesson_id === lesson.id && p.is_completed
-          ) || false,
-        })) || [],
-    })) || [];
+  // Create a Map for O(1) lesson progress lookups
+  const progressMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    lessonProgress?.forEach(p => {
+      if (p.is_completed) {
+        map.set(p.lesson_id, true);
+      }
+    });
+    return map;
+  }, [lessonProgress]);
 
-  // Calculate overall course progress based on module averages
+  // Prepare modules data with completion status
+  const modules = useMemo(() => {
+    return course?.course_modules
+      ?.sort((a: any, b: any) => a.order_index - b.order_index)
+      .map((module: any) => ({
+        id: module.id,
+        title: module.title,
+        order_index: module.order_index,
+        lessons: module.lessons
+          ?.sort((a: any, b: any) => a.order_index - b.order_index)
+          .map((lesson: any) => ({
+            id: lesson.id,
+            title: lesson.title,
+            order_index: lesson.order_index,
+            isCompleted: progressMap.get(lesson.id) || false, // O(1) lookup!
+          })) || [],
+      })) || [];
+  }, [course?.course_modules, progressMap]);
+
+  // Calculate overall course progress weighted by total lessons
+  // This gives a more accurate representation than equal module weighting
   const calculateOverallProgress = () => {
     if (modules.length === 0) return 0;
 
-    const moduleProgresses = modules.map(module => {
-      const completedLessons = module.lessons.filter((l: any) => l.isCompleted).length;
-      return module.lessons.length > 0
-        ? (completedLessons / module.lessons.length) * 100
-        : 0;
-    });
+    // Count total lessons across all modules
+    const totalLessons = modules.reduce((sum, m) => sum + m.lessons.length, 0);
+    if (totalLessons === 0) return 0;
 
-    const averageProgress = moduleProgresses.reduce((sum, progress) => sum + progress, 0) / modules.length;
-    return Math.round(averageProgress);
+    // Count completed lessons
+    const completedLessons = modules.reduce((sum, m) => {
+      return sum + m.lessons.filter((l: any) => l.isCompleted).length;
+    }, 0);
+
+    return Math.round((completedLessons / totalLessons) * 100);
   };
 
   const overallProgress = calculateOverallProgress();
@@ -357,10 +463,26 @@ export default function CourseViewer() {
   }
 
   const isLessonCompleted = currentLessonId
-    ? lessonProgress?.some(
-        (p: any) => p.lesson_id === currentLessonId && p.is_completed
-      )
+    ? progressMap.get(currentLessonId) || false
     : false;
+
+  const lessonContentItems = currentLesson?.lesson_content ?? [];
+  const trackableLessonContent = lessonContentItems.filter(
+    (content: any) => content.content_type !== "video"
+  );
+  const completedTrackableContent = trackableLessonContent.reduce(
+    (count: number, content: any) => {
+      const isCompleted = contentInteractions?.some(
+        (interaction: any) =>
+          interaction.content_id === content.id && interaction.is_completed
+      );
+      return isCompleted ? count + 1 : count;
+    },
+    0
+  );
+  const lessonProgressPercentage = trackableLessonContent.length === 0
+    ? 100
+    : (completedTrackableContent / trackableLessonContent.length) * 100;
 
   // Format duration helper
   const formatDuration = (minutes: number) => {
@@ -565,113 +687,109 @@ export default function CourseViewer() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Lesson Header */}
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold mb-2">
-                {currentLesson?.title}
-              </h1>
-              {currentLesson?.description && (
-                <p className="text-muted-foreground">
-                  {currentLesson.description}
-                </p>
-              )}
-              {currentLesson?.estimated_duration && (
-                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>{currentLesson.estimated_duration} minutes</span>
-                </div>
-              )}
-              {/* Lesson Progress */}
-              {currentLesson?.lesson_content && (
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Lesson Progress</span>
-                    <span className="font-medium">
-                      {currentLesson.lesson_content.filter((content: any) =>
-                        contentInteractions?.some(
-                          (interaction: any) =>
-                            interaction.content_id === content.id && interaction.is_completed
-                        )
-                      ).length} of {currentLesson.lesson_content.length} items completed
-                    </span>
+            {/* Lesson Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h1 className="text-3xl font-bold mb-2">
+                  {currentLesson?.title}
+                </h1>
+                {currentLesson?.description && (
+                  <p className="text-muted-foreground">
+                    {currentLesson.description}
+                  </p>
+                )}
+                {currentLesson?.estimated_duration && (
+                  <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    <span>{currentLesson.estimated_duration} minutes</span>
                   </div>
-                  <Progress
-                    value={
-                      currentLesson.lesson_content.length > 0
-                        ? (currentLesson.lesson_content.filter((content: any) =>
-                            contentInteractions?.some(
-                              (interaction: any) =>
-                                interaction.content_id === content.id && interaction.is_completed
-                            )
-                          ).length / currentLesson.lesson_content.length) * 100
-                        : 0
-                    }
-                    className="h-2"
-                  />
-                </div>
+                )}
+                {/* Lesson Progress */}
+                {currentLesson?.lesson_content && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Lesson Progress</span>
+                      <span className="font-medium">
+                        {trackableLessonContent.length > 0
+                          ? `${completedTrackableContent} of ${trackableLessonContent.length} required items completed`
+                          : "No required items in this lesson"}
+                      </span>
+                    </div>
+                    <Progress
+                      value={lessonProgressPercentage}
+                      className="h-2"
+                    />
+                  </div>
+                )}
+              </div>
+              {!isLessonCompleted && (
+                <Button
+                  onClick={handleMarkComplete}
+                  disabled={completeLessonMutation.isPending}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Mark Complete
+                </Button>
+              )}
+              {isLessonCompleted && (
+                <Badge className="bg-green-600">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  Completed
+                </Badge>
               )}
             </div>
-            {!isLessonCompleted && (
-              <Button
-                onClick={handleMarkComplete}
-                disabled={completeLessonMutation.isPending}
-              >
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Mark Complete
-              </Button>
-            )}
-            {isLessonCompleted && (
-              <Badge className="bg-green-600">
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                Completed
-              </Badge>
-            )}
-          </div>
 
-          {/* Lesson Content */}
-          {currentLesson?.lesson_content &&
-          currentLesson.lesson_content.length > 0 ? (
-            <div className="space-y-6">
-              {currentLesson.lesson_content
-                .sort((a: any, b: any) => a.order_index - b.order_index)
-                .map((content: any) => {
-                  const isContentCompleted = contentInteractions?.some(
-                    (interaction: any) =>
-                      interaction.content_id === content.id && interaction.is_completed
-                  );
+            {/* Lesson Content */}
+            {currentLesson?.lesson_content &&
+            currentLesson.lesson_content.length > 0 ? (
+              <div className="space-y-6">
+                {currentLesson.lesson_content
+                  .sort((a: any, b: any) => a.order_index - b.order_index)
+                  .map((content: any) => {
+                    const isContentCompleted = contentInteractions?.some(
+                      (interaction: any) =>
+                        interaction.content_id === content.id && interaction.is_completed
+                    );
 
-                  return (
-                    <div key={content.id} className="relative">
-                      {/* Content completion indicator */}
-                      <div className="absolute -left-8 top-2 z-10">
-                        {isContentCompleted ? (
-                          <div className="flex items-center justify-center w-6 h-6 bg-green-600 rounded-full">
-                            <CheckCircle2 className="h-3 w-3 text-white" />
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center w-6 h-6 border-2 border-muted-foreground rounded-full">
-                            <div className="w-2 h-2 bg-muted-foreground rounded-full opacity-50"></div>
-                          </div>
-                        )}
+                    return (
+                      <div key={content.id} className="relative">
+                        {/* Content completion indicator */}
+                        <div className="absolute -left-8 top-2 z-10">
+                          {isContentCompleted ? (
+                            <div className="flex items-center justify-center w-6 h-6 bg-green-600 rounded-full">
+                              <CheckCircle2 className="h-3 w-3 text-white" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center w-6 h-6 border-2 border-muted-foreground rounded-full">
+                              <div className="w-2 h-2 bg-muted-foreground rounded-full opacity-50"></div>
+                            </div>
+                          )}
+                        </div>
+
+                        <ContentRenderer
+                          key={content.id}
+                          content={content}
+                          onComplete={handleMarkComplete}
+                        />
                       </div>
-
-                      <ContentRenderer
-                        key={content.id}
-                        content={content}
-                        onComplete={handleMarkComplete}
-                      />
-                    </div>
-                  );
-                })}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No content available for this lesson yet.</p>
-            </div>
-          )}
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No content available for this lesson yet.</p>
+              </div>
+            )}
         </div>
+      )}
+
+      {/* AI Study Buddy Floating Button - Only show in lesson view */}
+      {currentView === "lesson" && currentLessonId && currentLesson && (
+        <AIStudyBuddy
+          lessonId={currentLessonId}
+          lessonTitle={currentLesson.title}
+        />
       )}
     </CourseTemplateLayout>
   );

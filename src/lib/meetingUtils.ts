@@ -2,8 +2,31 @@ import { supabase } from "@/integrations/supabase/client";
 import { googleCalendarService } from "@/integrations/google/calendar";
 import { cancelGoogleMeet } from "@/lib/supabaseFunctions";
 import type { Database } from "@/integrations/supabase/types";
+import { z } from "zod";
+import { logger } from "@/lib/logger";
 
-const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+// Use environment variable instead of hardcoded URL
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+
+// Validation schema for meeting data
+const MeetingDataSchema = z.object({
+  summary: z.string()
+    .min(3, "Summary must be at least 3 characters")
+    .max(200, "Summary is too long (max 200 characters)")
+    .regex(/^[a-zA-Z0-9\s\-:,.'!?&()]+$/, "Summary contains invalid characters"),
+  description: z.string()
+    .max(2000, "Description is too long (max 2000 characters)")
+    .optional(),
+  startTime: z.string().datetime("Invalid start time format"),
+  endTime: z.string().datetime("Invalid end time format"),
+  attendeeEmails: z.array(
+    z.string().email("Invalid email address")
+  ).min(1, "At least one attendee is required").max(50, "Too many attendees (max 50)"),
+  courseId: z.string().uuid("Invalid course ID").optional(),
+}).refine(data => new Date(data.endTime) > new Date(data.startTime), {
+  message: "End time must be after start time",
+  path: ["endTime"],
+});
 
 export interface MeetingData {
   summary: string;
@@ -38,6 +61,13 @@ export class MeetingManager {
     }
 
     try {
+      // Validate and sanitize input data
+      const validated = MeetingDataSchema.parse(meetingData);
+      
+      // Sanitize text fields
+      const sanitizedSummary = validated.summary.trim();
+      const sanitizedDescription = validated.description?.trim();
+      
       // Get coach's email from profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -50,11 +80,11 @@ export class MeetingManager {
       }
 
       // Ensure coach's email is included in attendees
-      const allAttendeeEmails = [...new Set([...meetingData.attendeeEmails, profile.email])];
+      const allAttendeeEmails = [...new Set([...validated.attendeeEmails, profile.email])];
 
-      console.log('Meeting creation details:', {
-        summary: meetingData.summary,
-        originalAttendees: meetingData.attendeeEmails,
+      logger.log('Meeting creation details:', {
+        summary: sanitizedSummary,
+        originalAttendees: validated.attendeeEmails,
         coachEmail: profile.email,
         allAttendees: allAttendeeEmails,
         attendeeCount: allAttendeeEmails.length,
@@ -62,10 +92,10 @@ export class MeetingManager {
 
       // Create Google Calendar event with Meet link
       const calendarEvent = await googleCalendarService.createMeetingWithGoogleMeet({
-        summary: meetingData.summary,
-        description: meetingData.description,
-        startTime: meetingData.startTime,
-        endTime: meetingData.endTime,
+        summary: sanitizedSummary,
+        description: sanitizedDescription,
+        startTime: validated.startTime,
+        endTime: validated.endTime,
         attendeeEmails: allAttendeeEmails,
       });
 
@@ -74,16 +104,16 @@ export class MeetingManager {
         ep => ep.entryPointType === 'video'
       )?.uri || calendarEvent.hangoutLink;
 
-      // Create database record
+      // Create database record with validated and sanitized data
       const meetingInsert: DatabaseMeetingInsert = {
         user_id: user.id,
-        course_id: meetingData.courseId || null,
-        summary: meetingData.summary,
-        description: meetingData.description || null,
+        course_id: validated.courseId || null,
+        summary: sanitizedSummary,
+        description: sanitizedDescription || null,
         meet_link: meetLink || null,
         calendar_event_id: calendarEvent.id,
-        start_time: meetingData.startTime,
-        end_time: meetingData.endTime,
+        start_time: validated.startTime,
+        end_time: validated.endTime,
         attendees: allAttendeeEmails,
         status: 'scheduled',
       };
@@ -99,7 +129,7 @@ export class MeetingManager {
         try {
           await googleCalendarService.deleteEvent('primary', calendarEvent.id);
         } catch (cleanupError) {
-          console.error('Failed to cleanup calendar event:', cleanupError);
+          logger.error('Failed to cleanup calendar event:', cleanupError);
         }
         throw error;
       }
@@ -112,7 +142,7 @@ export class MeetingManager {
 
       return dbMeeting;
     } catch (error) {
-      console.error('Failed to create meeting:', error);
+      logger.error('Failed to create meeting:', error);
       throw error;
     }
   }
@@ -120,9 +150,15 @@ export class MeetingManager {
 
   /**
    * Cancels a meeting in both Google Calendar and database
-   * Uses Edge Function for proper OAuth token handling
+   * Returns detailed status about the cancellation operation
    */
-  static async cancelMeeting(meetingId: string): Promise<void> {
+  static async cancelMeeting(meetingId: string): Promise<{
+    success: boolean;
+    calendarDeleted: boolean;
+    dbUpdated: boolean;
+    partialFailure: boolean;
+    error?: string;
+  }> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -139,32 +175,57 @@ export class MeetingManager {
       throw new Error('Meeting not found');
     }
 
-    try {
-      // Skip Edge function and go directly to Google Calendar API
-      // The Edge function appears to have issues, so we'll use the direct approach
-      if (existingMeeting.calendar_event_id) {
-        try {
-          await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
-        } catch (calendarError: any) {
-          console.warn('Calendar deletion failed, but continuing with database update:', calendarError);
-          // Don't throw here - we still want to update the database status
-        }
-      }
+    let calendarDeleted = false;
+    let dbUpdated = false;
+    let calendarError: Error | null = null;
 
-      // Update database status to cancelled
+    // Try to delete from Google Calendar
+    if (existingMeeting.calendar_event_id) {
+      try {
+        await googleCalendarService.deleteEvent('primary', existingMeeting.calendar_event_id);
+        calendarDeleted = true;
+      } catch (error: any) {
+        calendarError = error;
+        logger.warn('Calendar deletion failed:', error);
+      }
+    } else {
+      // No calendar event to delete
+      calendarDeleted = true;
+    }
+
+    // Always update database status
+    try {
       const { error } = await supabase
         .from('meetings')
-        .update({ status: 'cancelled' })
+        .update({ 
+          status: 'cancelled',
+          // Store metadata about the cancellation
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', meetingId);
 
       if (error) throw error;
-
-      // Log analytics event
-      await this.logAnalyticsEvent(meetingId, user.id, 'meeting_cancelled');
-    } catch (error) {
-      console.error('Failed to cancel meeting:', error);
-      throw error;
+      dbUpdated = true;
+    } catch (error: any) {
+      throw new Error(`Failed to update database: ${error.message}`);
     }
+
+    // Log analytics with detailed status
+    await this.logAnalyticsEvent(meetingId, user.id, 'meeting_cancelled', {
+      calendar_deleted: calendarDeleted,
+      partial_failure: !calendarDeleted && !!existingMeeting.calendar_event_id,
+      calendar_error: calendarError?.message,
+    });
+
+    const partialFailure = !calendarDeleted && !!existingMeeting.calendar_event_id;
+
+    return {
+      success: dbUpdated,
+      calendarDeleted,
+      dbUpdated,
+      partialFailure,
+      error: calendarError?.message,
+    };
   }
 
   /**
@@ -223,7 +284,7 @@ export class MeetingManager {
 
       return result.meeting;
     } catch (error) {
-      console.error('Failed to update meeting:', error);
+      logger.error('Failed to update meeting:', error);
       throw error;
     }
   }
@@ -287,7 +348,7 @@ export class MeetingManager {
           event_data: eventData,
         });
     } catch (error) {
-      console.error('Failed to log analytics event:', error);
+      logger.error('Failed to log analytics event:', error);
       // Don't throw here as analytics failures shouldn't break the main flow
     }
   }
@@ -299,7 +360,7 @@ export class MeetingManager {
     try {
       return await googleCalendarService.validateAccess();
     } catch (error) {
-      console.error('Google Calendar access validation failed:', error);
+      logger.error('Google Calendar access validation failed:', error);
       return false;
     }
   }
@@ -341,7 +402,7 @@ export class MeetingManager {
 
         return meetLink || null;
       } catch (error) {
-        console.error('Failed to fetch meet link from Google Calendar:', error);
+        logger.error('Failed to fetch meet link from Google Calendar:', error);
         return null;
       }
     }

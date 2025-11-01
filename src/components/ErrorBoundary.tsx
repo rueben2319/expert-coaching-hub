@@ -6,6 +6,7 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
+  FallbackComponent?: React.ComponentType<{ error: Error; resetError: () => void }>;
 }
 
 interface State {
@@ -33,6 +34,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const { FallbackComponent } = this.props;
+      
+      if (FallbackComponent && this.state.error) {
+        return <FallbackComponent error={this.state.error} resetError={this.handleReset} />;
+      }
+      
       if (this.props.fallback) {
         return this.props.fallback;
       }

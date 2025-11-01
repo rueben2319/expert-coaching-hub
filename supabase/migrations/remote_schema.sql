@@ -145,6 +145,7 @@ ALTER FUNCTION "public"."calculate_course_progress"("_user_id" "uuid", "_course_
 
 CREATE OR REPLACE FUNCTION "public"."calculate_renewal_date"("_billing_cycle" "text", "_start_date" timestamp with time zone DEFAULT "now"()) RETURNS timestamp with time zone
     LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public'
     AS $$
 BEGIN
   IF _billing_cycle = 'yearly' THEN
@@ -203,6 +204,19 @@ $$;
 ALTER FUNCTION "public"."check_duplicate_subscription"("_user_id" "uuid", "_coach_id" "uuid", "_package_id" "uuid", "_tier_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."cleanup_expired_recommendations"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+  DELETE FROM public.recommended_courses
+  WHERE expires_at < now();
+END;
+$$;
+
+
+ALTER FUNCTION "public"."cleanup_expired_recommendations"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."commit_transaction"() RETURNS "text"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -238,6 +252,7 @@ ALTER FUNCTION "public"."generate_invoice_number"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."get_aged_credits"("p_user_id" "uuid", "p_min_age_days" integer DEFAULT 3) RETURNS numeric
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   aging_date TIMESTAMPTZ;
@@ -266,6 +281,7 @@ COMMENT ON FUNCTION "public"."get_aged_credits"("p_user_id" "uuid", "p_min_age_d
 
 CREATE OR REPLACE FUNCTION "public"."get_available_withdrawable_credits"("user_id_param" "uuid", "credit_aging_days_param" integer) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   current_balance integer;
@@ -530,6 +546,7 @@ ALTER FUNCTION "public"."is_subscription_expiring_soon"("_subscription_id" "uuid
 
 CREATE OR REPLACE FUNCTION "public"."log_subscription_status_change"() RETURNS "trigger"
     LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   subscription_type TEXT;
@@ -587,39 +604,69 @@ DECLARE
   _course_id UUID;
   required_content_count INTEGER;
   completed_content_count INTEGER;
+  result BOOLEAN;
 BEGIN
   -- Get course_id for this lesson
   SELECT cm.course_id INTO _course_id
-  FROM public.lessons l
-  JOIN public.course_modules cm ON cm.id = l.module_id
+  FROM lessons l
+  JOIN course_modules cm ON cm.id = l.module_id
   WHERE l.id = _lesson_id;
 
-  -- Count required content items
+  -- Count required content items (EXCLUDING videos)
+  -- Videos are informational - users prove they watched via quiz
   SELECT COUNT(*) INTO required_content_count
-  FROM public.lesson_content
-  WHERE lesson_id = _lesson_id AND is_required = true;
+  FROM lesson_content
+  WHERE lesson_id = _lesson_id 
+    AND is_required = true
+    AND content_type != 'video';
 
-  -- Count completed required content items
+  -- Count completed required content items (EXCLUDING videos)
   SELECT COUNT(*) INTO completed_content_count
-  FROM public.lesson_content lc
-  JOIN public.content_interactions ci ON ci.content_id = lc.id
+  FROM lesson_content lc
+  JOIN content_interactions ci ON ci.content_id = lc.id
   WHERE lc.lesson_id = _lesson_id
     AND lc.is_required = true
+    AND lc.content_type != 'video'
     AND ci.user_id = _user_id
     AND ci.is_completed = true;
 
+  -- Determine if lesson should be marked complete
+  result := (required_content_count = completed_content_count) AND (required_content_count > 0);
+
+  -- Log the attempt (helpful for debugging)
+  INSERT INTO lesson_completion_attempts (
+    user_id, lesson_id, success, required_count, completed_count, details
+  ) VALUES (
+    _user_id, 
+    _lesson_id, 
+    result, 
+    required_content_count, 
+    completed_content_count,
+    jsonb_build_object(
+      'course_id', _course_id,
+      'timestamp', now(),
+      'note', 'Videos excluded from progress tracking'
+    )
+  );
+
   -- Only mark as complete if all required content is completed
-  IF required_content_count = completed_content_count THEN
-    INSERT INTO public.lesson_progress (user_id, lesson_id, is_completed, completed_at)
+  IF result THEN
+    INSERT INTO lesson_progress (user_id, lesson_id, is_completed, completed_at)
     VALUES (_user_id, _lesson_id, true, now())
     ON CONFLICT (user_id, lesson_id)
     DO UPDATE SET is_completed = true, completed_at = now();
 
     -- Recalculate course progress
-    PERFORM public.calculate_course_progress(_user_id, _course_id);
+    PERFORM calculate_course_progress(_user_id, _course_id);
     
     RETURN true;
   ELSE
+    -- Still create/update progress record but keep is_completed as false
+    INSERT INTO lesson_progress (user_id, lesson_id, is_completed, started_at)
+    VALUES (_user_id, _lesson_id, false, now())
+    ON CONFLICT (user_id, lesson_id)
+    DO UPDATE SET started_at = COALESCE(lesson_progress.started_at, now());
+    
     RETURN false;
   END IF;
 END;
@@ -629,8 +676,13 @@ $$;
 ALTER FUNCTION "public"."mark_lesson_complete"("_user_id" "uuid", "_lesson_id" "uuid") OWNER TO "postgres";
 
 
+COMMENT ON FUNCTION "public"."mark_lesson_complete"("_user_id" "uuid", "_lesson_id" "uuid") IS 'Marks a lesson as complete if all required NON-VIDEO content is done. Videos are informational - users prove comprehension via quiz.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."process_withdrawal"("coach_id" "uuid", "credits_amount" integer, "amount_mwk" integer, "withdrawal_id" "uuid", "payout_ref" "text" DEFAULT NULL::"text", "payout_trans_id" "text" DEFAULT NULL::"text", "payment_method" "text" DEFAULT 'mobile_money'::"text") RETURNS json
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   wallet_record record;
@@ -717,6 +769,7 @@ ALTER FUNCTION "public"."process_withdrawal"("coach_id" "uuid", "credits_amount"
 
 CREATE OR REPLACE FUNCTION "public"."refund_failed_withdrawal"("coach_id" "uuid", "credits_amount" integer, "withdrawal_id" "uuid") RETURNS json
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   wallet_record record;
@@ -800,6 +853,7 @@ ALTER FUNCTION "public"."rollback_transaction"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."transfer_credits"("from_user_id" "uuid", "to_user_id" "uuid", "amount" numeric, "transaction_type" character varying, "reference_type" character varying DEFAULT NULL::character varying, "reference_id" "uuid" DEFAULT NULL::"uuid", "description" "text" DEFAULT NULL::"text", "metadata" "jsonb" DEFAULT NULL::"jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 DECLARE
   sender_wallet credit_wallets%ROWTYPE;
@@ -891,8 +945,79 @@ COMMENT ON FUNCTION "public"."transfer_credits"("from_user_id" "uuid", "to_user_
 
 
 
+CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."upsert_own_role"("p_role" "public"."app_role") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  v_user_id uuid;
+  v_existing public.user_roles%ROWTYPE;
+  v_result jsonb;
+BEGIN
+  -- Identify the caller
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized: no auth.uid()';
+  END IF;
+
+  -- Validate input
+  IF p_role IS NULL THEN
+    RAISE EXCEPTION 'Role must not be null';
+  END IF;
+
+  -- Upsert the caller's role
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (v_user_id, p_role)
+  ON CONFLICT (user_id)
+  DO UPDATE SET role = EXCLUDED.role
+  RETURNING * INTO v_existing;
+
+  -- Also mirror to auth metadata (best-effort; ignore failures)
+  PERFORM
+    auth.set_claim(
+      v_user_id,
+      'user_metadata',
+      jsonb_set(
+        COALESCE((select raw_user_meta_data from auth.users where id = v_user_id), '{}'::jsonb),
+        '{role}',
+        to_jsonb(p_role::text),
+        true
+      )
+    )
+  ;
+
+  v_result := jsonb_build_object(
+    'success', true,
+    'user_id', v_user_id,
+    'role', v_existing.role
+  );
+  RETURN v_result;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."upsert_own_role"("p_role" "public"."app_role") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_status_transition"() RETURNS "trigger"
     LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
     AS $$
 BEGIN
   -- Only allow specific status transitions
@@ -922,6 +1047,7 @@ ALTER FUNCTION "public"."validate_subscription_status_transition"() OWNER TO "po
 
 CREATE OR REPLACE FUNCTION "public"."validate_transaction_status_transition"() RETURNS "trigger"
     LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
     AS $$
 BEGIN
   -- Only allow specific status transitions
@@ -951,6 +1077,50 @@ ALTER FUNCTION "public"."validate_transaction_status_transition"() OWNER TO "pos
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."ai_generations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "actor_role" "text",
+    "action_key" "text" NOT NULL,
+    "prompt" "text" NOT NULL,
+    "response" "text",
+    "response_format" "text" DEFAULT 'markdown'::"text",
+    "tokens_prompt" integer DEFAULT 0,
+    "tokens_completion" integer DEFAULT 0,
+    "provider" "text" DEFAULT 'openai'::"text",
+    "model" "text",
+    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "ai_generations_actor_role_check" CHECK (("actor_role" = ANY (ARRAY['coach'::"text", 'client'::"text", 'admin'::"text", 'system'::"text"])))
+);
+
+
+ALTER TABLE "public"."ai_generations" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."client_notes" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "lesson_id" "uuid",
+    "content_id" "uuid",
+    "source" "text" DEFAULT 'manual'::"text",
+    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "note_text" "text" NOT NULL,
+    "ai_summary" "text",
+    "is_ai_generated" boolean DEFAULT false,
+    "tags" "text"[] DEFAULT '{}'::"text"[],
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."client_notes" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."client_notes" IS 'Stores learner notes with optional AI-generated summaries';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."coach_settings" (
@@ -999,6 +1169,37 @@ CREATE TABLE IF NOT EXISTS "public"."content_interactions" (
 
 
 ALTER TABLE "public"."content_interactions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."course_content_embeddings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "lesson_id" "uuid",
+    "content_id" "uuid",
+    "embedding" "public"."vector"(1536),
+    "chunk" "text" NOT NULL,
+    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."course_content_embeddings" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."course_embeddings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "course_id" "uuid" NOT NULL,
+    "embedding" "public"."vector"(1536),
+    "content_text" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."course_embeddings" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."course_embeddings" IS 'Stores vector embeddings for semantic course search';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."course_enrollments" (
@@ -1160,6 +1361,25 @@ CREATE TABLE IF NOT EXISTS "public"."invoices" (
 ALTER TABLE "public"."invoices" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."lesson_completion_attempts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "lesson_id" "uuid" NOT NULL,
+    "attempted_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "success" boolean NOT NULL,
+    "required_count" integer NOT NULL,
+    "completed_count" integer NOT NULL,
+    "details" "jsonb" DEFAULT '{}'::"jsonb"
+);
+
+
+ALTER TABLE "public"."lesson_completion_attempts" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."lesson_completion_attempts" IS 'Audit log of lesson completion attempts for debugging';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."lesson_content" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lesson_id" "uuid" NOT NULL,
@@ -1263,6 +1483,25 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
 
 
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."recommended_courses" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "recommended_course_id" "uuid" NOT NULL,
+    "source_course_id" "uuid",
+    "similarity_score" double precision,
+    "reason" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "expires_at" timestamp with time zone DEFAULT ("now"() + '7 days'::interval)
+);
+
+
+ALTER TABLE "public"."recommended_courses" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."recommended_courses" IS 'Caches course recommendations for users';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."subscription_audit_log" (
@@ -1399,7 +1638,7 @@ COMMENT ON COLUMN "public"."withdrawal_requests"."fraud_reasons" IS 'Array of re
 
 
 
-CREATE OR REPLACE VIEW "public"."withdrawal_analytics" AS
+CREATE OR REPLACE VIEW "public"."withdrawal_analytics" WITH ("security_invoker"='true') AS
  SELECT "coach_id",
     "count"(*) AS "total_requests",
     "count"(*) FILTER (WHERE (("status")::"text" = 'completed'::"text")) AS "completed_count",
@@ -1425,6 +1664,16 @@ COMMENT ON VIEW "public"."withdrawal_analytics" IS 'Aggregated withdrawal statis
 
 
 
+ALTER TABLE ONLY "public"."ai_generations"
+    ADD CONSTRAINT "ai_generations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."client_notes"
+    ADD CONSTRAINT "client_notes_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."coach_settings"
     ADD CONSTRAINT "coach_settings_coach_id_key" UNIQUE ("coach_id");
 
@@ -1447,6 +1696,26 @@ ALTER TABLE ONLY "public"."content_interactions"
 
 ALTER TABLE ONLY "public"."content_interactions"
     ADD CONSTRAINT "content_interactions_user_id_content_id_key" UNIQUE ("user_id", "content_id");
+
+
+
+ALTER TABLE ONLY "public"."course_content_embeddings"
+    ADD CONSTRAINT "course_content_embeddings_lesson_id_content_id_key" UNIQUE ("lesson_id", "content_id");
+
+
+
+ALTER TABLE ONLY "public"."course_content_embeddings"
+    ADD CONSTRAINT "course_content_embeddings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."course_embeddings"
+    ADD CONSTRAINT "course_embeddings_course_id_key" UNIQUE ("course_id");
+
+
+
+ALTER TABLE ONLY "public"."course_embeddings"
+    ADD CONSTRAINT "course_embeddings_pkey" PRIMARY KEY ("id");
 
 
 
@@ -1510,6 +1779,11 @@ ALTER TABLE ONLY "public"."invoices"
 
 
 
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "lesson_completion_attempts_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."lesson_content"
     ADD CONSTRAINT "lesson_content_lesson_id_order_index_key" UNIQUE ("lesson_id", "order_index");
 
@@ -1565,6 +1839,11 @@ ALTER TABLE ONLY "public"."profiles"
 
 
 
+ALTER TABLE ONLY "public"."recommended_courses"
+    ADD CONSTRAINT "recommended_courses_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."subscription_audit_log"
     ADD CONSTRAINT "subscription_audit_log_pkey" PRIMARY KEY ("id");
 
@@ -1610,11 +1889,63 @@ ALTER TABLE ONLY "public"."withdrawal_requests"
 
 
 
+CREATE INDEX "ai_generations_user_created_idx" ON "public"."ai_generations" USING "btree" ("user_id", "created_at" DESC);
+
+
+
+CREATE INDEX "client_notes_user_created_idx" ON "public"."client_notes" USING "btree" ("user_id", "created_at" DESC);
+
+
+
+CREATE INDEX "course_content_embeddings_embedding_idx" ON "public"."course_content_embeddings" USING "ivfflat" ("embedding" "public"."vector_cosine_ops") WITH ("lists"='100');
+
+
+
+CREATE INDEX "course_content_embeddings_lesson_idx" ON "public"."course_content_embeddings" USING "btree" ("lesson_id");
+
+
+
+CREATE INDEX "idx_client_notes_content_id" ON "public"."client_notes" USING "btree" ("content_id");
+
+
+
+CREATE INDEX "idx_client_notes_created_at" ON "public"."client_notes" USING "btree" ("created_at" DESC);
+
+
+
+CREATE INDEX "idx_client_notes_lesson_id" ON "public"."client_notes" USING "btree" ("lesson_id");
+
+
+
+CREATE INDEX "idx_client_notes_user_id" ON "public"."client_notes" USING "btree" ("user_id");
+
+
+
 CREATE INDEX "idx_coach_subscriptions_coach_id" ON "public"."coach_subscriptions" USING "btree" ("coach_id");
 
 
 
 CREATE INDEX "idx_coach_subscriptions_status" ON "public"."coach_subscriptions" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_content_interactions_completed" ON "public"."content_interactions" USING "btree" ("is_completed");
+
+
+
+CREATE INDEX "idx_content_interactions_content_id" ON "public"."content_interactions" USING "btree" ("content_id");
+
+
+
+CREATE INDEX "idx_content_interactions_user_id" ON "public"."content_interactions" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_course_embeddings_course_id" ON "public"."course_embeddings" USING "btree" ("course_id");
+
+
+
+CREATE INDEX "idx_course_embeddings_vector" ON "public"."course_embeddings" USING "ivfflat" ("embedding" "public"."vector_cosine_ops") WITH ("lists"='100');
 
 
 
@@ -1674,6 +2005,22 @@ CREATE INDEX "idx_invoices_user_id" ON "public"."invoices" USING "btree" ("user_
 
 
 
+CREATE INDEX "idx_lesson_completion_attempted_at" ON "public"."lesson_completion_attempts" USING "btree" ("attempted_at" DESC);
+
+
+
+CREATE INDEX "idx_lesson_completion_lesson_id" ON "public"."lesson_completion_attempts" USING "btree" ("lesson_id");
+
+
+
+CREATE INDEX "idx_lesson_completion_success" ON "public"."lesson_completion_attempts" USING "btree" ("success");
+
+
+
+CREATE INDEX "idx_lesson_completion_user_id" ON "public"."lesson_completion_attempts" USING "btree" ("user_id");
+
+
+
 CREATE INDEX "idx_meeting_analytics_event_type" ON "public"."meeting_analytics" USING "btree" ("event_type");
 
 
@@ -1695,6 +2042,14 @@ CREATE INDEX "idx_meetings_status" ON "public"."meetings" USING "btree" ("status
 
 
 CREATE INDEX "idx_meetings_user_id" ON "public"."meetings" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_recommended_courses_expires_at" ON "public"."recommended_courses" USING "btree" ("expires_at");
+
+
+
+CREATE INDEX "idx_recommended_courses_user_id" ON "public"."recommended_courses" USING "btree" ("user_id");
 
 
 
@@ -1782,6 +2137,10 @@ CREATE OR REPLACE TRIGGER "trigger_log_subscription_status_change" AFTER UPDATE 
 
 
 
+CREATE OR REPLACE TRIGGER "update_client_notes_updated_at" BEFORE UPDATE ON "public"."client_notes" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
 CREATE OR REPLACE TRIGGER "update_coach_settings_updated_at" BEFORE UPDATE ON "public"."coach_settings" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 
 
@@ -1791,6 +2150,10 @@ CREATE OR REPLACE TRIGGER "update_coach_subscriptions_updated_at" BEFORE UPDATE 
 
 
 CREATE OR REPLACE TRIGGER "update_content_interactions_updated_at" BEFORE UPDATE ON "public"."content_interactions" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_course_embeddings_updated_at" BEFORE UPDATE ON "public"."course_embeddings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
 
@@ -1834,6 +2197,26 @@ CREATE OR REPLACE TRIGGER "validate_transaction_status_transition_trigger" BEFOR
 
 
 
+ALTER TABLE ONLY "public"."ai_generations"
+    ADD CONSTRAINT "ai_generations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."client_notes"
+    ADD CONSTRAINT "client_notes_content_id_fkey" FOREIGN KEY ("content_id") REFERENCES "public"."lesson_content"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."client_notes"
+    ADD CONSTRAINT "client_notes_lesson_id_fkey" FOREIGN KEY ("lesson_id") REFERENCES "public"."lessons"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."client_notes"
+    ADD CONSTRAINT "client_notes_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."coach_settings"
     ADD CONSTRAINT "coach_settings_coach_id_fkey" FOREIGN KEY ("coach_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
@@ -1846,6 +2229,21 @@ ALTER TABLE ONLY "public"."coach_subscriptions"
 
 ALTER TABLE ONLY "public"."content_interactions"
     ADD CONSTRAINT "content_interactions_content_id_fkey" FOREIGN KEY ("content_id") REFERENCES "public"."lesson_content"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."course_content_embeddings"
+    ADD CONSTRAINT "course_content_embeddings_content_id_fkey" FOREIGN KEY ("content_id") REFERENCES "public"."lesson_content"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."course_content_embeddings"
+    ADD CONSTRAINT "course_content_embeddings_lesson_id_fkey" FOREIGN KEY ("lesson_id") REFERENCES "public"."lessons"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."course_embeddings"
+    ADD CONSTRAINT "course_embeddings_course_id_fkey" FOREIGN KEY ("course_id") REFERENCES "public"."courses"("id") ON DELETE CASCADE;
 
 
 
@@ -1874,6 +2272,16 @@ ALTER TABLE ONLY "public"."credit_wallets"
 
 
 
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "fk_lesson_completion_lesson" FOREIGN KEY ("lesson_id") REFERENCES "public"."lessons"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "fk_lesson_completion_user" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."invoices"
     ADD CONSTRAINT "invoices_subscription_id_fkey" FOREIGN KEY ("subscription_id") REFERENCES "public"."coach_subscriptions"("id") ON DELETE SET NULL;
 
@@ -1881,6 +2289,16 @@ ALTER TABLE ONLY "public"."invoices"
 
 ALTER TABLE ONLY "public"."invoices"
     ADD CONSTRAINT "invoices_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."transactions"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "lesson_completion_attempts_lesson_id_fkey" FOREIGN KEY ("lesson_id") REFERENCES "public"."lessons"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."lesson_completion_attempts"
+    ADD CONSTRAINT "lesson_completion_attempts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -1931,6 +2349,21 @@ ALTER TABLE ONLY "public"."meetings"
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."recommended_courses"
+    ADD CONSTRAINT "recommended_courses_recommended_course_id_fkey" FOREIGN KEY ("recommended_course_id") REFERENCES "public"."courses"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."recommended_courses"
+    ADD CONSTRAINT "recommended_courses_source_course_id_fkey" FOREIGN KEY ("source_course_id") REFERENCES "public"."courses"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."recommended_courses"
+    ADD CONSTRAINT "recommended_courses_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -2034,6 +2467,12 @@ CREATE POLICY "Anyone can view active packages" ON "public"."credit_packages" FO
 
 
 
+CREATE POLICY "Anyone can view embeddings for published courses" ON "public"."course_embeddings" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM "public"."courses"
+  WHERE (("courses"."id" = "course_embeddings"."course_id") AND ("courses"."status" = 'published'::"public"."course_status")))));
+
+
+
 CREATE POLICY "Clients can view published courses" ON "public"."courses" FOR SELECT USING ((("status" = 'published'::"public"."course_status") OR "public"."has_role"("auth"."uid"(), 'client'::"public"."app_role")));
 
 
@@ -2061,6 +2500,12 @@ CREATE POLICY "Coaches can insert their own settings" ON "public"."coach_setting
 
 
 CREATE POLICY "Coaches can insert their own subscriptions" ON "public"."coach_subscriptions" FOR INSERT WITH CHECK ((("coach_id" = "auth"."uid"()) AND "public"."has_role"("auth"."uid"(), 'coach'::"public"."app_role")));
+
+
+
+CREATE POLICY "Coaches can manage embeddings for their courses" ON "public"."course_embeddings" USING ((EXISTS ( SELECT 1
+   FROM "public"."courses"
+  WHERE (("courses"."id" = "course_embeddings"."course_id") AND ("courses"."coach_id" = "auth"."uid"())))));
 
 
 
@@ -2113,20 +2558,11 @@ CREATE POLICY "Coaches can view enrollments for their courses" ON "public"."cour
 
 
 
-CREATE POLICY "Coaches can view interactions for their course content" ON "public"."content_interactions" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM ((("public"."lesson_content"
-     JOIN "public"."lessons" ON (("lessons"."id" = "lesson_content"."lesson_id")))
-     JOIN "public"."course_modules" ON (("course_modules"."id" = "lessons"."module_id")))
-     JOIN "public"."courses" ON (("courses"."id" = "course_modules"."course_id")))
-  WHERE (("lesson_content"."id" = "content_interactions"."content_id") AND ("courses"."coach_id" = "auth"."uid"())))));
-
-
-
-CREATE POLICY "Coaches can view student progress for their courses" ON "public"."lesson_progress" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM (("public"."lessons"
-     JOIN "public"."course_modules" ON (("course_modules"."id" = "lessons"."module_id")))
-     JOIN "public"."courses" ON (("courses"."id" = "course_modules"."course_id")))
-  WHERE (("lessons"."id" = "lesson_progress"."lesson_id") AND ("courses"."coach_id" = "auth"."uid"())))));
+CREATE POLICY "Coaches can view student notes in their courses" ON "public"."client_notes" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM (("public"."lessons" "l"
+     JOIN "public"."course_modules" "cm" ON (("l"."module_id" = "cm"."id")))
+     JOIN "public"."courses" "c" ON (("cm"."course_id" = "c"."id")))
+  WHERE (("l"."id" = "client_notes"."lesson_id") AND ("c"."coach_id" = "auth"."uid"())))));
 
 
 
@@ -2190,6 +2626,10 @@ CREATE POLICY "Public profiles are viewable by everyone" ON "public"."profiles" 
 
 
 
+CREATE POLICY "System can insert completion attempts" ON "public"."lesson_completion_attempts" FOR INSERT WITH CHECK (true);
+
+
+
 CREATE POLICY "System can insert subscription audit logs" ON "public"."subscription_audit_log" FOR INSERT WITH CHECK (true);
 
 
@@ -2206,11 +2646,23 @@ CREATE POLICY "System can update transactions" ON "public"."transactions" FOR UP
 
 
 
+CREATE POLICY "Users can create their own notes" ON "public"."client_notes" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
 CREATE POLICY "Users can create transactions" ON "public"."transactions" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
 
 
 
 CREATE POLICY "Users can delete their own meetings" ON "public"."meetings" FOR DELETE USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Users can delete their own notes" ON "public"."client_notes" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can delete their own recommendations" ON "public"."recommended_courses" FOR DELETE USING (("auth"."uid"() = "user_id"));
 
 
 
@@ -2227,14 +2679,6 @@ CREATE POLICY "Users can insert their own profile" ON "public"."profiles" FOR IN
 
 
 CREATE POLICY "Users can insert their own wallet" ON "public"."credit_wallets" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
-
-
-
-CREATE POLICY "Users can manage their own interactions" ON "public"."content_interactions" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'admin'::"public"."app_role")));
-
-
-
-CREATE POLICY "Users can manage their own progress" ON "public"."lesson_progress" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'admin'::"public"."app_role")));
 
 
 
@@ -2260,6 +2704,10 @@ CREATE POLICY "Users can update their own meetings" ON "public"."meetings" FOR U
 
 
 
+CREATE POLICY "Users can update their own notes" ON "public"."client_notes" FOR UPDATE USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
 CREATE POLICY "Users can update their own profile" ON "public"."profiles" FOR UPDATE USING (("auth"."uid"() = "id"));
 
 
@@ -2278,6 +2726,10 @@ CREATE POLICY "Users can view meetings they host or attend" ON "public"."meeting
 
 
 
+CREATE POLICY "Users can view their own completion attempts" ON "public"."lesson_completion_attempts" FOR SELECT USING (("user_id" = "auth"."uid"()));
+
+
+
 CREATE POLICY "Users can view their own credit balance" ON "public"."credit_wallets" FOR SELECT USING (("auth"."uid"() = "user_id"));
 
 
@@ -2290,7 +2742,15 @@ CREATE POLICY "Users can view their own invoices" ON "public"."invoices" FOR SEL
 
 
 
+CREATE POLICY "Users can view their own notes" ON "public"."client_notes" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
 CREATE POLICY "Users can view their own profile" ON "public"."profiles" FOR SELECT USING (("auth"."uid"() = "id"));
+
+
+
+CREATE POLICY "Users can view their own recommendations" ON "public"."recommended_courses" FOR SELECT USING (("auth"."uid"() = "user_id"));
 
 
 
@@ -2310,13 +2770,81 @@ CREATE POLICY "Users can view their own wallet" ON "public"."credit_wallets" FOR
 
 
 
+ALTER TABLE "public"."ai_generations" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "ai_generations_insert_service" ON "public"."ai_generations" FOR INSERT WITH CHECK (("auth"."role"() = 'service_role'::"text"));
+
+
+
+CREATE POLICY "ai_generations_select_self" ON "public"."ai_generations" FOR SELECT USING ((("auth"."uid"() = "user_id") OR ("auth"."role"() = 'service_role'::"text")));
+
+
+
+ALTER TABLE "public"."client_notes" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "client_notes_delete_owner" ON "public"."client_notes" FOR DELETE USING ((("auth"."uid"() = "user_id") OR ("auth"."role"() = 'service_role'::"text")));
+
+
+
+CREATE POLICY "client_notes_insert_owner" ON "public"."client_notes" FOR INSERT WITH CHECK ((("auth"."uid"() = "user_id") OR ("auth"."role"() = 'service_role'::"text")));
+
+
+
+CREATE POLICY "client_notes_select_owner" ON "public"."client_notes" FOR SELECT USING ((("auth"."uid"() = "user_id") OR ("auth"."role"() = 'service_role'::"text")));
+
+
+
+CREATE POLICY "client_notes_update_owner" ON "public"."client_notes" FOR UPDATE USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
 ALTER TABLE "public"."coach_settings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."coach_subscriptions" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "content_delete_v2" ON "public"."content_interactions" FOR DELETE USING (true);
+
+
+
+CREATE POLICY "content_insert_v2" ON "public"."content_interactions" FOR INSERT WITH CHECK (("user_id" IS NOT NULL));
+
+
+
 ALTER TABLE "public"."content_interactions" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "content_select_v2" ON "public"."content_interactions" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "content_update_v2" ON "public"."content_interactions" FOR UPDATE USING (true) WITH CHECK (("user_id" IS NOT NULL));
+
+
+
+ALTER TABLE "public"."course_content_embeddings" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "course_content_embeddings_delete_service" ON "public"."course_content_embeddings" FOR DELETE USING (("auth"."role"() = 'service_role'::"text"));
+
+
+
+CREATE POLICY "course_content_embeddings_insert_service" ON "public"."course_content_embeddings" FOR INSERT WITH CHECK (("auth"."role"() = 'service_role'::"text"));
+
+
+
+CREATE POLICY "course_content_embeddings_select_all" ON "public"."course_content_embeddings" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "course_content_embeddings_update_service" ON "public"."course_content_embeddings" FOR UPDATE USING (("auth"."role"() = 'service_role'::"text")) WITH CHECK (("auth"."role"() = 'service_role'::"text"));
+
+
+
+ALTER TABLE "public"."course_embeddings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."course_enrollments" ENABLE ROW LEVEL SECURITY;
@@ -2340,6 +2868,9 @@ ALTER TABLE "public"."credit_wallets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."invoices" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."lesson_completion_attempts" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."lesson_content" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2359,6 +2890,25 @@ ALTER TABLE "public"."meetings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "progress_delete_v2" ON "public"."lesson_progress" FOR DELETE USING (true);
+
+
+
+CREATE POLICY "progress_insert_v2" ON "public"."lesson_progress" FOR INSERT WITH CHECK (("user_id" IS NOT NULL));
+
+
+
+CREATE POLICY "progress_select_v2" ON "public"."lesson_progress" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "progress_update_v2" ON "public"."lesson_progress" FOR UPDATE USING (true) WITH CHECK (("user_id" IS NOT NULL));
+
+
+
+ALTER TABLE "public"."recommended_courses" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."subscription_audit_log" ENABLE ROW LEVEL SECURITY;
@@ -2410,6 +2960,12 @@ GRANT ALL ON FUNCTION "public"."calculate_renewal_date"("_billing_cycle" "text",
 GRANT ALL ON FUNCTION "public"."check_duplicate_subscription"("_user_id" "uuid", "_coach_id" "uuid", "_package_id" "uuid", "_tier_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."check_duplicate_subscription"("_user_id" "uuid", "_coach_id" "uuid", "_package_id" "uuid", "_tier_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."check_duplicate_subscription"("_user_id" "uuid", "_coach_id" "uuid", "_package_id" "uuid", "_tier_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."cleanup_expired_recommendations"() TO "anon";
+GRANT ALL ON FUNCTION "public"."cleanup_expired_recommendations"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cleanup_expired_recommendations"() TO "service_role";
 
 
 
@@ -2515,6 +3071,18 @@ GRANT ALL ON FUNCTION "public"."transfer_credits"("from_user_id" "uuid", "to_use
 
 
 
+GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."upsert_own_role"("p_role" "public"."app_role") TO "anon";
+GRANT ALL ON FUNCTION "public"."upsert_own_role"("p_role" "public"."app_role") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."upsert_own_role"("p_role" "public"."app_role") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."validate_subscription_status_transition"() TO "anon";
 GRANT ALL ON FUNCTION "public"."validate_subscription_status_transition"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."validate_subscription_status_transition"() TO "service_role";
@@ -2524,6 +3092,18 @@ GRANT ALL ON FUNCTION "public"."validate_subscription_status_transition"() TO "s
 GRANT ALL ON FUNCTION "public"."validate_transaction_status_transition"() TO "anon";
 GRANT ALL ON FUNCTION "public"."validate_transaction_status_transition"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."validate_transaction_status_transition"() TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."ai_generations" TO "anon";
+GRANT ALL ON TABLE "public"."ai_generations" TO "authenticated";
+GRANT ALL ON TABLE "public"."ai_generations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."client_notes" TO "anon";
+GRANT ALL ON TABLE "public"."client_notes" TO "authenticated";
+GRANT ALL ON TABLE "public"."client_notes" TO "service_role";
 
 
 
@@ -2542,6 +3122,18 @@ GRANT ALL ON TABLE "public"."coach_subscriptions" TO "service_role";
 GRANT ALL ON TABLE "public"."content_interactions" TO "anon";
 GRANT ALL ON TABLE "public"."content_interactions" TO "authenticated";
 GRANT ALL ON TABLE "public"."content_interactions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."course_content_embeddings" TO "anon";
+GRANT ALL ON TABLE "public"."course_content_embeddings" TO "authenticated";
+GRANT ALL ON TABLE "public"."course_content_embeddings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."course_embeddings" TO "anon";
+GRANT ALL ON TABLE "public"."course_embeddings" TO "authenticated";
+GRANT ALL ON TABLE "public"."course_embeddings" TO "service_role";
 
 
 
@@ -2593,6 +3185,12 @@ GRANT ALL ON TABLE "public"."invoices" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."lesson_completion_attempts" TO "anon";
+GRANT ALL ON TABLE "public"."lesson_completion_attempts" TO "authenticated";
+GRANT ALL ON TABLE "public"."lesson_completion_attempts" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."lesson_content" TO "anon";
 GRANT ALL ON TABLE "public"."lesson_content" TO "authenticated";
 GRANT ALL ON TABLE "public"."lesson_content" TO "service_role";
@@ -2632,6 +3230,12 @@ GRANT ALL ON TABLE "public"."meetings" TO "service_role";
 GRANT ALL ON TABLE "public"."profiles" TO "anon";
 GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
 GRANT ALL ON TABLE "public"."profiles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."recommended_courses" TO "anon";
+GRANT ALL ON TABLE "public"."recommended_courses" TO "authenticated";
+GRANT ALL ON TABLE "public"."recommended_courses" TO "service_role";
 
 
 
