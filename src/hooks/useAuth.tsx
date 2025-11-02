@@ -30,7 +30,14 @@ const AuthContext = createContext<AuthContextType | undefined>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [role, setRole] = useState<UserRole | null>(null);
+  const [role, setRole] = useState<UserRole | null>(() => {
+    try {
+      const stored = localStorage.getItem('app_role');
+      return stored === 'client' || stored === 'coach' || stored === 'admin' ? stored as UserRole : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const initializationAttempted = useRef(false);
@@ -47,19 +54,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         logger.error("Failed to fetch user role:", { error, code: error.code, message: error.message });
         setRole(null);
+        try { localStorage.removeItem('app_role'); } catch {}
         return;
       }
 
       if (data) {
         logger.log("Successfully fetched role:", data.role);
         setRole(data.role as UserRole);
+        try { localStorage.setItem('app_role', data.role as string); } catch {}
       } else {
         logger.warn("No role found for user:", userId);
         setRole(null);
+        try { localStorage.removeItem('app_role'); } catch {}
       }
     } catch (err) {
       logger.error("Exception while fetching role:", err);
       setRole(null);
+      try { localStorage.removeItem('app_role'); } catch {}
     }
   };
 
@@ -141,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setRole(null);
+          try { localStorage.removeItem('app_role'); } catch {}
         }
 
         // Clear loading state after role fetch attempt (success or failure)
@@ -234,6 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setSession(null);
       setRole(null);
+      try { localStorage.removeItem('app_role'); } catch {}
       navigate("/");
     } catch (error) {
       logger.error('Error signing out:', error);
@@ -241,6 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setSession(null);
       setRole(null);
+      try { localStorage.removeItem('app_role'); } catch {}
       navigate("/");
     }
   };

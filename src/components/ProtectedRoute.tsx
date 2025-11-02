@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
 import { useState, useEffect } from "react";
@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, role, loading } = useAuth();
+  const location = useLocation();
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [roleCheckDelay, setRoleCheckDelay] = useState(true);
 
@@ -95,13 +96,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" replace state={{ from: location.pathname + location.search }} />;
   }
 
   // If user exists but has no role after delay, redirect to auth page to set role
   if (!role && !roleCheckDelay) {
     logger.warn('User authenticated but no role found after delay, redirecting to auth');
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" replace state={{ from: location.pathname + location.search }} />;
   }
 
   // If still waiting for role, show loading
