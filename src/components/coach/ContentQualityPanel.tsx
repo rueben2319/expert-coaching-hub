@@ -4,17 +4,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { 
-  Loader2, 
-  Sparkles, 
-  CheckCircle2, 
-  AlertTriangle, 
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  AlertTriangle,
   Info,
   TrendingUp,
   BookOpen,
   Users,
   Layout,
-  Eye
+  Eye,
+  RefreshCw,
 } from "lucide-react";
 import { useAIAction } from "@/hooks/useAIAction";
 
@@ -49,6 +51,7 @@ interface QualityAnalysis {
 
 export function ContentQualityPanel({ contentId, lessonId, draftText, contentTitle }: ContentQualityPanelProps) {
   const [analysis, setAnalysis] = useState<QualityAnalysis | null>(null);
+  const [fallbackOutput, setFallbackOutput] = useState<string | null>(null);
   const { generate, data, isLoading, isSuccess, isError, reset } = useAIAction();
 
   const hasAnalyzableContent = Boolean(
@@ -59,6 +62,8 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
     if (!hasAnalyzableContent) return;
 
     reset();
+    setAnalysis(null);
+    setFallbackOutput(null);
     const contextPayload: Record<string, string> = {};
     if (contentId) contextPayload.contentId = contentId;
     if (lessonId) contextPayload.lessonId = lessonId;
@@ -75,8 +80,11 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
       try {
         const parsed: QualityAnalysis = JSON.parse(data.output);
         setAnalysis(parsed);
+        setFallbackOutput(null);
       } catch (error) {
-        console.error("Failed to parse quality analysis:", error);
+        console.warn("Failed to parse quality analysis:", error);
+        setAnalysis(null);
+        setFallbackOutput(data.output);
       }
     }
   }, [isSuccess, data]);
@@ -123,19 +131,19 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-purple-600" />
+    <Card className="border-0 bg-transparent shadow-none p-0">
+      <CardHeader className="space-y-2 p-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="h-4 w-4 text-purple-600" />
           Content Quality Analysis
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-sm text-muted-foreground">
           AI-powered analysis of "{contentTitle}"
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 p-0">
         {!analysis && !isLoading && (
-          <div className="text-center py-8">
+          <div className="text-center py-6">
             <Eye className="h-12 w-12 mx-auto mb-4 text-purple-600 opacity-50" />
             <p className="text-muted-foreground mb-4">
               Get AI-powered insights to improve your content quality
@@ -171,8 +179,8 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
         {analysis && (
           <div className="space-y-6">
             {/* Overall Score */}
-            <div className="text-center p-6 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950 dark:to-blue-950 rounded-lg">
-              <div className={`text-5xl font-bold ${getScoreColor(analysis.scores.overall)}`}>
+            <div className="text-center p-6 rounded-lg bg-muted/30 dark:bg-muted/10">
+              <div className={`text-4xl font-semibold ${getScoreColor(analysis.scores.overall)}`}>
                 {analysis.scores.overall.toFixed(1)}
               </div>
               <div className="text-sm text-muted-foreground mt-2">
@@ -200,7 +208,7 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
                         {value.toFixed(1)}/10
                       </span>
                     </div>
-                    <Progress value={value * 10} className="h-2" />
+                    <Progress value={value * 10} className="h-2 bg-muted" />
                   </div>
                 );
               })}
@@ -217,10 +225,10 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
                   {analysis.strengths.map((strength, index) => (
                     <div
                       key={index}
-                      className="flex items-start gap-2 p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800"
+                      className="flex items-start gap-2 p-3 rounded-md bg-green-50/70 dark:bg-green-950/40"
                     >
                       <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm text-green-900 dark:text-green-100">{strength}</p>
+                      <p className="text-sm text-green-900 dark:text-green-100 whitespace-pre-wrap">{strength}</p>
                     </div>
                   ))}
                 </div>
@@ -236,24 +244,23 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
                 </h3>
                 <div className="space-y-3">
                   {analysis.improvements.map((improvement, index) => (
-                    <Card key={index}>
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          {getPriorityIcon(improvement.priority)}
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-sm">{improvement.category}</span>
-                              <Badge variant={getPriorityBadge(improvement.priority)} className="text-xs">
-                                {improvement.priority}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {improvement.suggestion}
-                            </p>
-                          </div>
+                    <div
+                      key={index}
+                      className="flex items-start gap-3 p-4 rounded-lg bg-muted/40 dark:bg-muted/10"
+                    >
+                      {getPriorityIcon(improvement.priority)}
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{improvement.category}</span>
+                          <Badge variant={getPriorityBadge(improvement.priority)} className="text-xs">
+                            {improvement.priority}
+                          </Badge>
                         </div>
-                      </CardContent>
-                    </Card>
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                          {improvement.suggestion}
+                        </p>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -270,10 +277,10 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
                   {analysis.missing_elements.map((element, index) => (
                     <div
                       key={index}
-                      className="flex items-start gap-2 p-3 bg-orange-50 dark:bg-orange-950/30 rounded-md border border-orange-200 dark:border-orange-800"
+                      className="flex items-start gap-2 p-3 rounded-md bg-orange-50/80 dark:bg-orange-950/30"
                     >
                       <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm text-orange-900 dark:text-orange-100">{element}</p>
+                      <p className="text-sm text-orange-900 dark:text-orange-100 whitespace-pre-wrap">{element}</p>
                     </div>
                   ))}
                 </div>
@@ -287,6 +294,7 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
               size="sm"
               onClick={() => {
                 setAnalysis(null);
+                setFallbackOutput(null);
                 handleAnalyze();
               }}
               disabled={isLoading || !hasAnalyzableContent}
@@ -294,6 +302,31 @@ export function ContentQualityPanel({ contentId, lessonId, draftText, contentTit
             >
               <Sparkles className="h-4 w-4 mr-2" />
               Re-analyze Content
+            </Button>
+          </div>
+        )}
+
+        {fallbackOutput && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Sparkles className="h-4 w-4 text-purple-600" />
+              AI Feedback
+            </div>
+            <Textarea
+              value={fallbackOutput}
+              readOnly
+              className="min-h-[180px] border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none focus:border-0 px-0 text-sm text-muted-foreground"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAnalyze}
+              disabled={isLoading || !hasAnalyzableContent}
+              className="w-full"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Parsing Again
             </Button>
           </div>
         )}

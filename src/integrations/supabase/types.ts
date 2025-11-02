@@ -928,6 +928,138 @@ export type Database = {
           },
         ]
       }
+      practice_exercise_items: {
+        Row: {
+          answer: string | null
+          approved: boolean
+          choices: Json | null
+          created_at: string
+          difficulty: string | null
+          exercise_type: string
+          explanation: string | null
+          id: string
+          metadata: Json | null
+          order_index: number
+          question: string
+          set_id: string
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          answer?: string | null
+          approved?: boolean
+          choices?: Json | null
+          created_at?: string
+          difficulty?: string | null
+          exercise_type: string
+          explanation?: string | null
+          id?: string
+          metadata?: Json | null
+          order_index?: number
+          question: string
+          set_id: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          answer?: string | null
+          approved?: boolean
+          choices?: Json | null
+          created_at?: string
+          difficulty?: string | null
+          exercise_type?: string
+          explanation?: string | null
+          id?: string
+          metadata?: Json | null
+          order_index?: number
+          question?: string
+          set_id?: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_exercise_items_set_id_fkey"
+            columns: ["set_id"]
+            isOneToOne: false
+            referencedRelation: "practice_exercise_sets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_exercise_items_set_id_fkey"
+            columns: ["set_id"]
+            isOneToOne: false
+            referencedRelation: "v_practice_exercise_coach_scope"
+            referencedColumns: ["set_id"]
+          },
+        ]
+      }
+      practice_exercise_sets: {
+        Row: {
+          approved_at: string | null
+          content_id: string | null
+          created_at: string
+          difficulty: string | null
+          generated_by: string | null
+          id: string
+          lesson_id: string | null
+          model_used: string | null
+          prompt_context: Json | null
+          raw_output: Json | null
+          skill_focus: string | null
+          status: string
+          target_audience: string | null
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          content_id?: string | null
+          created_at?: string
+          difficulty?: string | null
+          generated_by?: string | null
+          id?: string
+          lesson_id?: string | null
+          model_used?: string | null
+          prompt_context?: Json | null
+          raw_output?: Json | null
+          skill_focus?: string | null
+          status?: string
+          target_audience?: string | null
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          content_id?: string | null
+          created_at?: string
+          difficulty?: string | null
+          generated_by?: string | null
+          id?: string
+          lesson_id?: string | null
+          model_used?: string | null
+          prompt_context?: Json | null
+          raw_output?: Json | null
+          skill_focus?: string | null
+          status?: string
+          target_audience?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_exercise_sets_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_content"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "practice_exercise_sets_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1320,6 +1452,14 @@ export type Database = {
       }
     }
     Views: {
+      v_practice_exercise_coach_scope: {
+        Row: {
+          coach_id: string | null
+          generated_by: string | null
+          set_id: string | null
+        }
+        Relationships: []
+      }
       withdrawal_analytics: {
         Row: {
           avg_fraud_score: number | null
@@ -1357,6 +1497,30 @@ export type Database = {
       }
       cleanup_expired_recommendations: { Args: never; Returns: undefined }
       commit_transaction: { Args: never; Returns: string }
+      fn_practice_item_coach_access: {
+        Args: {
+          item: Database["public"]["Tables"]["practice_exercise_items"]["Row"]
+        }
+        Returns: boolean
+      }
+      fn_practice_item_student_access: {
+        Args: {
+          item: Database["public"]["Tables"]["practice_exercise_items"]["Row"]
+        }
+        Returns: boolean
+      }
+      fn_practice_set_coach_access: {
+        Args: {
+          pes: Database["public"]["Tables"]["practice_exercise_sets"]["Row"]
+        }
+        Returns: boolean
+      }
+      fn_practice_set_student_access: {
+        Args: {
+          pes: Database["public"]["Tables"]["practice_exercise_sets"]["Row"]
+        }
+        Returns: boolean
+      }
       generate_invoice_number: { Args: never; Returns: string }
       get_aged_credits: {
         Args: { p_min_age_days?: number; p_user_id: string }

@@ -324,11 +324,29 @@ function pickContextString(context: Record<string, unknown> | undefined, keys: s
   return undefined;
 }
 
+function pickContextNumber(context: Record<string, unknown> | undefined, keys: string[], fallback?: number): number | undefined {
+  if (!context) return fallback;
+  for (const key of keys) {
+    const value = context[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return fallback;
+}
+
 function requireContextString(context: Record<string, unknown> | undefined, keys: string[], label: string): string {
   const value = pickContextString(context, keys);
   if (!value) {
     throw new HttpError(`${label} is required in context`, 400);
   }
+
   return value;
 }
 
@@ -389,6 +407,29 @@ async function fetchLessonContext(supabase: SupabaseClient, lessonId: string) {
   }
 
   return { lesson, module, course, content }; // content can be null which is fine
+}
+
+async function fetchContentContext(supabase: SupabaseClient, contentId: string) {
+  const { data: content, error } = await supabase
+    .from("lesson_content")
+    .select("id, lesson_id, content_type, order_index, content_data")
+    .eq("id", contentId)
+    .single();
+
+  if (error || !content) {
+    throw new HttpError("Content not found", 404, error);
+  }
+
+  if (!content.lesson_id) {
+    throw new HttpError("Content missing lesson reference", 400);
+  }
+
+  const lessonContext = await fetchLessonContext(supabase, content.lesson_id);
+
+  return {
+    ...lessonContext,
+    content: lessonContext.content,
+  };
 }
 
 const actionHandlers: Record<string, ActionHandler> = {
@@ -764,9 +805,163 @@ Return a JSON object with:
     };
   },
 
+  "content_analyze": async ({ payload, supabase, user }) => {
+    const context = payload.context ?? {};
+    const contentId = pickContextString(context, ["contentId", "content_id"]);
+    const lessonId = pickContextString(context, ["lessonId", "lesson_id"]);
+    const draftTextContext = typeof context.draftText === "string" ? (context.draftText as string) : undefined;
+
+    let lesson: any | undefined;
+    let module: any | undefined;
+    let course: any | undefined;
+    let contentTitle = typeof context.contentTitle === "string" ? (context.contentTitle as string) : undefined;
+    let analysisText = draftTextContext?.trim() ?? "";
+
+    if (contentId) {
+      const lessonContext = await fetchContentContext(supabase, contentId);
+      lesson = lessonContext.lesson;
+      module = lessonContext.module;
+      course = lessonContext.course;
+
+      const lessonContent = (lessonContext.content || []) as any[];
+      const targetContent = lessonContent.find((item) => item.id === contentId);
+
+      if (!targetContent) {
+        throw new HttpError("Selected content not found for analysis", 404);
+      }
+
+      if (targetContent.content_type !== "text") {
+        throw new HttpError("Content quality analysis is only available for text content", 400);
+      }
+
+      const contentData = targetContent.content_data || {};
+      if (!contentTitle) {
+        contentTitle = contentData.title ?? lesson?.title ?? "Lesson Content";
+      }
+
+      if (!analysisText) {
+        analysisText = (contentData.text ?? contentData.html ?? "") as string;
+      }
+    } else if (lessonId) {
+      const lessonContext = await fetchLessonContext(supabase, lessonId);
+      lesson = lessonContext.lesson;
+      module = lessonContext.module;
+      course = lessonContext.course;
+
+      if (!contentTitle) {
+        contentTitle = lesson?.title ?? "Lesson Content";
+      }
+
+      if (!analysisText) {
+        analysisText = (lessonContext.content || [])
+          .filter((item: any) => item.content_type === "text")
+          .map((item: any) => item.content_data?.text ?? item.content_data?.html ?? "")
+          .filter((value: string) => typeof value === "string" && value.trim().length > 0)
+          .join("\n\n");
+      }
+    } else {
+      throw new HttpError("lessonId or contentId is required for content analysis", 400);
+    }
+
+    if (!analysisText || analysisText.trim().length < 100) {
+      throw new HttpError("Provide at least 100 characters of text for analysis", 400);
+    }
+
+    const trimmedText = (truncateText(analysisText.trim(), 4000) ?? analysisText.trim()).trim();
+
+    const contextSummary = {
+      courseTitle: course?.title ?? null,
+      courseLevel: course?.level ?? null,
+      moduleTitle: module?.title ?? null,
+      lessonTitle: lesson?.title ?? null,
+      contentTitle,
+      coachRole: user?.app_metadata?.role ?? "coach",
+    };
+
+    const prompt = `You are an AI instructional design reviewer.
+
+Evaluate the provided content and produce numeric quality scores (0-10, one decimal precision) for readability, completeness, engagement, structure, accessibility, and overall quality. Identify concrete strengths, actionable improvements grouped by category, and any missing elements that would improve the learner experience.
+
+Rules:
+- Respond with **JSON only** that matches the provided schema.
+- Scores must be between 0 and 10 inclusive.
+- Provide at least two strengths when possible.
+- Provide at least three suggested improvements when issues exist. Each improvement must include a category, specific suggestion, and priority of "high", "medium", or "low".
+- If nothing is missing for a section, return an empty array for that list.
+
+Context:
+${JSON.stringify(contextSummary, null, 2)}
+
+Text to analyze:
+"""
+${trimmedText}
+"""`;
+
+    const options = {
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "content_quality_analysis_schema",
+          schema: {
+            type: "object",
+            properties: {
+              scores: {
+                type: "object",
+                properties: {
+                  readability: { type: "number", minimum: 0, maximum: 10 },
+                  completeness: { type: "number", minimum: 0, maximum: 10 },
+                  engagement: { type: "number", minimum: 0, maximum: 10 },
+                  structure: { type: "number", minimum: 0, maximum: 10 },
+                  accessibility: { type: "number", minimum: 0, maximum: 10 },
+                  overall: { type: "number", minimum: 0, maximum: 10 },
+                },
+                required: ["readability", "completeness", "engagement", "structure", "accessibility", "overall"],
+              },
+              strengths: {
+                type: "array",
+                items: { type: "string" },
+              },
+              improvements: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    category: { type: "string" },
+                    suggestion: { type: "string" },
+                    priority: { type: "string", enum: ["high", "medium", "low"] },
+                  },
+                  required: ["category", "suggestion", "priority"],
+                },
+              },
+              missing_elements: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            required: ["scores", "strengths", "improvements", "missing_elements"],
+          },
+        },
+      },
+    };
+
+    return {
+      prompt,
+      options,
+      metadata: {
+        course_id: course?.id ?? null,
+        module_id: module?.id ?? null,
+        lesson_id: lesson?.id ?? lessonId ?? null,
+        content_id: contentId ?? null,
+        content_title: contentTitle,
+        action: "content_analyze",
+      },
+    };
+  },
+
   "lesson_summarize": async ({ payload, supabase, user }) => {
     const context = payload.context ?? {};
     const lessonId = requireContextString(context, ["lessonId", "lesson_id"], "lessonId");
+
     
     const { lesson, module, course, content } = await fetchLessonContext(supabase, lessonId);
 
@@ -1063,172 +1258,155 @@ Return as JSON array:
         user_id: userId,
         action: "course_recommend",
         scored_courses: scoredCourses,
+        user_tags: Array.from(userTags),
+        user_categories: Array.from(userCategories),
+        user_levels: Array.from(userLevels),
       },
     };
   },
 
-  "content_analyze": async ({ payload, supabase, user }) => {
+  "practice_exercise_generate": async ({ payload, supabase, user }) => {
     const context = payload.context ?? {};
-    const contentId = pickContextString(context, ["contentId", "content_id"]);
-    const draftText = pickContextString(context, ["draftText", "draft_text"]);
     const lessonId = pickContextString(context, ["lessonId", "lesson_id"]);
+    const contentId = pickContextString(context, ["contentId", "content_id"]);
+    const difficulty = pickContextString(context, ["difficulty", "level"]);
+    const skillFocus = pickContextString(context, ["skillFocus", "skill_focus"]);
+    const targetAudience = pickContextString(context, ["targetAudience", "audience"]);
+    const rawQuantity = pickContextNumber(context, ["quantity", "count"], 6) ?? 6;
+    const quantity = Math.max(3, Math.min(12, Math.round(rawQuantity)));
 
-    if (!contentId && (!draftText || draftText.trim().length === 0)) {
-      throw new Error("Content ID or draftText is required for analysis");
+    if (!lessonId && !contentId) {
+      throw new Error("lessonId or contentId is required to generate practice exercises");
     }
 
-    let content: any | null = null;
-    let lesson: any | null = null;
-    let textContent = draftText || "";
+    const lessonContext = lessonId
+      ? await fetchLessonContext(supabase, lessonId)
+      : await fetchContentContext(supabase, contentId!);
 
-    if (contentId) {
-      const { data: fetchedContent, error: contentError } = await supabase
-        .from("lesson_content")
-        .select(`
-          id,
-          title,
-          content_type,
-          content_data,
-          order_index,
-          lessons (
-            id,
-            title,
-            description,
-            learning_objectives,
-            estimated_duration
-          )
-        `)
-        .eq("id", contentId)
-        .single();
+    const { lesson, module, course, content } = lessonContext;
 
-      if (contentError || !fetchedContent) {
-        if (!textContent) {
-          throw new Error(`Content not found: ${contentId}`);
+    const { data: recentNotes } = await supabase
+      .from("client_notes")
+      .select("source, metadata")
+      .eq("lesson_id", lesson?.id ?? null)
+      .limit(20);
+
+    const lessonContentPieces = (content || [])
+      .map((item: any) => {
+        if (item.content_type === "text" && item.content_data?.text) {
+          return truncateText(item.content_data.text, 1200);
         }
-      } else {
-        content = fetchedContent;
-        lesson = content?.lessons ?? null;
+        if (item.content_type === "quiz" && item.content_data?.questions) {
+          return `Existing quiz questions:\n${item.content_data.questions
+            .map((q: any, idx: number) => `${idx + 1}. ${q.question}\nOptions: ${(q.options || []).join(", ")}`)
+            .join("\n\n")}`;
+        }
+        return undefined;
+      })
+      .filter(Boolean)
+      .join("\n\n");
 
-        if (!textContent) {
-          if (content?.content_type === "text" && content.content_data?.text) {
-            textContent = content.content_data.text;
-          } else if (content?.content_type === "quiz" && content.content_data?.questions) {
-            textContent = JSON.stringify(content.content_data.questions, null, 2);
+    const practiceContext = {
+      lesson: lesson
+        ? {
+            title: lesson.title,
+            description: truncateText(lesson.description, 400),
+            estimated_duration: lesson.estimated_duration,
           }
-        }
-      }
-    }
+        : null,
+      module: module
+        ? {
+            title: module.title,
+            description: truncateText(module.description, 300),
+          }
+        : null,
+      course: course
+        ? {
+            title: course.title,
+            level: course.level,
+            category: course.category,
+            tags: course.tags,
+          }
+        : null,
+      existing_content_summary: truncateText(lessonContentPieces, 1800),
+      recent_feedback: recentNotes
+        ?.filter((note: any) => note.metadata && (note.metadata as any).difficulty)
+        .map((note: any) => ({
+          source: note.source,
+          difficulty: (note.metadata as any).difficulty,
+          skills: (note.metadata as any).skills,
+        })),
+    };
 
-    if (!lesson && lessonId) {
-      const { data: lessonData } = await supabase
-        .from("lessons")
-        .select("id, title, description, learning_objectives, estimated_duration")
-        .eq("id", lessonId)
-        .single();
-      lesson = lessonData ?? null;
-    }
+    const prompt = `You are an expert instructional designer generating practice exercises.
 
-    if (!lesson && contentId) {
-      const { data: lessonData } = await supabase
-        .from("lesson_content")
-        .select("lessons ( id, title, description, learning_objectives, estimated_duration )")
-        .eq("id", contentId)
-        .single();
-      lesson = lessonData?.lessons ?? null;
-    }
+Context:
+${JSON.stringify(practiceContext, null, 2)}
 
-    const summarizedContentType = content?.content_type || (lesson ? "text" : "draft");
-    const contentTitle = content?.title || (lesson?.title ? `${lesson.title} draft` : "Draft Content");
+Generation Preferences:
+- Difficulty: ${difficulty || "auto"}
+- Skill Focus: ${skillFocus || "core lesson objectives"}
+- Target Audience: ${targetAudience || course?.level || "general learners"}
+- Quantity: ${quantity}
 
-    const prompt = `You are a content quality expert analyzing educational material. Evaluate this lesson content and provide actionable improvement suggestions.
+Requirements:
+1. Produce ${quantity} high-quality exercises (allow +/-2 if variety demands it).
+2. Use varied types: multiple choice, short answer, fill in the blank, and scenario-based where appropriate.
+3. Each exercise must include a clear correct answer and a concise explanation tying back to objectives.
+4. Provide 1-3 tags highlighting the skill or concept reinforced.
+5. Balance difficulty levels appropriate for the stated audience.
+6. Do not duplicate existing quiz questions unless significantly enhanced.
 
-**Lesson Context:**
-- Title: ${lesson?.title || "Untitled"}
-- Description: ${lesson?.description || "No description"}
-- Learning Objectives: ${lesson?.learning_objectives?.join(", ") || "Not specified"}
-- Estimated Duration: ${lesson?.estimated_duration || "Not set"} minutes
-
-- Type: ${summarizedContentType}
-- Title: ${contentTitle}
-- Content: ${textContent.substring(0, 3000)}${textContent.length > 3000 ? "..." : ""}
-
-**Analyze the following aspects:**
-
-1. **Readability** (1-10 score)
-   - Is the language clear and appropriate for the target audience?
-   - Are sentences concise and well-structured?
-   - Is technical jargon explained?
-
-2. **Completeness** (1-10 score)
-   - Does it cover the learning objectives?
-   - Are there sufficient examples?
-   - Is there a clear introduction and conclusion?
-
-3. **Engagement** (1-10 score)
-   - Is the content interesting and engaging?
-   - Are there interactive elements or questions?
-   - Does it use varied formats (lists, examples, scenarios)?
-
-4. **Structure** (1-10 score)
-   - Is the content well-organized?
-   - Are headings and sections logical?
-   - Is there a clear flow of ideas?
-
-5. **Accessibility** (1-10 score)
-   - Is the content accessible to diverse learners?
-   - Are there alternative explanations for complex concepts?
-   - Is formatting consistent?
-
-**Provide:**
-- Overall quality score (average of 5 aspects)
-- 3-5 specific, actionable improvement suggestions
-- Missing elements that should be added
-- Strengths to maintain
-
-Return as JSON:`;
+Return a JSON object matching the provided schema and nothing else.`;
 
     const options = {
       response_format: {
         type: "json_schema",
         json_schema: {
-          name: "content_quality_analysis_schema",
+          name: "practice_exercise_generate_schema",
           schema: {
             type: "object",
             properties: {
-              scores: {
+              set: {
                 type: "object",
                 properties: {
-                  readability: { type: "number" },
-                  completeness: { type: "number" },
-                  engagement: { type: "number" },
-                  structure: { type: "number" },
-                  accessibility: { type: "number" },
-                  overall: { type: "number" },
+                  difficulty: { type: "string" },
+                  skill_focus: { type: "string" },
+                  target_audience: { type: "string" },
+                  summary: { type: "string" },
                 },
-                required: ["readability", "completeness", "engagement", "structure", "accessibility", "overall"],
+                required: ["difficulty", "skill_focus"],
               },
-              improvements: {
+              exercises: {
                 type: "array",
+                minItems: 3,
                 items: {
                   type: "object",
                   properties: {
-                    category: { type: "string" },
-                    suggestion: { type: "string" },
-                    priority: { type: "string", enum: ["high", "medium", "low"] },
+                    exercise_type: {
+                      type: "string",
+                      enum: ["multiple_choice", "short_answer", "fill_in_blank", "scenario"],
+                    },
+                    question: { type: "string" },
+                    answer: { type: "string" },
+                    explanation: { type: "string" },
+                    difficulty: { type: "string" },
+                    tags: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                    choices: {
+                      type: "array",
+                      minItems: 3,
+                      maxItems: 6,
+                      items: { type: "string" },
+                    },
                   },
-                  required: ["category", "suggestion", "priority"],
+                  required: ["exercise_type", "question", "answer", "explanation"],
                 },
               },
-              missing_elements: {
-                type: "array",
-                items: { type: "string" },
-              },
-              strengths: {
-                type: "array",
-                items: { type: "string" },
-              },
             },
-            required: ["scores", "improvements", "missing_elements", "strengths"],
+            required: ["set", "exercises"],
           },
         },
       },
@@ -1238,11 +1416,84 @@ Return as JSON:`;
       prompt,
       options,
       metadata: {
-        content_id: contentId,
+        action: "practice_exercise_generate",
         lesson_id: lesson?.id,
-        content_type: summarizedContentType,
-        has_persisted_content: Boolean(contentId && content),
-        action: "content_analyze",
+        content_id: contentId,
+        requested_difficulty: difficulty,
+        requested_skill_focus: skillFocus,
+        requested_quantity: quantity,
+        generated_by: user?.id,
+      },
+      async onSuccess(result: string, { aiResult }: { aiResult: AIResponsePayload & { provider: string } }) {
+        const generatedBy = user?.id ?? null;
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(result);
+        } catch (error) {
+          console.error("Failed to parse practice exercise AI response", error);
+          throw new HttpError("Invalid AI response format", 422, { raw: result });
+        }
+
+        if (!parsed?.exercises || !Array.isArray(parsed.exercises) || parsed.exercises.length === 0) {
+          throw new HttpError("AI response missing exercises", 422, parsed);
+        }
+
+        const requestedDifficulty = difficulty ?? parsed.set?.difficulty ?? null;
+        const requestedSkillFocus = skillFocus ?? parsed.set?.skill_focus ?? null;
+        const requestedAudience = targetAudience ?? parsed.set?.target_audience ?? null;
+
+        const { data: insertedSet, error: setError } = await supabase
+          .from("practice_exercise_sets")
+          .insert({
+            lesson_id: lesson?.id ?? null,
+            content_id: contentId ?? null,
+            generated_by: generatedBy,
+            difficulty: requestedDifficulty,
+            skill_focus: requestedSkillFocus,
+            target_audience: requestedAudience,
+            model_used: aiResult.model,
+            prompt_context: practiceContext,
+            raw_output: parsed,
+            status: "draft",
+          })
+          .select("id, created_at")
+          .single();
+
+        if (setError) {
+          console.error("Failed to insert practice_exercise_set", setError);
+          throw new HttpError("Unable to store generated practice set", 500, setError);
+        }
+
+        const itemsPayload = parsed.exercises.map((exercise: any, index: number) => ({
+          set_id: insertedSet.id,
+          exercise_type: exercise.exercise_type,
+          question: exercise.question,
+          answer: exercise.answer ?? null,
+          explanation: exercise.explanation ?? null,
+          difficulty: exercise.difficulty ?? null,
+          tags: exercise.tags ?? null,
+          choices: exercise.choices ?? null,
+          metadata: {
+            source: "practice_exercise_generate",
+            requested_difficulty: requestedDifficulty,
+            requested_skill_focus: requestedSkillFocus,
+            target_audience: requestedAudience,
+          },
+          order_index: index,
+        }));
+
+        const { error: itemsError } = await supabase.from("practice_exercise_items").insert(itemsPayload);
+
+        if (itemsError) {
+          console.error("Failed to insert practice_exercise_items", itemsError);
+          throw new HttpError("Unable to store generated practice items", 500, itemsError);
+        }
+
+        return {
+          practice_set_id: insertedSet.id,
+          practice_item_ids: itemsPayload.map((item: any) => item.id ?? null).filter(Boolean),
+        };
       },
     };
   },

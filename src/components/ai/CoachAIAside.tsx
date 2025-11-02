@@ -1,8 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Sparkles, RefreshCw } from "lucide-react";
 import { useAIAction } from "@/hooks/useAIAction";
 import type { AIResponsePayload } from "@/lib/ai/aiClient";
@@ -41,9 +40,18 @@ export function CoachAIAside({
   }, [actionKey, context, prompt]);
 
   const showInsert = Boolean(isSuccess && data?.output && onInsert);
+  const defaultOutputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (defaultOutputRef.current) {
+      const textarea = defaultOutputRef.current;
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+  }, [data?.output, isSuccess]);
 
   return (
-    <Card className="shadow-none border-muted">
+    <Card className="shadow-none border-0 bg-transparent p-0">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-purple-500" />
@@ -103,19 +111,18 @@ export function CoachAIAside({
         )}
 
         {!isLoading && isSuccess && data && (
-          <ScrollArea className="max-h-80 border rounded-md">
-            <div className="p-3 space-y-3">
-              {customRenderer ? (
-                customRenderer(data)
-              ) : (
-                <Textarea
-                  value={data.output}
-                  readOnly
-                  className="min-h-[240px] text-sm"
-                />
-              )}
-            </div>
-          </ScrollArea>
+          <div className="space-y-3">
+            {customRenderer ? (
+              customRenderer(data)
+            ) : (
+              <Textarea
+                ref={defaultOutputRef}
+                value={data.output}
+                readOnly
+                className="border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none focus:border-0 px-0 text-sm text-muted-foreground"
+              />
+            )}
+          </div>
         )}
 
         {showInsert && (
