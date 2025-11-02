@@ -11,7 +11,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { CourseOverview } from "@/components/course/CourseOverview";
 import { CourseCurriculum } from "@/components/course/CourseCurriculum";
-import { Eye } from "lucide-react";
+import { ContentQualityDashboard } from "@/components/coach/ContentQualityDashboard";
+import { Eye, Sparkles } from "lucide-react";
 
 export default function EditCourse() {
   const { courseId } = useParams();
@@ -115,6 +116,10 @@ export default function EditCourse() {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="curriculum">Curriculum</TabsTrigger>
+            <TabsTrigger value="quality" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Quality
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -123,6 +128,10 @@ export default function EditCourse() {
 
           <TabsContent value="curriculum">
             <CourseCurriculum courseId={course.id} />
+          </TabsContent>
+
+          <TabsContent value="quality">
+            <ContentQualityDashboard courseId={course.id} />
           </TabsContent>
         </Tabs>
       </div>
