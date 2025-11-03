@@ -242,8 +242,20 @@ const Index = () => {
       </main>
 
       <footer className="border-t mt-20">
-        <div className="container mx-auto px-4 py-8 text-center text-muted-foreground">
-          <p>&copy; 2025 Experts Coaching Hub. All rights reserved.</p>
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <p className="text-muted-foreground text-center sm:text-left">
+              &copy; 2025 Experts Coaching Hub. All rights reserved.
+            </p>
+            <div className="flex gap-6">
+              <button onClick={() => navigate("/privacy")} className="text-muted-foreground hover:text-foreground transition-colors">
+                Privacy Policy
+              </button>
+              <button onClick={() => navigate("/terms")} className="text-muted-foreground hover:text-foreground transition-colors">
+                Terms of Service
+              </button>
+            </div>
+          </div>
         </div>
       </footer>
     </div>
