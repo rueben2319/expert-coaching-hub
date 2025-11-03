@@ -38,6 +38,7 @@ const CoachBilling = lazy(() => import("./pages/coach/Billing"));
 const BillingSuccess = lazy(() => import("./pages/coach/BillingSuccess"));
 const CoachSettings = lazy(() => import("./pages/coach/CoachSettings"));
 const Withdrawals = lazy(() => import("./pages/coach/Withdrawals"));
+const CoachAnalytics = lazy(() => import("./pages/coach/CoachAnalytics"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const UserDetail = lazy(() => import("./pages/admin/UserDetail"));
@@ -249,6 +250,14 @@ const App = () => {
               element={
                 <ProtectedRoute allowedRoles={["coach"]}>
                   <Withdrawals />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/coach/analytics"
+              element={
+                <ProtectedRoute allowedRoles={["coach"]}>
+                  <CoachAnalytics />
                 </ProtectedRoute>
               }
             />

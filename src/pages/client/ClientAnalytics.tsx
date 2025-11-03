@@ -8,6 +8,21 @@ import { clientSidebarSections } from "@/config/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
+import { 
+  ChartContainer, 
+  ChartTooltip, 
+  ChartTooltipContent 
+} from "@/components/ui/chart";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  ResponsiveContainer,
+  LineChart,
+  Line
+} from "recharts";
 
 export default function ClientAnalytics() {
   const { user } = useAuth();
@@ -156,12 +171,57 @@ export default function ClientAnalytics() {
       };
     });
 
+    // Weekly activity breakdown (last 7 days)
+    const weeklyActivity = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const lessonsCompleted = lessonProgress.filter(p => {
+        const progressDate = new Date(p.completed_at || p.started_at).toISOString().split('T')[0];
+        return progressDate === dateStr && p.is_completed;
+      }).length;
+
+      return {
+        day: date.toLocaleDateString("en-US", { weekday: "short" }),
+        lessons: lessonsCompleted
+      };
+    });
+
+    // Learning time trend (last 30 days)
+    const timeByDay = new Map<string, number>();
+    const last30Days = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (29 - i));
+      return date.toISOString().split('T')[0];
+    });
+
+    last30Days.forEach(day => timeByDay.set(day, 0));
+
+    lessonProgress.forEach(progress => {
+      if (progress.is_completed && progress.completed_at) {
+        const day = new Date(progress.completed_at).toISOString().split('T')[0];
+        if (timeByDay.has(day)) {
+          timeByDay.set(day, (timeByDay.get(day) || 0) + (progress.lessons?.estimated_duration || 0));
+        }
+      }
+    });
+
+    const learningTimeTrend = Array.from(timeByDay.entries())
+      .slice(-7) // Show last 7 days
+      .map(([date, minutes]) => ({
+        date: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        minutes
+      }));
+
     return {
       totalCourses,
       completedCourses,
       currentStreak,
       totalMinutes,
-      courseProgressDetails
+      courseProgressDetails,
+      weeklyActivity,
+      learningTimeTrend
     };
   }, [enrollments, lessonProgress]);
 
@@ -231,6 +291,90 @@ export default function ClientAnalytics() {
               );
             })
           ) : null}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Weekly Activity */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Weekly Activity
+              </CardTitle>
+              <CardDescription>Lessons completed in the last 7 days</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="h-[250px] flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : analyticsData ? (
+                <ChartContainer
+                  config={{
+                    lessons: {
+                      label: "Lessons",
+                      color: "hsl(var(--primary))",
+                    },
+                  }}
+                  className="h-[250px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={analyticsData.weeklyActivity}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="day" />
+                      <YAxis />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="lessons" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Learning Time Trend */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Study Time Trend
+              </CardTitle>
+              <CardDescription>Daily study time over the last week</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="h-[250px] flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : analyticsData ? (
+                <ChartContainer
+                  config={{
+                    minutes: {
+                      label: "Minutes",
+                      color: "hsl(var(--accent))",
+                    },
+                  }}
+                  className="h-[250px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={analyticsData.learningTimeTrend}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line 
+                        type="monotone" 
+                        dataKey="minutes" 
+                        stroke="hsl(var(--accent))" 
+                        strokeWidth={2}
+                        dot={{ fill: "hsl(var(--accent))", r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              ) : null}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
