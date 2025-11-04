@@ -264,18 +264,18 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
   }, [loadedFromStorage, data, storageKey, toast]);
 
   return (
-    <Card className="shadow-none border-muted">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <BookOpen className="h-4 w-4 text-indigo-500" />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <h3 className="flex items-center gap-2 text-lg font-semibold">
+          <BookOpen className="h-5 w-5 text-indigo-500" />
           Practice Exercise Generator
-        </CardTitle>
-        <CardDescription className="text-xs leading-relaxed">
+        </h3>
+        <p className="text-sm text-muted-foreground leading-relaxed">
           Generate draft practice questions tailored to this lesson. Drafts are saved automatically and can
           be reviewed before publishing to learners.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm">
+        </p>
+      </div>
+      <div className="space-y-4 text-sm">
         <div className="grid gap-3">
           <div className="grid gap-2">
             <Label className="text-xs uppercase tracking-wide">Difficulty</Label>
@@ -509,7 +509,7 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

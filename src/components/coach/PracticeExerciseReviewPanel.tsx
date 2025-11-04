@@ -94,7 +94,7 @@ function PracticeExerciseItemCard({
   };
 
   return (
-    <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+    <div className="space-y-3 py-3 border-b last:border-b-0">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-center gap-2 text-xs">
           <Badge variant="outline" className="capitalize">
@@ -373,16 +373,16 @@ export function PracticeExerciseReviewPanel({ lessonId }: PracticeExerciseReview
   }, [practiceSets]);
 
   return (
-    <Card className="shadow-none border-muted">
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div>
-          <CardTitle className="text-base flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-indigo-500" />
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-indigo-500" />
             Practice Drafts
-          </CardTitle>
-          <CardDescription className="text-xs">
+          </h3>
+          <p className="text-sm text-muted-foreground">
             Review and approve generated practice sets before publishing them to learners.
-          </CardDescription>
+          </p>
         </div>
         <Button
           type="button"
@@ -390,13 +390,13 @@ export function PracticeExerciseReviewPanel({ lessonId }: PracticeExerciseReview
           size="sm"
           onClick={() => refetch()}
           disabled={isLoading}
-          className="gap-2"
+          className="gap-2 shrink-0"
         >
           <RefreshCw className={isLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
           Refresh
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm">
+      </div>
+      <div className="space-y-4 text-sm">
         {isError && friendlyErrorMessage && (
           <Alert variant="destructive">
             <AlertDescription className="space-y-1">
@@ -416,23 +416,22 @@ export function PracticeExerciseReviewPanel({ lessonId }: PracticeExerciseReview
         )}
 
         {!isLoading && !sortedSets.length && (
-          <div className="rounded-lg border border-dashed border-muted p-3 text-muted-foreground text-xs">
+          <div className="rounded-lg border border-dashed border-muted p-4 text-muted-foreground text-sm">
             No practice drafts yet. Generate exercises to review them here.
           </div>
         )}
 
         {sortedSets.length > 0 && (
-          <ScrollArea className="max-h-[420px] pr-2">
-            <div className="space-y-3">
+          <div className="space-y-4">
               {sortedSets.map((set) => {
                 const statusMeta = statusLabels[set.status] ?? {
                   label: set.status ?? "Unknown",
                   className: "bg-muted text-foreground",
                 };
                 return (
-                  <div key={set.id} className="rounded-lg border p-3 space-y-3">
+                  <div key={set.id} className="space-y-4 pb-6 border-b last:border-b-0">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge className={`${statusMeta.className} capitalize`}>{statusMeta.label}</Badge>
                           {set.difficulty && (
@@ -445,7 +444,7 @@ export function PracticeExerciseReviewPanel({ lessonId }: PracticeExerciseReview
                             <Badge variant="secondary">Audience: {set.target_audience}</Badge>
                           )}
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
                           Generated on {new Date(set.created_at).toLocaleString()} • {set.practice_exercise_items.length} items
                         </div>
                       </div>
@@ -491,7 +490,7 @@ export function PracticeExerciseReviewPanel({ lessonId }: PracticeExerciseReview
                       </div>
                     )}
 
-                    <div className="space-y-3">
+                    <div className="space-y-4 mt-4">
                       {set.practice_exercise_items.map((item) => (
                         <PracticeExerciseItemCard
                           key={item.id}
@@ -519,10 +518,9 @@ export function PracticeExerciseReviewPanel({ lessonId }: PracticeExerciseReview
                   </div>
                 );
               })}
-            </div>
-          </ScrollArea>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
