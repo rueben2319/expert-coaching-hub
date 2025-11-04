@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,22 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
   const [quantity, setQuantity] = useState(6);
   const { toast } = useToast();
 
+  // Get localStorage key for this lesson
+  const storageKey = `practice-exercises-${lessonId}`;
+
+  // Load saved exercises from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // This will be loaded automatically when data is set
+      } catch (err) {
+        console.error("Failed to load saved exercises", err);
+      }
+    }
+  }, [storageKey]);
+
   const {
     generate,
     isLoading,
@@ -69,7 +85,16 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
     data,
     reset,
   } = useAIAction({
-    onSuccess: () => {
+    onSuccess: (responseData) => {
+      // Save to localStorage
+      if (responseData?.output) {
+        const savedData = {
+          output: responseData.output,
+          timestamp: new Date().toISOString(),
+          params: { difficulty, skillFocus, targetAudience, quantity }
+        };
+        localStorage.setItem(storageKey, JSON.stringify(savedData));
+      }
       toast({
         title: "Practice draft generated",
         description: "A draft practice set has been saved as a draft for this lesson.",
@@ -84,19 +109,52 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
     },
   });
 
-  const parsedResult = useMemo<PracticeExerciseResult | null>(() => {
-    if (!data?.output) return null;
-    try {
-      const parsed = JSON.parse(data.output) as PracticeExerciseResult;
-      if (!parsed?.exercises || !Array.isArray(parsed.exercises)) {
-        return null;
+  // Load from localStorage if available and no current data
+  useEffect(() => {
+    if (!data && !isLoading) {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          // We can't directly set the data, but we can show a message
+        } catch (err) {
+          console.error("Failed to load saved exercises", err);
+        }
       }
-      return parsed;
-    } catch (err) {
-      console.error("Failed to parse practice exercises", err, data.output);
-      return null;
     }
-  }, [data]);
+  }, [data, isLoading, storageKey]);
+
+  const parsedResult = useMemo<PracticeExerciseResult | null>(() => {
+    // Try to load from current data first
+    if (data?.output) {
+      try {
+        const parsed = JSON.parse(data.output) as PracticeExerciseResult;
+        if (parsed?.exercises && Array.isArray(parsed.exercises)) {
+          return parsed;
+        }
+      } catch (err) {
+        console.error("Failed to parse practice exercises", err, data.output);
+      }
+    }
+    
+    // Fallback to localStorage if no current data
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const savedData = JSON.parse(saved);
+        if (savedData?.output) {
+          const parsed = JSON.parse(savedData.output) as PracticeExerciseResult;
+          if (parsed?.exercises && Array.isArray(parsed.exercises)) {
+            return parsed;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse saved exercises", err);
+      }
+    }
+    
+    return null;
+  }, [data, storageKey]);
 
   const handleGenerate = () => {
     const context: Record<string, unknown> = {
@@ -116,7 +174,28 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
 
   const handleReset = () => {
     reset();
+    localStorage.removeItem(storageKey);
   };
+
+  // Load previous result on mount
+  const [loadedFromStorage, setLoadedFromStorage] = useState(false);
+  useEffect(() => {
+    if (!loadedFromStorage && !data) {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          toast({
+            title: "Previous exercises loaded",
+            description: `Loaded exercises from ${new Date(parsed.timestamp).toLocaleDateString()}`,
+          });
+          setLoadedFromStorage(true);
+        } catch (err) {
+          console.error("Failed to load saved exercises", err);
+        }
+      }
+    }
+  }, [loadedFromStorage, data, storageKey, toast]);
 
   return (
     <Card className="shadow-none border-muted">
@@ -285,10 +364,10 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
               </p>
             </div>
 
-            <ScrollArea className="max-h-[360px] rounded-lg border">
+            <div className="rounded-lg border max-h-[500px] overflow-y-auto">
               <div className="divide-y">
                 {parsedResult.exercises.map((exercise, index) => (
-                  <div key={`${exercise.exercise_type}-${index}`} className="space-y-3 p-3 text-sm">
+                  <div key={`${exercise.exercise_type}-${index}`} className="space-y-3 p-4 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 font-medium">
                         <Badge variant="outline" className="capitalize">
@@ -302,9 +381,9 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
                       </div>
                       <span className="text-xs text-muted-foreground">Question {index + 1}</span>
                     </div>
-                    <p className="font-medium text-foreground">{exercise.question}</p>
+                    <p className="font-medium text-foreground leading-relaxed">{exercise.question}</p>
                     {exercise.choices && exercise.choices.length > 0 && (
-                      <ul className="space-y-1 rounded-md bg-muted/40 p-3 text-xs">
+                      <ul className="space-y-2 rounded-md bg-muted/40 p-3 text-xs">
                         {exercise.choices.map((choice, choiceIndex) => {
                           const isAnswer = exercise.answer && exercise.answer.trim().length > 0 && choice.trim().toLowerCase() === exercise.answer.trim().toLowerCase();
                           return (
@@ -321,11 +400,14 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
                     {exercise.answer && (
                       <div className="flex items-center gap-2 text-xs text-emerald-600">
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>Answer: {exercise.answer}</span>
+                        <span className="font-medium">Answer: {exercise.answer}</span>
                       </div>
                     )}
                     {exercise.explanation && (
-                      <p className="text-xs text-muted-foreground">{exercise.explanation}</p>
+                      <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 p-3 text-xs text-muted-foreground leading-relaxed border border-blue-200 dark:border-blue-900">
+                        <p className="font-medium text-blue-900 dark:text-blue-300 mb-1">Explanation:</p>
+                        {exercise.explanation}
+                      </div>
                     )}
                     {exercise.tags && exercise.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1">
@@ -339,7 +421,7 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
                   </div>
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         )}
       </CardContent>

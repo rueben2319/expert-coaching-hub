@@ -76,16 +76,18 @@ export function LessonItem({ lesson, moduleId }: LessonItemProps) {
                     Practice tools
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl">
-                  <DialogHeader>
+                <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+                  <DialogHeader className="flex-shrink-0">
                     <DialogTitle className="text-base font-semibold">Practice exercises</DialogTitle>
                     <DialogDescription className="text-sm text-muted-foreground">
                       Generate new practice sets or review drafts for this lesson.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-                    <PracticeExerciseGenerator lessonId={lesson.id} />
-                    <PracticeExerciseReviewPanel lessonId={lesson.id} />
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="grid gap-4 lg:grid-cols-2 p-1">
+                      <PracticeExerciseGenerator lessonId={lesson.id} />
+                      <PracticeExerciseReviewPanel lessonId={lesson.id} />
+                    </div>
                   </div>
                 </DialogContent>
               </Dialog>
