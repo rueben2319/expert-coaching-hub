@@ -1,4 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +24,7 @@ import {
   ListChecks,
   CheckCircle2,
   BookOpen,
+  Save,
 } from "lucide-react";
 
 interface PracticeExerciseGeneratorProps {
@@ -59,6 +62,7 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
   const [targetAudience, setTargetAudience] = useState("");
   const [quantity, setQuantity] = useState(6);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Get localStorage key for this lesson
   const storageKey = `practice-exercises-${lessonId}`;
@@ -177,6 +181,68 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
     localStorage.removeItem(storageKey);
   };
 
+  const saveToDraft = useMutation({
+    mutationFn: async (exercises: PracticeExerciseResult) => {
+      // Insert the practice exercise set
+      const { data: setData, error: setError } = await supabase
+        .from("practice_exercise_sets")
+        .insert({
+          lesson_id: lessonId,
+          difficulty: exercises.set?.difficulty || null,
+          skill_focus: exercises.set?.skill_focus || null,
+          target_audience: exercises.set?.target_audience || null,
+          status: "draft",
+        })
+        .select()
+        .single();
+
+      if (setError) throw setError;
+      if (!setData) throw new Error("Failed to create practice set");
+
+      // Insert the practice exercise items
+      const items = exercises.exercises.map((ex) => ({
+        set_id: setData.id,
+        exercise_type: ex.exercise_type,
+        question: ex.question,
+        answer: ex.answer || null,
+        explanation: ex.explanation || null,
+        difficulty: ex.difficulty || null,
+        tags: ex.tags || null,
+        choices: ex.choices || null,
+        approved: false,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from("practice_exercise_items")
+        .insert(items);
+
+      if (itemsError) throw itemsError;
+
+      return setData;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Saved as draft",
+        description: "Your practice exercises are now available in the review panel.",
+      });
+      localStorage.removeItem(storageKey);
+      queryClient.invalidateQueries({ queryKey: ["practice-exercise-sets", lessonId] });
+    },
+    onError: (error) => {
+      console.error("Failed to save draft", error);
+      toast({
+        title: "Failed to save draft",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveToDraft = () => {
+    if (!parsedResult) return;
+    saveToDraft.mutate(parsedResult);
+  };
+
   // Load previous result on mount
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
   useEffect(() => {
@@ -291,8 +357,27 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
               </>
             )}
           </Button>
-          {isSuccess && (
+          {parsedResult && (
             <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSaveToDraft}
+                disabled={saveToDraft.isPending}
+                className="gap-2"
+              >
+                {saveToDraft.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Saving…</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    <span>Save as Draft</span>
+                  </>
+                )}
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -359,8 +444,8 @@ export function PracticeExerciseGenerator({ lessonId, contentId }: PracticeExerc
               {parsedResult.set?.summary && (
                 <p className="mt-2 text-xs text-muted-foreground">{parsedResult.set.summary}</p>
               )}
-              <p className="mt-2 text-xs text-muted-foreground">
-                Saved as draft. Approve from the practice exercises list when you are ready to publish.
+              <p className="mt-2 text-xs text-emerald-600 font-medium">
+                ✓ Click "Save as Draft" to move these to the review panel for approval.
               </p>
             </div>
 
