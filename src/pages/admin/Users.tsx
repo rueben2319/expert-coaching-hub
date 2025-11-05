@@ -34,34 +34,41 @@ export default function AdminUsers() {
     const [_key, page, search] = queryKey;
     const offset = page * pageSize;
 
-    // First, get all user_ids that have role = 'coach'
-    const { data: coachRows, error: coachErr } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .eq('role', 'coach');
-    if (coachErr) throw coachErr;
-
-    const coachIds = (coachRows || []).map((r: any) => r.user_id);
-    if (coachIds.length === 0) return { data: [], total: 0 };
-
-    // Fetch profiles for those coach IDs, with optional search and pagination
+    // Fetch all profiles with search and pagination
     let profilesQuery = supabase
       .from('profiles')
-      .select('id, full_name, email, created_at')
-      .in('id', coachIds as string[])
+      .select('id, full_name, email, created_at', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + pageSize - 1);
 
     if (search && search.trim()) {
-      profilesQuery = profilesQuery.ilike('full_name', `%${search}%`).or(`email.ilike.%${search}%`);
+      profilesQuery = profilesQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`);
     }
 
-    const { data, error } = await profilesQuery;
+    const { data: profiles, error, count } = await profilesQuery;
     if (error) throw error;
 
-    // Enrich results: all are coaches
-    const enriched = (data || []).map((d: any) => ({ ...d, role: 'coach' }));
-    return { data: enriched, total: enriched.length };
+    if (!profiles || profiles.length === 0) return { data: [], total: 0 };
+
+    // Fetch roles for all users
+    const userIds = profiles.map((p: any) => p.id);
+    const { data: roleRows } = await supabase
+      .from('user_roles')
+      .select('user_id, role')
+      .in('user_id', userIds as string[]);
+
+    const roleMap: Record<string, string> = {};
+    (roleRows || []).forEach((row: any) => {
+      roleMap[row.user_id] = row.role;
+    });
+
+    // Enrich profiles with roles
+    const enriched = profiles.map((p: any) => ({ 
+      ...p, 
+      role: roleMap[p.id] || 'client' 
+    }));
+
+    return { data: enriched, total: count ?? enriched.length };
   };
 
   const { data, isLoading, refetch } = useQuery<UserData>({

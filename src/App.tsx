@@ -43,6 +43,8 @@ const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const UserDetail = lazy(() => import("./pages/admin/UserDetail"));
 const AdminWithdrawals = lazy(() => import("./pages/admin/Withdrawals"));
+const AdminTransactions = lazy(() => import("./pages/admin/Transactions"));
+const AdminCourses = lazy(() => import("./pages/admin/Courses"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const Terms = lazy(() => import("./pages/Terms"));
@@ -305,6 +307,33 @@ const App = () => {
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
                   <AdminWithdrawals />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/analytics"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/transactions"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AdminTransactions />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/courses"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AdminCourses />
                 </ProtectedRoute>
               }
             />
