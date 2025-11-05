@@ -4,9 +4,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { BookOpen, Users, Shield, Settings, BarChart3, AlertCircle } from "lucide-react";
+import { BookOpen, Users, Shield, DollarSign, TrendingUp, CreditCard, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminSidebarSections } from "@/config/navigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+interface RevenueStats {
+  daily: number;
+  monthly: number;
+  annual: number;
+}
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -16,28 +23,92 @@ export default function AdminDashboard() {
   const [pendingWithdrawals, setPendingWithdrawals] = useState<number | null>(null);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [coachRevenue, setCoachRevenue] = useState<RevenueStats>({ daily: 0, monthly: 0, annual: 0 });
+  const [creditRevenue, setCreditRevenue] = useState<RevenueStats>({ daily: 0, monthly: 0, annual: 0 });
+  const [activeSubscriptions, setActiveSubscriptions] = useState<number>(0);
+  const [totalTransactions, setTotalTransactions] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       setLoading(true);
       try {
-        // total users from profiles
+        // Total users from profiles
         const usersCountRes = await supabase.from('profiles').select('*', { count: 'exact', head: true });
         if (mounted) setTotalUsers(usersCountRes.count ?? 0);
 
-        // total courses
+        // Total courses
         const coursesCountRes = await supabase.from('courses').select('*', { count: 'exact', head: true });
         if (mounted) setTotalCourses(coursesCountRes.count ?? 0);
 
-        // pending withdrawals
+        // Pending withdrawals
         const withdrawalsCountRes = await supabase
           .from('withdrawal_requests')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'pending');
         if (mounted) setPendingWithdrawals(withdrawalsCountRes.count ?? 0);
 
-        // recent users
+        // Active coach subscriptions
+        const activeSubsRes = await supabase
+          .from('coach_subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'active');
+        if (mounted) setActiveSubscriptions(activeSubsRes.count ?? 0);
+
+        // Coach subscription revenue
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+
+        // Coach subscriptions revenue (from transactions)
+        const { data: coachTxns } = await supabase
+          .from('transactions')
+          .select('amount, created_at')
+          .eq('transaction_mode', 'coach_subscription')
+          .eq('status', 'success');
+
+        if (coachTxns && mounted) {
+          const daily = coachTxns
+            .filter(t => new Date(t.created_at) >= today)
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+          const monthly = coachTxns
+            .filter(t => new Date(t.created_at) >= monthStart)
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+          const annual = coachTxns
+            .filter(t => new Date(t.created_at) >= yearStart)
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+          setCoachRevenue({ daily, monthly, annual });
+        }
+
+        // Credit purchases revenue
+        const { data: creditTxns } = await supabase
+          .from('transactions')
+          .select('amount, created_at')
+          .eq('transaction_mode', 'credit_purchase')
+          .eq('status', 'success');
+
+        if (creditTxns && mounted) {
+          const daily = creditTxns
+            .filter(t => new Date(t.created_at) >= today)
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+          const monthly = creditTxns
+            .filter(t => new Date(t.created_at) >= monthStart)
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+          const annual = creditTxns
+            .filter(t => new Date(t.created_at) >= yearStart)
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+          setCreditRevenue({ daily, monthly, annual });
+        }
+
+        // Total successful transactions
+        const { count: txnCount } = await supabase
+          .from('transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'success');
+        if (mounted) setTotalTransactions(txnCount ?? 0);
+
+        // Recent users
         const { data: recent, error: recentErr } = await supabase
           .from('profiles')
           .select('id, full_name, email, created_at')
@@ -46,7 +117,6 @@ export default function AdminDashboard() {
         if (recentErr) console.error('Error loading recent users', recentErr);
 
         if (recent && recent.length > 0) {
-          // fetch roles for those users
           const ids = recent.map((r: any) => r.id);
           const { data: roleRows, error: roleErr } = await supabase
             .from('user_roles')
@@ -74,6 +144,15 @@ export default function AdminDashboard() {
     return () => { mounted = false; };
   }, []);
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-MW', { 
+      style: 'currency', 
+      currency: 'MWK',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+
   return (
     <DashboardLayout
       sidebarSections={adminSidebarSections}
@@ -83,10 +162,11 @@ export default function AdminDashboard() {
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
           Admin Dashboard
         </h1>
-        <p className="text-muted-foreground">Monitor and manage platform activity</p>
+        <p className="text-muted-foreground">Monitor and manage platform activity & revenue</p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {/* Overview Stats */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader>
             <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
@@ -97,7 +177,6 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-2 text-primary">{loading ? '...' : totalUsers ?? 0}</div>
-            <p className="text-sm text-muted-foreground">Active users</p>
           </CardContent>
         </Card>
 
@@ -111,7 +190,19 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-2 text-accent">{loading ? '...' : totalCourses ?? 0}</div>
-            <p className="text-sm text-muted-foreground">Courses available</p>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
+              <TrendingUp className="w-6 h-6 text-green-500" />
+            </div>
+            <CardTitle>Active Subscriptions</CardTitle>
+            <CardDescription>Coach subscriptions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-green-500">{loading ? '...' : activeSubscriptions}</div>
           </CardContent>
         </Card>
 
@@ -121,17 +212,178 @@ export default function AdminDashboard() {
               <AlertCircle className="w-6 h-6 text-orange-500" />
             </div>
             <CardTitle>Pending Withdrawals</CardTitle>
-            <CardDescription>Withdrawal requests awaiting approval</CardDescription>
+            <CardDescription>Awaiting approval</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-2 text-orange-500">{loading ? '...' : pendingWithdrawals ?? 0}</div>
-            <p className="text-sm text-muted-foreground">Require attention</p>
             <Button variant="outline" className="w-full mt-2" onClick={() => window.location.href = '/admin/withdrawals'}>
-              Manage Withdrawals
+              Manage
             </Button>
           </CardContent>
         </Card>
+      </div>
 
+      {/* Revenue Analytics */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-semibold mb-4">Revenue Analytics</h2>
+        <Tabs defaultValue="daily" className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsTrigger value="daily">Daily</TabsTrigger>
+            <TabsTrigger value="monthly">Monthly</TabsTrigger>
+            <TabsTrigger value="annual">Annual</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="daily" className="space-y-4 mt-6">
+            <div className="grid gap-6 md:grid-cols-3">
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                    <DollarSign className="w-6 h-6 text-primary" />
+                  </div>
+                  <CardTitle>Coach Subscriptions</CardTitle>
+                  <CardDescription>Today's revenue</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-primary">
+                    {loading ? '...' : formatCurrency(coachRevenue.daily)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
+                    <CreditCard className="w-6 h-6 text-accent" />
+                  </div>
+                  <CardTitle>Credit Purchases</CardTitle>
+                  <CardDescription>Today's revenue</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-accent">
+                    {loading ? '...' : formatCurrency(creditRevenue.daily)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
+                    <TrendingUp className="w-6 h-6 text-green-500" />
+                  </div>
+                  <CardTitle>Total Revenue</CardTitle>
+                  <CardDescription>Today's total</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-green-500">
+                    {loading ? '...' : formatCurrency(coachRevenue.daily + creditRevenue.daily)}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="monthly" className="space-y-4 mt-6">
+            <div className="grid gap-6 md:grid-cols-3">
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                    <DollarSign className="w-6 h-6 text-primary" />
+                  </div>
+                  <CardTitle>Coach Subscriptions</CardTitle>
+                  <CardDescription>This month's revenue</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-primary">
+                    {loading ? '...' : formatCurrency(coachRevenue.monthly)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
+                    <CreditCard className="w-6 h-6 text-accent" />
+                  </div>
+                  <CardTitle>Credit Purchases</CardTitle>
+                  <CardDescription>This month's revenue</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-accent">
+                    {loading ? '...' : formatCurrency(creditRevenue.monthly)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
+                    <TrendingUp className="w-6 h-6 text-green-500" />
+                  </div>
+                  <CardTitle>Total Revenue</CardTitle>
+                  <CardDescription>This month's total</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-green-500">
+                    {loading ? '...' : formatCurrency(coachRevenue.monthly + creditRevenue.monthly)}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="annual" className="space-y-4 mt-6">
+            <div className="grid gap-6 md:grid-cols-3">
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                    <DollarSign className="w-6 h-6 text-primary" />
+                  </div>
+                  <CardTitle>Coach Subscriptions</CardTitle>
+                  <CardDescription>This year's revenue</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-primary">
+                    {loading ? '...' : formatCurrency(coachRevenue.annual)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
+                    <CreditCard className="w-6 h-6 text-accent" />
+                  </div>
+                  <CardTitle>Credit Purchases</CardTitle>
+                  <CardDescription>This year's revenue</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-accent">
+                    {loading ? '...' : formatCurrency(creditRevenue.annual)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
+                    <TrendingUp className="w-6 h-6 text-green-500" />
+                  </div>
+                  <CardTitle>Total Revenue</CardTitle>
+                  <CardDescription>This year's total</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-green-500">
+                    {loading ? '...' : formatCurrency(coachRevenue.annual + creditRevenue.annual)}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid gap-6 md:grid-cols-2 mb-8">
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader>
             <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
@@ -141,7 +393,22 @@ export default function AdminDashboard() {
             <CardDescription>Manage user roles and access</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="outline" className="w-full" onClick={() => window.location.href = '/admin/users'}>Manage Users</Button>
+            <Button variant="outline" className="w-full" onClick={() => window.location.href = '/admin/users'}>
+              Manage Users
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
+              <TrendingUp className="w-6 h-6 text-accent" />
+            </div>
+            <CardTitle>Transactions</CardTitle>
+            <CardDescription>Total successful transactions: {totalTransactions}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Monitor all platform transactions</p>
           </CardContent>
         </Card>
       </div>
