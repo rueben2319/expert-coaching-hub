@@ -128,6 +128,7 @@ export type Database = {
           created_at: string
           id: string
           paychangu_enabled: boolean
+          paychangu_key_vault_id: string | null
           paychangu_secret_key: string | null
           updated_at: string
         }
@@ -136,6 +137,7 @@ export type Database = {
           created_at?: string
           id?: string
           paychangu_enabled?: boolean
+          paychangu_key_vault_id?: string | null
           paychangu_secret_key?: string | null
           updated_at?: string
         }
@@ -144,6 +146,7 @@ export type Database = {
           created_at?: string
           id?: string
           paychangu_enabled?: boolean
+          paychangu_key_vault_id?: string | null
           paychangu_secret_key?: string | null
           updated_at?: string
         }
@@ -1452,6 +1455,30 @@ export type Database = {
       }
     }
     Views: {
+      profiles_public: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       v_practice_exercise_coach_scope: {
         Row: {
           coach_id: string | null
@@ -1532,6 +1559,10 @@ export type Database = {
       }
       get_coach_paychangu_secret: {
         Args: { _coach_id: string }
+        Returns: string
+      }
+      get_coach_payment_key: {
+        Args: { coach_user_id: string }
         Returns: string
       }
       get_next_lesson: {
