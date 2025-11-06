@@ -4,10 +4,6 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.46.1";
 // @ts-ignore OpenAI SDK for Deno
 import OpenAI from "https://deno.land/x/openai@v4.24.0/mod.ts";
-// @ts-ignore Anthropic SDK for Deno (used for some providers)
-import Anthropic from "npm:@anthropic-ai/sdk@0.20.0";
-// @ts-ignore Google GenAI SDK for Deno (used for Gemini)
-import { GoogleGenAI } from "npm:@google/genai";
 
 declare const Deno: {
   env: {
@@ -51,11 +47,11 @@ class HttpError extends Error {
   }
 }
 
-type SupabaseClient = ReturnType<typeof createClient>;
+type SupabaseClient = any;
 
 type ActionHandler = (params: {
   payload: AIRequestPayload;
-  supabase: SupabaseClient;
+  supabase: any;
   user: any;
 }) => Promise<{
   prompt: string;

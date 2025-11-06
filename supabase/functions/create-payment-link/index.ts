@@ -104,7 +104,8 @@ serve(async (req: Request) => {
       console.log("Raw request body:", rawBody);
     } catch (textError) {
       console.error("Failed to read request as text:", textError);
-      throw new Error(`Cannot read request body: ${textError.message}`);
+      const message = textError instanceof Error ? textError.message : String(textError);
+      throw new Error(`Cannot read request body: ${message}`);
     }
 
     if (!rawBody || rawBody.trim() === "") {
@@ -118,7 +119,8 @@ serve(async (req: Request) => {
       console.log("Request body parsed successfully");
     } catch (parseError) {
       console.error("Failed to parse request body:", parseError);
-      throw new Error(`Invalid JSON in request body: ${parseError.message}`);
+      const message = parseError instanceof Error ? parseError.message : String(parseError);
+      throw new Error(`Invalid JSON in request body: ${message}`);
     }
     console.log("Request body:", JSON.stringify(body, null, 2));
     const mode = body.mode;
