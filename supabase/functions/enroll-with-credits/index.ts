@@ -54,11 +54,30 @@ serve(async (req: Request) => {
     }
 
     // Parse request body
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { course_id } = body;
 
-    if (!course_id) {
-      return new Response(JSON.stringify({ error: "course_id is required" }), {
+    // Validate course_id
+    if (!course_id || typeof course_id !== 'string') {
+      return new Response(JSON.stringify({ error: "course_id must be a valid string" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(course_id)) {
+      return new Response(JSON.stringify({ error: "Invalid course_id format" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

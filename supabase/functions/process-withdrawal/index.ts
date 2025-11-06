@@ -14,7 +14,7 @@ serve(async (req) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       {
         global: {
           headers: { Authorization: req.headers.get("Authorization")! },
@@ -40,10 +40,34 @@ serve(async (req) => {
       throw new Error("Unauthorized: Admin access required");
     }
 
-    const { withdrawal_id, action, admin_notes } = await req.json();
+    // Parse and validate request body
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      throw new Error("Invalid JSON payload");
+    }
 
-    if (!withdrawal_id || !action) {
-      throw new Error("Missing required fields");
+    const { withdrawal_id, action, admin_notes } = body;
+
+    // Validate withdrawal_id
+    if (!withdrawal_id || typeof withdrawal_id !== 'string') {
+      throw new Error("withdrawal_id must be a valid string");
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(withdrawal_id)) {
+      throw new Error("Invalid withdrawal_id format");
+    }
+
+    // Validate action
+    if (!action || !['approve', 'reject'].includes(action)) {
+      throw new Error("Action must be 'approve' or 'reject'");
+    }
+
+    // Validate admin_notes length
+    if (admin_notes && (typeof admin_notes !== 'string' || admin_notes.length > 1000)) {
+      throw new Error("Admin notes must be a string with max 1000 characters");
     }
 
     // Get withdrawal request
