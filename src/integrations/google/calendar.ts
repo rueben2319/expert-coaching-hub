@@ -62,7 +62,7 @@ class GoogleCalendarService {
   private readonly CACHE_DURATION = 5000; // 5 seconds
   // Prevent race conditions in concurrent token requests
   private pendingTokenFetches: Map<string, Promise<string>> = new Map();
-  private readonly SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+  private readonly SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
 
   private async getAccessToken(): Promise<string> {
     // Get current user ID for cache key
@@ -226,11 +226,16 @@ class GoogleCalendarService {
       if (response.status === 401 && retryCount < maxRetries) {
         logger.log('Access token expired, attempting refresh...');
         
-        // Refresh the token
-        await this.refreshAccessToken();
-        
-        // Retry the request with new token
-        return this.makeCalendarRequest(endpoint, options, retryCount + 1);
+        try {
+          // Refresh the token
+          await this.refreshAccessToken();
+          
+          // Retry the request with new token
+          return this.makeCalendarRequest(endpoint, options, retryCount + 1);
+        } catch (refreshError: any) {
+          logger.error('Token refresh failed:', refreshError);
+          throw new Error('Authentication failed. Please reconnect your Google account.');
+        }
       }
 
       if (!response.ok) {
@@ -307,11 +312,16 @@ class GoogleCalendarService {
       if (response.status === 401 && retryCount < maxRetries) {
         logger.log('Access token expired during delete, attempting refresh...');
         
-        // Refresh the token
-        await this.refreshAccessToken();
-        
-        // Retry the request with new token
-        return this.deleteEvent(calendarId, eventId, retryCount + 1);
+        try {
+          // Refresh the token
+          await this.refreshAccessToken();
+          
+          // Retry the request with new token
+          return this.deleteEvent(calendarId, eventId, retryCount + 1);
+        } catch (refreshError: any) {
+          logger.error('Token refresh failed during delete:', refreshError);
+          throw new Error('Authentication failed. Please reconnect your Google account.');
+        }
       }
 
       if (!response.ok) {

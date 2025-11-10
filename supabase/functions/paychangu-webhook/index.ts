@@ -209,8 +209,12 @@ serve(async (req: Request) => {
     console.log("Payment success status:", success);
 
     // Update transaction status and gateway response
-    await (supabase.from("transactions") as any)
-      .update({ status: success ? "success" : "failed", gateway_response: payload })
+    await supabase
+      .from("transactions")
+      .update({ 
+        status: success ? "success" : "failed", 
+        gateway_response: payload as Record<string, unknown>
+      })
       .eq("id", tx.id);
 
     // Check if this is a payout (withdrawal) transaction

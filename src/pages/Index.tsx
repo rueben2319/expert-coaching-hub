@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { GraduationCap, Users, BookOpen, TrendingUp, Star } from "lucide-react";
@@ -46,7 +46,21 @@ const sampleReviews = [
 const CourseCard = ({ course }: { course: typeof sampleCourses[number] }) => (
   <div className="bg-card/50 rounded-2xl shadow-sm overflow-hidden">
     <div className="h-40 bg-muted-foreground/5 flex items-center justify-center">
-      <img src={course.image} alt={course.title} className="h-28 object-contain" />
+      {course.image && course.image !== "/placeholder.svg" ? (
+        <img 
+          src={course.image} 
+          alt={`${course.title} course cover image`}
+          className="h-28 object-contain"
+          loading="lazy"
+        />
+      ) : (
+        <div 
+          className="h-28 w-full bg-muted flex items-center justify-center"
+          aria-label={`${course.title} course - no image available`}
+        >
+          <BookOpen className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
+        </div>
+      )}
     </div>
     <div className="p-4">
       <h4 className="font-semibold text-lg">{course.title}</h4>
@@ -109,6 +123,13 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5">
+      {/* Skip Navigation Link - WCAG 2.1 Level A Requirement */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        Skip to main content
+      </a>
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -142,7 +163,7 @@ const Index = () => {
         </div>
       </header>
 
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <section className="container mx-auto px-4 py-20 md:py-32">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-block mb-6 px-4 py-2 bg-primary/10 rounded-full text-sm font-medium text-primary">
@@ -248,12 +269,12 @@ const Index = () => {
               &copy; 2025 Experts Coaching Hub. All rights reserved.
             </p>
             <div className="flex gap-6">
-              <button onClick={() => navigate("/privacy")} className="text-muted-foreground hover:text-foreground transition-colors">
+              <Link to="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">
                 Privacy Policy
-              </button>
-              <button onClick={() => navigate("/terms")} className="text-muted-foreground hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/terms" className="text-muted-foreground hover:text-foreground transition-colors">
                 Terms of Service
-              </button>
+              </Link>
             </div>
           </div>
         </div>

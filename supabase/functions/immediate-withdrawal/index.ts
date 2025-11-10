@@ -470,7 +470,9 @@ serve(async (req: Request) => {
     if (walletBalance < creditsToWithdraw) throw new Error("Insufficient balance");
 
     // Convert credits → MWK (needed for logging)
-    const amountMWK = creditsToWithdraw * 100;
+    // Use environment variable for conversion rate, fallback to 100 if not set
+    const CREDIT_TO_MWK_RATE = parseFloat(Deno.env.get('CREDIT_TO_MWK_RATE') || '100');
+    const amountMWK = Math.round(creditsToWithdraw * CREDIT_TO_MWK_RATE);
 
     // Log high-value transactions
     await logHighValueTransaction('withdrawal', user.id, creditsToWithdraw, amountMWK);

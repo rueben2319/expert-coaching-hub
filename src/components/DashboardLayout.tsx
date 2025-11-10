@@ -29,12 +29,25 @@ import {
   LayoutDashboard,
   BarChart3,
   Settings,
+  X,
 } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TokenManagementDashboard } from "@/components/TokenManagementDashboard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useCredits } from "@/hooks/useCredits";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 interface SidebarItem {
   icon: ReactNode;
   label: string;
@@ -76,8 +89,35 @@ export function DashboardLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [signOutDialogOpen, setSignOutDialogOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts([
+    {
+      key: "/",
+      action: () => {
+        const searchInput = document.querySelector('input[type="text"][placeholder*="Search"]') as HTMLInputElement;
+        if (searchInput) {
+          searchInput.focus();
+        }
+      },
+      description: "Focus search",
+    },
+    {
+      key: "Escape",
+      action: () => {
+        if (searchOpen) {
+          setSearchOpen(false);
+        }
+        if (sidebarOpen) {
+          setSidebarOpen(false);
+        }
+      },
+      description: "Close modals/dialogs",
+    },
+  ]);
 
   const getInitials = (name?: string) => {
     if (!name) return "U";
@@ -253,10 +293,37 @@ export function DashboardLayout({
               </DropdownMenuItem>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
+            <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <DropdownMenuItem 
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setSignOutDialogOpen(true);
+                  }}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to sign out? You'll need to sign in again to access your account.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={signOut}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Sign out
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -278,6 +345,13 @@ export function DashboardLayout({
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* Skip Navigation Link - WCAG 2.1 Level A Requirement */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        Skip to main content
+      </a>
       {/* Navbar */}
       <header className="flex-shrink-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 items-center px-4 md:px-6">
@@ -285,8 +359,15 @@ export function DashboardLayout({
           {sidebarSections.length > 0 && (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden mr-2">
-                  <Menu className="h-5 w-5" />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-11 w-11 md:h-9 md:w-9 md:hidden mr-2"
+                  aria-label="Open navigation menu"
+                  aria-expanded={sidebarOpen}
+                  aria-controls="mobile-sidebar"
+                >
+                  <Menu className="h-5 w-5" aria-hidden="true" />
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-64 p-0">
@@ -298,7 +379,11 @@ export function DashboardLayout({
           {/* Logo/Brand */}
           <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg overflow-hidden flex-shrink-0">
-              <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
+              <img 
+                src={expertsLogo} 
+                alt="Experts Coaching Hub logo - Return to homepage" 
+                className="w-full h-full object-contain"
+              />
             </div>
             <span className="font-semibold text-sm sm:text-base md:text-lg hidden sm:inline truncate max-w-[120px] md:max-w-[180px] lg:max-w-none">
               {brandName}
@@ -313,16 +398,16 @@ export function DashboardLayout({
                 type="text"
                 placeholder={
                   role === 'coach' 
-                    ? "Search..."
+                    ? "Search courses, students, sessions..."
                     : role === 'client'
-                    ? "Search..."
+                    ? "Search courses, lessons, coaches..."
                     : role === 'admin'
-                    ? "Search..."
+                    ? "Search users, transactions, courses..."
                     : "Search..."
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 h-9 w-full"
+                className="pl-10 pr-10 h-9 w-full"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && searchQuery.trim()) {
                     // Handle search based on role
@@ -336,29 +421,61 @@ export function DashboardLayout({
                   }
                 }}
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
             </div>
           </div>
 
           {/* Right Side Actions */}
           <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
             {/* Help Button - Hidden on mobile */}
-            <Button variant="ghost" size="icon" className="h-9 w-9 hidden md:flex">
-              <HelpCircle className="h-4 w-4" />
-            </Button>
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-11 w-11 md:h-9 md:w-9 hidden md:flex"
+                  aria-label="Get help"
+                >
+                  <HelpCircle className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Help & Support</TooltipContent>
+            </Tooltip>
 
             {/* Language/Globe Button - Hidden on mobile */}
-            <Button variant="ghost" size="icon" className="h-9 w-9 hidden md:flex">
-              <Globe className="h-4 w-4" />
-            </Button>
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-11 w-11 md:h-9 md:w-9 hidden md:flex"
+                  aria-label="Change language"
+                >
+                  <Globe className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Language</TooltipContent>
+            </Tooltip>
 
             {/* Search Icon for Mobile - Opens search on small screens */}
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-9 w-9 sm:hidden"
+              className="h-11 w-11 sm:h-9 sm:w-9 sm:hidden"
               onClick={() => setSearchOpen(!searchOpen)}
+              aria-label="Open search"
+              aria-expanded={searchOpen}
             >
-              <Search className="h-4 w-4" />
+              <Search className="h-4 w-4" aria-hidden="true" />
             </Button>
 
             {/* Theme Toggle */}
@@ -367,7 +484,12 @@ export function DashboardLayout({
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-9 w-9 rounded-full p-0">
+                <Button 
+                  variant="ghost" 
+                  className="h-11 w-11 md:h-9 md:w-9 rounded-full p-0"
+                  aria-label={`User menu for ${user?.user_metadata?.full_name || 'user'}`}
+                  aria-haspopup="true"
+                >
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
                     <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs">
@@ -437,10 +559,37 @@ export function DashboardLayout({
                   </DropdownMenuItem>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
+                <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem 
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        setSignOutDialogOpen(true);
+                      }}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to sign out? You'll need to sign in again to access your account.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={signOut}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Sign out
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -464,7 +613,7 @@ export function DashboardLayout({
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 h-10 w-full"
+                className="pl-10 pr-10 h-10 w-full"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && searchQuery.trim()) {
@@ -482,6 +631,16 @@ export function DashboardLayout({
                   }
                 }}
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -517,7 +676,7 @@ export function DashboardLayout({
         )}
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
+        <main id="main-content" className="flex-1 overflow-y-auto" tabIndex={-1}>
           <div className="container mx-auto p-6">
             {children}
           </div>

@@ -123,8 +123,12 @@ export function useCredits() {
       return callSupabaseFunction("purchase-credits", { package_id: packageId });
     },
     onSuccess: (data) => {
-      // Redirect to PayChangu checkout
-      window.location.href = data.checkout_url;
+      // Show user feedback before redirecting
+      toast.info("Redirecting to payment...");
+      // Small delay to ensure toast is visible before redirect
+      setTimeout(() => {
+        window.location.href = data.checkout_url;
+      }, 500);
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to initiate credit purchase");

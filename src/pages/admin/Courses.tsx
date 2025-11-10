@@ -37,7 +37,22 @@ export default function AdminCourses() {
       }
 
       if (search.trim()) {
-        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+        const trimmedSearch = search.trim();
+        
+        // Limit search length to prevent DoS attacks
+        if (trimmedSearch.length > 100) {
+          throw new Error("Search query too long (max 100 characters)");
+        }
+        
+        // Sanitize special LIKE characters (% and _) to prevent injection
+        // Escape backslashes first, then escape % and _
+        const sanitizedSearch = trimmedSearch
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/%/g, '\\%')     // Escape %
+          .replace(/_/g, '\\_');    // Escape _
+        
+        const searchPattern = `%${sanitizedSearch}%`;
+        query = query.or(`title.ilike.${searchPattern},description.ilike.${searchPattern}`);
       }
 
       const { data, error, count } = await query;

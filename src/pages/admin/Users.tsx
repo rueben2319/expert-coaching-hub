@@ -34,15 +34,36 @@ export default function AdminUsers() {
     const [_key, page, search] = queryKey;
     const offset = page * pageSize;
 
-    // Fetch all profiles with search and pagination
+    // Optimized query: Fetch profiles with roles in a single query using join
     let profilesQuery = supabase
       .from('profiles')
-      .select('id, full_name, email, created_at', { count: 'exact' })
+      .select(`
+        id, 
+        full_name, 
+        email, 
+        created_at,
+        user_roles!left(role)
+      `, { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + pageSize - 1);
 
     if (search && search.trim()) {
-      profilesQuery = profilesQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`);
+      const trimmedSearch = search.trim();
+      
+      // Limit search length to prevent DoS attacks
+      if (trimmedSearch.length > 100) {
+        throw new Error("Search query too long (max 100 characters)");
+      }
+      
+      // Sanitize special LIKE characters (% and _) to prevent injection
+      // Escape backslashes first, then escape % and _
+      const sanitizedSearch = trimmedSearch
+        .replace(/\\/g, '\\\\')  // Escape backslashes first
+        .replace(/%/g, '\\%')     // Escape % 
+        .replace(/_/g, '\\_');    // Escape _
+      
+      const searchPattern = `%${sanitizedSearch}%`;
+      profilesQuery = profilesQuery.or(`full_name.ilike.${searchPattern},email.ilike.${searchPattern}`);
     }
 
     const { data: profiles, error, count } = await profilesQuery;
@@ -50,23 +71,21 @@ export default function AdminUsers() {
 
     if (!profiles || profiles.length === 0) return { data: [], total: 0 };
 
-    // Fetch roles for all users
-    const userIds = profiles.map((p: any) => p.id);
-    const { data: roleRows } = await supabase
-      .from('user_roles')
-      .select('user_id, role')
-      .in('user_id', userIds as string[]);
-
-    const roleMap: Record<string, string> = {};
-    (roleRows || []).forEach((row: any) => {
-      roleMap[row.user_id] = row.role;
+    // Enrich profiles with roles from the joined data
+    // user_roles is an array (left join), take the first role if available
+    const enriched = profiles.map((p: any) => {
+      const roleData = Array.isArray(p.user_roles) && p.user_roles.length > 0 
+        ? p.user_roles[0] 
+        : null;
+      
+      return {
+        id: p.id,
+        full_name: p.full_name,
+        email: p.email,
+        created_at: p.created_at,
+        role: roleData?.role || 'client'
+      };
     });
-
-    // Enrich profiles with roles
-    const enriched = profiles.map((p: any) => ({ 
-      ...p, 
-      role: roleMap[p.id] || 'client' 
-    }));
 
     return { data: enriched, total: count ?? enriched.length };
   };

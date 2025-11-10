@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
 interface ProtectedRouteProps {
@@ -14,26 +14,48 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   const location = useLocation();
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [roleCheckDelay, setRoleCheckDelay] = useState(true);
+  
+  // Use refs to track timers and prevent race conditions
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const roleCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Set timeout for loading state
   useEffect(() => {
+    // Clear any existing timer
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+    
     if (!loading) {
       setLoadingTimeout(false);
       return;
     }
 
-    const timer = setTimeout(() => {
+    loadingTimeoutRef.current = setTimeout(() => {
       if (loading) {
         setLoadingTimeout(true);
         logger.info('Authentication loading timeout reached');
       }
+      loadingTimeoutRef.current = null;
     }, 15000); // 15 second timeout
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+    };
   }, [loading]);
 
   // Add a small delay before checking role to allow fetch to complete
   useEffect(() => {
+    // Clear any existing timer
+    if (roleCheckTimerRef.current) {
+      clearTimeout(roleCheckTimerRef.current);
+      roleCheckTimerRef.current = null;
+    }
+
     if (!user) {
       setRoleCheckDelay(false);
       return;
@@ -50,11 +72,17 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
     // Wait up to 12 seconds for role to be fetched before deciding to redirect
     // This accounts for potential auth listener retries
-    const timer = setTimeout(() => {
+    roleCheckTimerRef.current = setTimeout(() => {
       setRoleCheckDelay(false);
+      roleCheckTimerRef.current = null;
     }, 12000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (roleCheckTimerRef.current) {
+        clearTimeout(roleCheckTimerRef.current);
+        roleCheckTimerRef.current = null;
+      }
+    };
   }, [user, role]);
 
   // Show loading state while checking authentication or waiting for role

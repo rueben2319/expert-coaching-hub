@@ -33,6 +33,7 @@ const DialogContent = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
+    {/* Radix UI Dialog automatically handles focus trapping - no manual implementation needed */}
     <DialogPrimitive.Content
       ref={ref}
       className={cn(

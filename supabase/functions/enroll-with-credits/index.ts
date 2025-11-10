@@ -77,10 +77,15 @@ serve(async (req: Request) => {
     // Validate UUID format
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(course_id)) {
-      return new Response(JSON.stringify({ error: "Invalid course_id format" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ 
+          error: "Invalid course ID format. Please ensure you're using a valid course link." 
+        }), 
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Check if already enrolled
@@ -143,6 +148,21 @@ serve(async (req: Request) => {
     // Handle paid courses - use transfer_credits function
     const creditsRequired = Number(course.price_credits);
 
+    // Validate course price configuration
+    if (isNaN(creditsRequired) || creditsRequired < 0) {
+      return new Response(
+        JSON.stringify({ error: "Invalid course price configuration" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!Number.isInteger(creditsRequired)) {
+      return new Response(
+        JSON.stringify({ error: "Course price must be a whole number of credits" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Call the transfer_credits database function
     const { data: transferResult, error: transferError } = await supabase.rpc(
       "transfer_credits",
@@ -172,6 +192,41 @@ serve(async (req: Request) => {
       );
     }
 
+    // Validate transfer result structure
+    if (!transferResult) {
+      console.error("Transfer succeeded but returned null/undefined result");
+      return new Response(
+        JSON.stringify({
+          error: "Credit transfer completed but no result received",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check if transfer was successful
+    if (transferResult.success === false || (typeof transferResult === 'object' && !transferResult.success && !transferResult.sender_transaction_id)) {
+      console.error("Transfer failed:", transferResult);
+      return new Response(
+        JSON.stringify({
+          error: "Credit transfer failed",
+          details: transferResult,
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate that we have the required transaction ID
+    if (!transferResult.sender_transaction_id) {
+      console.error("Transfer succeeded but missing sender_transaction_id:", transferResult);
+      return new Response(
+        JSON.stringify({
+          error: "Credit transfer completed but transaction ID is missing",
+          details: transferResult,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Create enrollment record
     const { data: enrollment, error: enrollError } = await supabase
       .from("course_enrollments")
@@ -187,7 +242,63 @@ serve(async (req: Request) => {
 
     if (enrollError) {
       console.error("Enrollment error:", enrollError);
-      throw new Error("Failed to create enrollment: " + enrollError.message);
+      
+      // Attempt to refund credits if enrollment creation fails
+      // Note: This is a best-effort attempt - the refund function may not exist
+      // If it doesn't exist, log for manual intervention
+      try {
+        const { error: refundError } = await supabase.rpc('refund_credits', {
+          from_user_id: course.coach_id,
+          to_user_id: user.id,
+          amount: creditsRequired,
+          original_transaction_id: transferResult.sender_transaction_id,
+          reason: 'Enrollment creation failed'
+        }).catch(() => ({ error: { message: 'Refund function not available' } }));
+        
+        if (refundError) {
+          console.error("Critical: Failed to refund credits after enrollment failure:", refundError);
+          // Log for manual intervention - this is a critical data integrity issue
+          await supabase.from('error_logs').insert({
+            error_type: 'enrollment_refund_failed',
+            details: {
+              user_id: user.id,
+              course_id: course_id,
+              credits: creditsRequired,
+              enrollment_error: enrollError.message,
+              refund_error: refundError.message || 'Refund function not available',
+              transaction_id: transferResult.sender_transaction_id
+            }
+          }).catch((logError) => {
+            console.error("Failed to log error:", logError);
+          });
+        } else {
+          console.log("Successfully refunded credits after enrollment failure");
+        }
+      } catch (refundErr: any) {
+        console.error("Failed to process refund:", refundErr);
+        // Log for manual intervention
+        await supabase.from('error_logs').insert({
+          error_type: 'enrollment_refund_failed',
+          details: {
+            user_id: user.id,
+            course_id: course_id,
+            credits: creditsRequired,
+            enrollment_error: enrollError.message,
+            refund_error: refundErr.message || 'Unknown error during refund',
+            transaction_id: transferResult.sender_transaction_id
+          }
+        }).catch((logError) => {
+          console.error("Failed to log error:", logError);
+        });
+      }
+      
+      return new Response(
+        JSON.stringify({
+          error: "Failed to create enrollment: " + enrollError.message,
+          note: "Credits have been deducted. If enrollment was not created, please contact support.",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(

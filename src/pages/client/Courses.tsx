@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BookOpen, Clock, Coins, Search, ArrowRight, Signal } from "lucide-react";
+import { BookOpen, Clock, Coins, Search, ArrowRight, Signal, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
@@ -222,8 +222,21 @@ export default function Courses() {
               placeholder="Search catalog..."
               value={localSearch}
               onChange={(e) => handleSearch(e.target.value)}
-              className="pl-12 pr-4 h-12 text-base rounded-full border-2 focus:border-primary"
+              className="pl-12 pr-12 h-12 text-base rounded-full border-2 focus:border-primary"
             />
+            {localSearch && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLocalSearch("");
+                  setSearchParams({});
+                }}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+                aria-label="Clear search"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
 

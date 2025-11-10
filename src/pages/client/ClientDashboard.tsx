@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RecommendedCourses } from "@/components/student/RecommendedCourses";
 import { BookOpen, Clock, Play, Sparkles, Target } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -153,6 +154,59 @@ export default function ClientDashboard() {
   const isLoading = enrollmentsLoading || lessonProgressLoading;
   const hasCourses = !!enrichedEnrollments && enrichedEnrollments.length > 0;
 
+  // Initial page load skeleton
+  if (isLoading && !enrichedEnrollments) {
+    return (
+      <DashboardLayout sidebarSections={clientSidebarSections} brandName="Experts Coaching Hub">
+        <div className="flex flex-col gap-2 mb-8">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-5 w-96" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="space-y-6">
+            <Card className="bg-card/70 backdrop-blur">
+              <CardHeader>
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-64 mt-2" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-24 w-full" />
+              </CardContent>
+            </Card>
+            <div className="space-y-4">
+              <Skeleton className="h-7 w-40" />
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {[1, 2, 3].map((i) => (
+                  <Card key={i}>
+                    <CardHeader>
+                      <Skeleton className="h-5 w-full" />
+                      <Skeleton className="h-4 w-3/4 mt-2" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-2 w-full mb-2" />
+                      <Skeleton className="h-4 w-20" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </div>
+          <aside className="space-y-6">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-48 mt-2" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-32 w-full" />
+              </CardContent>
+            </Card>
+          </aside>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout sidebarSections={clientSidebarSections} brandName="Experts Coaching Hub">
       <div className="flex flex-col gap-2 mb-8">
@@ -240,12 +294,18 @@ export default function ClientDashboard() {
             </div>
 
             {isLoading ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div 
+                role="status" 
+                aria-live="polite" 
+                aria-label="Loading courses"
+                className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+              >
                 {[1, 2, 3].map((skeleton) => (
-                  <Card key={skeleton} className="animate-pulse">
+                  <Card key={skeleton} className="animate-pulse" aria-hidden="true">
                     <CardContent className="h-40" />
                   </Card>
                 ))}
+                <span className="sr-only">Loading courses, please wait...</span>
               </div>
             ) : hasCourses ? (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -266,7 +326,7 @@ export default function ClientDashboard() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-auto px-0 text-xs"
+                          className="min-h-[44px] min-w-[44px] px-3 py-2 text-xs md:h-auto md:px-0"
                           onClick={() => navigate(`/client/course/${enrollment.courses.id}`)}
                         >
                           Continue
@@ -277,9 +337,16 @@ export default function ClientDashboard() {
                 ))}
               </div>
             ) : (
-              <Card className="text-center py-12">
+              <Card 
+                className="text-center py-12"
+                role="status"
+                aria-live="polite"
+              >
                 <CardContent>
-                  <BookOpen className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
+                  <BookOpen 
+                    className="mx-auto h-10 w-10 text-muted-foreground mb-4" 
+                    aria-hidden="true"
+                  />
                   <h3 className="text-lg font-semibold mb-2">No courses yet</h3>
                   <p className="text-muted-foreground text-sm mb-4">
                     Enroll in a course to start tracking your progress.

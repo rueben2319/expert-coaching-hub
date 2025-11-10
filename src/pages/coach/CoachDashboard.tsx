@@ -3,6 +3,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Users, BarChart3, Calendar, Video, Plus, TrendingUp, Clock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -70,6 +71,39 @@ export default function CoachDashboard() {
       }, 0) || 0);
     }, 0) || 0);
   }, 0) || 0;
+
+  // Initial page load skeleton
+  if ((coursesLoading || enrollmentsLoading) && !courses) {
+    return (
+      <DashboardLayout
+        sidebarSections={coachSidebarSections}
+        brandName="Experts Coaching Hub"
+      >
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <Skeleton className="h-10 w-48 mb-2" />
+            <Skeleton className="h-5 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-12 w-12 rounded-lg mb-4" />
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-4 w-32 mt-2" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout

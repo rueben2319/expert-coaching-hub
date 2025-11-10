@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,9 +39,83 @@ export default function Auth() {
   const [oauthRolePromptOpen, setOauthRolePromptOpen] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const { user, role, refreshRole, signOut } = useAuth();
   const hasInitialized = useRef(false);
+  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Real-time validation with debouncing
+  const validateField = useCallback((fieldName: string, value: string) => {
+    if (validationTimeoutRef.current) {
+      clearTimeout(validationTimeoutRef.current);
+    }
+
+    validationTimeoutRef.current = setTimeout(() => {
+      const newErrors: Record<string, string> = {};
+
+      if (fieldName === "fullName" && !isLogin) {
+        if (!value || value.trim().length < 2) {
+          newErrors.fullName = "Full name must be at least 2 characters.";
+        } else if (value.trim().length > 100) {
+          newErrors.fullName = "Full name must be less than 100 characters.";
+        } else {
+          const sanitized = value
+            .trim()
+            .normalize('NFKC')
+            .replace(/[^\p{L}\p{M}\s'-]/gu, '')
+            .replace(/\s+/g, ' ');
+          if (!/^[\p{L}\p{M}\s'-]+$/u.test(sanitized)) {
+            newErrors.fullName = "Full name can only contain letters, spaces, hyphens, and apostrophes.";
+          }
+        }
+      }
+
+      if (fieldName === "email") {
+        if (!value || !value.trim()) {
+          newErrors.email = "Email is required.";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          newErrors.email = "Please enter a valid email address.";
+        }
+      }
+
+      if (fieldName === "password" && !isLogin) {
+        if (!value || value.length < 8) {
+          newErrors.password = "Password must be at least 8 characters.";
+        } else {
+          const strength = passwordStrength(value);
+          if (strength < 60) {
+            newErrors.password = "Password is too weak. Use at least 8 chars, include a number and a symbol.";
+          }
+        }
+      }
+
+      if (fieldName === "confirmPassword" && !isLogin) {
+        if (value !== password) {
+          newErrors.confirmPassword = "Passwords do not match.";
+        }
+      }
+
+      setErrors(prev => {
+        const updated = { ...prev };
+        if (newErrors[fieldName]) {
+          updated[fieldName] = newErrors[fieldName];
+        } else {
+          delete updated[fieldName];
+        }
+        return updated;
+      });
+    }, 300); // 300ms debounce
+  }, [isLogin, password]);
+
+  // Cleanup validation timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -155,10 +229,11 @@ export default function Auth() {
     return () => {
       isMounted = false;
     };
-  }, [user, navigate]);  // Removed refreshRole dependency to prevent infinite loop
+  }, [user, navigate, refreshRole]);  // refreshRole is stable (memoized with useCallback) so safe to include
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
     setLoading(true);
 
     try {
@@ -172,10 +247,10 @@ export default function Auth() {
         toast.success("Welcome back!");
       } else {
         // Client-side validation and sanitization
+        const newErrors: Record<string, string> = {};
+
         if (!fullName || fullName.trim().length < 2) {
-          toast.error("Please provide your full name.");
-          setLoading(false);
-          return;
+          newErrors.fullName = "Please provide your full name.";
         }
 
         // Comprehensive sanitization
@@ -187,33 +262,38 @@ export default function Auth() {
           .slice(0, 100);  // Max length
 
         // Validation
-        if (sanitizedFullName.length < 2 || sanitizedFullName.length > 100) {
-          toast.error("Full name must be between 2 and 100 characters.");
-          setLoading(false);
-          return;
+        if (!newErrors.fullName) {
+          if (sanitizedFullName.length < 2 || sanitizedFullName.length > 100) {
+            newErrors.fullName = "Full name must be between 2 and 100 characters.";
+          } else if (!/^[\p{L}\p{M}\s'-]+$/u.test(sanitizedFullName)) {
+            newErrors.fullName = "Full name can only contain letters, spaces, hyphens, and apostrophes.";
+          } else if (/^\s|\s$/.test(sanitizedFullName)) {
+            newErrors.fullName = "Full name cannot start or end with spaces.";
+          }
         }
 
-        if (!/^[\p{L}\p{M}\s'-]+$/u.test(sanitizedFullName)) {
-          toast.error("Full name can only contain letters, spaces, hyphens, and apostrophes.");
-          setLoading(false);
-          return;
+        if (!email || !email.trim()) {
+          newErrors.email = "Email is required.";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+          newErrors.email = "Please enter a valid email address.";
         }
 
-        if (/^\s|\s$/.test(sanitizedFullName)) {
-          toast.error("Full name cannot start or end with spaces.");
-          setLoading(false);
-          return;
+        if (!password || password.length < 8) {
+          newErrors.password = "Password must be at least 8 characters.";
+        } else {
+          const strength = passwordStrength(password);
+          if (strength < 60) {
+            newErrors.password = "Password is too weak. Use at least 8 chars, include a number and a symbol.";
+          }
         }
 
         if (password !== confirmPassword) {
-          toast.error("Passwords do not match.");
-          setLoading(false);
-          return;
+          newErrors.confirmPassword = "Passwords do not match.";
         }
 
-        const strength = passwordStrength(password);
-        if (strength < 60) {
-          toast.error("Password is too weak. Use at least 8 chars, include a number and a symbol.");
+        if (Object.keys(newErrors).length > 0) {
+          setErrors(newErrors);
+          toast.error("Please check the form for errors.");
           setLoading(false);
           return;
         }
@@ -384,9 +464,35 @@ export default function Auth() {
                     type="text"
                     placeholder="John Doe"
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFullName(value);
+                      if (value) {
+                        validateField("fullName", value);
+                      } else {
+                        setErrors(prev => ({ ...prev, fullName: "" }));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value) {
+                        validateField("fullName", e.target.value);
+                      }
+                    }}
                     required
+                    aria-invalid={!!errors.fullName}
+                    aria-describedby={errors.fullName ? "fullName-error" : undefined}
+                    className={errors.fullName ? "border-destructive" : ""}
                   />
+                  {errors.fullName && (
+                    <p 
+                      id="fullName-error" 
+                      className="text-sm text-destructive"
+                      role="alert"
+                      aria-live="polite"
+                    >
+                      {errors.fullName}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">I want to join as a</Label>
@@ -423,9 +529,35 @@ export default function Auth() {
                 type="email"
                 placeholder="you@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEmail(value);
+                      if (value) {
+                        validateField("email", value);
+                      } else {
+                        setErrors(prev => ({ ...prev, email: "" }));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value) {
+                        validateField("email", e.target.value);
+                      }
+                    }}
                 required
+                aria-invalid={!!errors.email}
+                aria-describedby={errors.email ? "email-error" : undefined}
+                className={errors.email ? "border-destructive" : ""}
               />
+              {errors.email && (
+                <p 
+                  id="email-error" 
+                  className="text-sm text-destructive"
+                  role="alert"
+                  aria-live="polite"
+                >
+                  {errors.email}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
@@ -435,22 +567,54 @@ export default function Auth() {
                   type={showPassword ? "text" : "password"}
                   placeholder="•••••••���"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setPassword(value);
+                    if (value && !isLogin) {
+                      validateField("password", value);
+                      // Also validate confirm password if it has a value
+                      if (confirmPassword) {
+                        validateField("confirmPassword", confirmPassword);
+                      }
+                    } else {
+                      setErrors(prev => ({ ...prev, password: "" }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (e.target.value && !isLogin) {
+                      validateField("password", e.target.value);
+                    }
+                  }}
                   required
                   minLength={isLogin ? undefined : 8}
+                  aria-invalid={!!errors.password}
+                  aria-describedby={errors.password ? "password-error" : (!isLogin ? "password-help" : undefined)}
+                  className={errors.password ? "border-destructive pr-20" : "pr-20"}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
-              { !isLogin && (
-                <div className="text-xs text-muted-foreground">Use at least 8 characters including a number and a symbol.</div>
-              ) }
+              {errors.password && (
+                <p 
+                  id="password-error" 
+                  className="text-sm text-destructive"
+                  role="alert"
+                  aria-live="polite"
+                >
+                  {errors.password}
+                </p>
+              )}
+              {!isLogin && !errors.password && (
+                <p id="password-help" className="text-xs text-muted-foreground">
+                  Use at least 8 characters including a number and a symbol.
+                </p>
+              )}
             </div>
 
             {!isLogin && (
@@ -462,19 +626,56 @@ export default function Auth() {
                     type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setConfirmPassword(value);
+                      if (value) {
+                        validateField("confirmPassword", value);
+                      } else {
+                        setErrors(prev => ({ ...prev, confirmPassword: "" }));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value) {
+                        validateField("confirmPassword", e.target.value);
+                      }
+                    }}
                     required
                     minLength={8}
+                    aria-invalid={!!errors.confirmPassword}
+                    aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
+                    className={errors.confirmPassword ? "border-destructive" : ""}
                   />
+                  {errors.confirmPassword && (
+                    <p 
+                      id="confirmPassword-error" 
+                      className="text-sm text-destructive"
+                      role="alert"
+                      aria-live="polite"
+                    >
+                      {errors.confirmPassword}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-2">
-                  <div className="h-2 w-full bg-muted-foreground/10 rounded-full overflow-hidden">
+                  <div 
+                    className="h-2 w-full bg-muted-foreground/10 rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={passwordStrength(password)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Password strength: ${passwordStrength(password) < 30 ? "Weak" : passwordStrength(password) < 60 ? "Fair" : passwordStrength(password) < 80 ? "Good" : "Strong"}`}
+                  >
                     <div
                       className={`h-full bg-gradient-to-r from-yellow-400 to-green-400 transition-all`}
                       style={{ width: `${passwordStrength(password)}%` }}
+                      aria-hidden="true"
                     />
                   </div>
+                  <p className="sr-only">
+                    Password strength: {passwordStrength(password) < 30 ? "Weak" : passwordStrength(password) < 60 ? "Fair" : passwordStrength(password) < 80 ? "Good" : "Strong"}
+                  </p>
                 </div>
               </>
             )}
@@ -483,8 +684,17 @@ export default function Auth() {
               type="submit"
               className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity"
               disabled={loading}
+              aria-busy={loading}
+              aria-live="polite"
             >
-              {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
+              {loading ? (
+                <>
+                  <span className="sr-only">Loading, please wait</span>
+                  Loading...
+                </>
+              ) : (
+                isLogin ? "Sign In" : "Sign Up"
+              )}
             </Button>
           </form>
           <div className="relative my-6">

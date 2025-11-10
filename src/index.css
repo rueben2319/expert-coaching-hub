@@ -25,7 +25,7 @@ All colors MUST be HSL.
     --secondary-foreground: 215 25% 27%;
 
     --muted: 215 16% 97%;
-    --muted-foreground: 215 13% 54%;
+    --muted-foreground: 215 13% 40%; /* Improved contrast: ~5.8:1 on white (was 3.2:1) */
 
     --accent: 195 84% 34%;
     --accent-foreground: 0 0% 100%;
@@ -36,6 +36,7 @@ All colors MUST be HSL.
     --border: 215 16% 92%;
     --input: 215 16% 92%;
     --ring: 215 84% 34%;
+    --placeholder: 215 13% 45%; /* Improved placeholder contrast: ~4.8:1 on white */
 
     --radius: 0.75rem;
 
@@ -78,7 +79,8 @@ All colors MUST be HSL.
     --secondary-foreground: 0 0% 98%;
 
     --muted: 215 20% 25%;
-    --muted-foreground: 215 15% 70%;
+    --muted-foreground: 215 15% 74%; /* Improved contrast in dark mode */
+    --placeholder: 215 15% 68%; /* Slightly brighter placeholder for readability */
 
     --accent: 195 84% 58%;
     --accent-foreground: 0 0% 100%;
@@ -117,5 +119,40 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Improved placeholder contrast */
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--placeholder));
+  }
+
+  /* Enhanced focus indicators for better visibility */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    *:focus-visible {
+      outline: 3px solid currentColor !important;
+      outline-offset: 2px !important;
+    }
+  }
+
+  /* Ensure all inputs are at least 16px on mobile to prevent iOS zoom */
+  @media (max-width: 768px) {
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="tel"],
+    input[type="url"],
+    input[type="search"],
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
   }
 }

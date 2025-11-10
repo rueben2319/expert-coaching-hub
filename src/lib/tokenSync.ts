@@ -121,23 +121,46 @@ export async function syncTokens(): Promise<TokenSyncResult> {
  */
 export function setupTokenSync(intervalMs: number = 60000): () => void {
   logger.log('Setting up automatic token synchronization');
+  let isActive = true;
 
   // Periodic check for token refresh needs
   const intervalId = setInterval(async () => {
+    if (!isActive) return; // Don't execute if cleaned up
+    
     try {
+      // Check if user is still authenticated before proceeding
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        isActive = false;
+        clearInterval(intervalId);
+        logger.log('Token sync stopped - no active session');
+        return;
+      }
+      
+      // Only proceed if still active
+      if (!isActive) return;
+      
       const needsRefresh = await checkTokenRefreshNeeded();
-      if (needsRefresh) {
+      if (needsRefresh && isActive) {
         logger.log('Proactive token refresh triggered');
         await syncTokens();
       }
     } catch (error) {
       logger.error('Error during periodic token check:', error);
+      // Don't clear interval on error - might be temporary network issue
+      // But check if it's an auth error that should stop the sync
+      if (error instanceof Error && (error.message.includes('session') || error.message.includes('auth'))) {
+        isActive = false;
+        clearInterval(intervalId);
+        logger.log('Token sync stopped due to auth error');
+      }
     }
   }, intervalMs);
 
   // Return cleanup function
   return () => {
     logger.log('Cleaning up token synchronization');
+    isActive = false;
     clearInterval(intervalId);
   };
 }
