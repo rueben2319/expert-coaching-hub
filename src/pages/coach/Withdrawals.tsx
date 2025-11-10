@@ -9,10 +9,21 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle, Loader2, AlertCircle } from "lucide-react";
+import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle, Loader2, AlertCircle, ShieldCheck } from "lucide-react";
 import { CreditWallet } from "@/components/CreditWallet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { WITHDRAWAL_LIMITS } from "@/lib/withdrawalLimits";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const CONVERSION_RATE = WITHDRAWAL_LIMITS.CONVERSION_RATE; // 1 credit = 100 MWK
 const MIN_WITHDRAWAL = WITHDRAWAL_LIMITS.MIN_WITHDRAWAL; // Minimum 10 credits
@@ -29,19 +40,20 @@ export default function Withdrawals() {
   const [accountName, setAccountName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [notes, setNotes] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const creditsAmount = Number(amount) || 0;
   const mwkAmount = creditsAmount * CONVERSION_RATE;
   
   // Enhanced validation
   const isAmountValid = creditsAmount >= MIN_WITHDRAWAL && creditsAmount <= MAX_WITHDRAWAL && creditsAmount <= balance;
-  const isPhoneValid = phoneNumber && /^\+?265\d{9}$/.test(phoneNumber.replace(/\s/g, ''));
+  const isPhoneValid = phoneNumber && /^\+?265\s?\d{3}\s?\d{3}\s?\d{3}$/.test(phoneNumber.replace(/\s/g, ''));
   const canSubmit = isAmountValid && paymentMethod === "mobile_money" && isPhoneValid;
 
   const handleSubmit = () => {
     const paymentDetails = paymentMethod === "bank_transfer" 
       ? { account_number: accountNumber, bank_name: bankName, account_name: accountName }
-      : { mobile: phoneNumber }; // ✅ Changed from phone_number to mobile
+      : { mobile: phoneNumber.replace(/\s/g, '') }; // Normalize spaces
 
     requestWithdrawal.mutate({
       credits_amount: creditsAmount,
@@ -57,6 +69,7 @@ export default function Withdrawals() {
     setAccountName("");
     setPhoneNumber("");
     setNotes("");
+    setConfirmOpen(false);
   };
 
   const getStatusIcon = (status: string) => {
@@ -142,71 +155,77 @@ export default function Withdrawals() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Amount (Credits)</Label>
-                  <Input
-                    id="amount"
-                    type="number"
-                    placeholder="Enter amount"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    max={balance}
-                    min={0}
-                  />
-                  {creditsAmount > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      ≈ <span className="font-semibold">MWK {mwkAmount.toLocaleString()}</span>
-                    </p>
-                  )}
-                  {creditsAmount > 0 && creditsAmount < MIN_WITHDRAWAL && (
-                    <p className="text-sm text-destructive">
-                      Minimum withdrawal: {MIN_WITHDRAWAL} credits (MWK {MIN_WITHDRAWAL * CONVERSION_RATE})
-                    </p>
-                  )}
-                  {creditsAmount > MAX_WITHDRAWAL && (
-                    <p className="text-sm text-destructive">
-                      Maximum per transaction: {MAX_WITHDRAWAL.toLocaleString()} credits
-                    </p>
-                  )}
-                  {creditsAmount > balance && (
-                    <p className="text-sm text-destructive">
-                      Insufficient balance. Available: {balance.toFixed(2)} credits
-                    </p>
-                  )}
-                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="amount">Amount (Credits)</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      placeholder="Enter amount"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      max={balance}
+                      min={0}
+                      aria-invalid={!isAmountValid && !!amount}
+                      aria-describedby={!isAmountValid && !!amount ? "amount-error" : undefined}
+                    />
+                    {creditsAmount > 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        ≈ <span className="font-semibold">MWK {mwkAmount.toLocaleString()}</span>
+                      </p>
+                    )}
+                    {creditsAmount > 0 && creditsAmount < MIN_WITHDRAWAL && (
+                      <p id="amount-error" className="text-sm text-destructive">
+                        Minimum withdrawal: {MIN_WITHDRAWAL} credits (MWK {MIN_WITHDRAWAL * CONVERSION_RATE})
+                      </p>
+                    )}
+                    {creditsAmount > MAX_WITHDRAWAL && (
+                      <p className="text-sm text-destructive">
+                        Maximum per transaction: {MAX_WITHDRAWAL.toLocaleString()} credits
+                      </p>
+                    )}
+                    {creditsAmount > balance && (
+                      <p className="text-sm text-destructive">
+                        Insufficient balance. Available: {balance.toFixed(2)} credits
+                      </p>
+                    )}
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="payment-method">Payment Method</Label>
-                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                    <SelectTrigger id="payment-method">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mobile_money">Mobile Money (Instant)</SelectItem>
-                      <SelectItem value="bank_transfer" disabled>Bank Transfer (Coming Soon)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-2">
+                    <Label htmlFor="payment-method">Payment Method</Label>
+                    <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                      <SelectTrigger id="payment-method">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mobile_money">Mobile Money (Instant)</SelectItem>
+                        <SelectItem value="bank_transfer" disabled>Bank Transfer (Coming Soon)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {paymentMethod === "bank_transfer" ? (
                   <>
-                    <div className="space-y-2">
-                      <Label htmlFor="bank-name">Bank Name</Label>
-                      <Input
-                        id="bank-name"
-                        placeholder="e.g., Standard Bank"
-                        value={bankName}
-                        onChange={(e) => setBankName(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="account-name">Account Name</Label>
-                      <Input
-                        id="account-name"
-                        placeholder="Full name on account"
-                        value={accountName}
-                        onChange={(e) => setAccountName(e.target.value)}
-                      />
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="bank-name">Bank Name</Label>
+                        <Input
+                          id="bank-name"
+                          placeholder="e.g., Standard Bank"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="account-name">Account Name</Label>
+                        <Input
+                          id="account-name"
+                          placeholder="Full name on account"
+                          value={accountName}
+                          onChange={(e) => setAccountName(e.target.value)}
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="account-number">Account Number</Label>
@@ -226,12 +245,14 @@ export default function Withdrawals() {
                       placeholder="e.g., +265 999 123 456"
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
+                      aria-invalid={!!phoneNumber && !isPhoneValid}
+                      aria-describedby={!!phoneNumber && !isPhoneValid ? "phone-error" : undefined}
                     />
                     <p className="text-xs text-muted-foreground">
                       Supported: Airtel (99/88), TNM (77/76)
                     </p>
                     {phoneNumber && !isPhoneValid && (
-                      <p className="text-xs text-destructive">
+                      <p id="phone-error" className="text-xs text-destructive">
                         Invalid format. Use: +265 999 123 456
                       </p>
                     )}
@@ -249,34 +270,79 @@ export default function Withdrawals() {
                   />
                 </div>
 
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handleSubmit}
-                  disabled={!canSubmit || requestWithdrawal.isPending}
-                >
-                  {requestWithdrawal.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <ArrowDownToLine className="h-4 w-4 mr-2" />
-                      Withdraw Now
-                    </>
-                  )}
-                </Button>
+                {/* Summary */}
+                <div className="grid md:grid-cols-3 gap-3 text-sm border rounded-lg p-3 bg-card/50">
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">You will receive</p>
+                    <p className="font-semibold">MWK {mwkAmount.toLocaleString()}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Payment method</p>
+                    <p className="font-semibold capitalize">{paymentMethod.replace("_", " ")}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Fee</p>
+                    <p className="font-semibold">MWK 0</p>
+                  </div>
+                </div>
 
-                <div className="space-y-1">
+                <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      disabled={!canSubmit || requestWithdrawal.isPending}
+                      aria-disabled={!canSubmit || requestWithdrawal.isPending}
+                    >
+                      {requestWithdrawal.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <ArrowDownToLine className="h-4 w-4 mr-2" />
+                          Withdraw Now
+                        </>
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Confirm Withdrawal</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        You are about to withdraw <strong>{creditsAmount}</strong> credits (≈ MWK {mwkAmount.toLocaleString()}) to <strong>{paymentMethod.replace("_", " ")}</strong>.
+                        Please confirm the details are correct.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="rounded-lg border p-3 text-sm bg-muted/40">
+                      <div className="flex items-center justify-between">
+                        <span>Amount (Credits)</span>
+                        <span className="font-semibold">{creditsAmount}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Amount (MWK)</span>
+                        <span className="font-semibold">{mwkAmount.toLocaleString()}</span>
+                      </div>
+                      {paymentMethod === "mobile_money" && (
+                        <div className="flex items-center justify-between">
+                          <span>Mobile</span>
+                          <span className="font-semibold">{phoneNumber || "-"}</span>
+                        </div>
+                      )}
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleSubmit} disabled={!canSubmit}>
+                        Confirm & Withdraw
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                <div className="space-y-1" role="status" aria-live="polite">
                   <p className="text-xs text-muted-foreground text-center">
-                    ⚡ Instant payouts to mobile money (seconds to minutes)
-                  </p>
-                  <p className="text-xs text-muted-foreground text-center">
-                    🔒 Failed payouts are automatically refunded
-                  </p>
-                  <p className="text-xs text-muted-foreground text-center">
-                    🛡️ Protected by fraud detection and rate limiting
+                    <ShieldCheck className="inline h-3.5 w-3.5 mr-1" /> Instant payouts; automatic refunds on failure
                   </p>
                 </div>
               </CardContent>
