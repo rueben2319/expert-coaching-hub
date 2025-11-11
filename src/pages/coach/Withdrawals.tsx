@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle, Loader2, AlertCircle, ShieldCheck } from "lucide-react";
+import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle, Loader2, AlertCircle, ShieldCheck, RefreshCw } from "lucide-react";
 import { CreditWallet } from "@/components/CreditWallet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { WITHDRAWAL_LIMITS } from "@/lib/withdrawalLimits";
@@ -32,7 +32,7 @@ const DAILY_LIMIT = WITHDRAWAL_LIMITS.DAILY_LIMIT; // Maximum credits per day
 const CREDIT_AGING_DAYS = WITHDRAWAL_LIMITS.CREDIT_AGING_DAYS; // Credits must age 3 days
 
 export default function Withdrawals() {
-  const { balance, requestWithdrawal, withdrawalRequests, withdrawalsLoading } = useCredits();
+  const { balance, requestWithdrawal, retryWithdrawal, withdrawalRequests, withdrawalsLoading } = useCredits();
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("mobile_money");
   const [accountNumber, setAccountNumber] = useState("");
@@ -340,10 +340,19 @@ export default function Withdrawals() {
                   </AlertDialogContent>
                 </AlertDialog>
 
-                <div className="space-y-1" role="status" aria-live="polite">
-                  <p className="text-xs text-muted-foreground text-center">
-                    <ShieldCheck className="inline h-3.5 w-3.5 mr-1" /> Instant payouts; automatic refunds on failure
-                  </p>
+                <div className="space-y-2" role="status" aria-live="polite">
+                  <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    <span>Instant payouts with automatic refunds on failure</span>
+                  </div>
+                  {requestWithdrawal.isError && (
+                    <Alert variant="destructive" className="text-xs">
+                      <AlertCircle className="h-3 w-3" />
+                      <AlertDescription>
+                        {requestWithdrawal.error?.message || "Withdrawal failed. Please try again."}
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -395,8 +404,48 @@ export default function Withdrawals() {
                           </p>
                         )}
                         {request.status === "failed" && (
-                          <p className="text-sm text-orange-600">
-                            Credits have been automatically refunded to your wallet
+                          <div className="space-y-2">
+                            <div className="text-sm space-y-1">
+                              <p className="text-orange-600 font-medium">
+                                ⚠️ Credits have been automatically refunded to your wallet
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                {(request.retry_count || 0) >= 3 
+                                  ? "Maximum retry limit reached. Please contact support for assistance."
+                                  : "You can retry your withdrawal or contact support if you need assistance."}
+                              </p>
+                              {(request.retry_count || 0) > 0 && (request.retry_count || 0) < 3 && (
+                                <p className="text-xs text-muted-foreground">
+                                  Retries: {request.retry_count}/3
+                                </p>
+                              )}
+                            </div>
+                            {(request.retry_count || 0) < 3 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => retryWithdrawal.mutate(request.id)}
+                                disabled={retryWithdrawal.isPending}
+                                className="w-full sm:w-auto"
+                              >
+                                {retryWithdrawal.isPending ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                    Retrying...
+                                  </>
+                                ) : (
+                                  <>
+                                    <RefreshCw className="h-3 w-3 mr-2" />
+                                    Retry Withdrawal {(request.retry_count || 0) > 0 ? `(${3 - (request.retry_count || 0)} left)` : ''}
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                        {request.status === "processing" && (
+                          <p className="text-sm text-blue-600">
+                            ⏳ Processing with payment provider. This usually takes a few minutes.
                           </p>
                         )}
                         {request.notes && (

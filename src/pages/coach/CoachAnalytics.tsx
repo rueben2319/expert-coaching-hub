@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCredits } from "@/hooks/useCredits";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { WithdrawalAnalytics } from "@/components/WithdrawalAnalytics";
 
 const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--accent))", "hsl(142, 76%, 36%)", "hsl(24, 95%, 53%)", "hsl(262, 83%, 58%)"];
 
@@ -262,12 +263,14 @@ export default function CoachAnalytics() {
           <p className="text-muted-foreground">Track your coaching performance and student progress</p>
         </div>
 
-        <Tabs defaultValue="student-analytics">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="student-analytics">Student Analytics</TabsTrigger>
-            <TabsTrigger value="financial-analytics">Financial Analytics</TabsTrigger>
+        <Tabs defaultValue="overview">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="students">Students</TabsTrigger>
+            <TabsTrigger value="financials">Financials</TabsTrigger>
+            <TabsTrigger value="withdrawals">Withdrawals</TabsTrigger>
           </TabsList>
-          <TabsContent value="student-analytics" className="mt-6">
+          <TabsContent value="overview" className="mt-6">
 
         {/* Key Metrics */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -509,7 +512,7 @@ export default function CoachAnalytics() {
           </CardContent>
             </Card>
           </TabsContent>
-          <TabsContent value="financial-analytics" className="mt-6 space-y-6">
+          <TabsContent value="financials" className="mt-6 space-y-6">
             {/* Financial Metrics */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {isLoading ? (
@@ -640,6 +643,17 @@ export default function CoachAnalytics() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Withdrawals Tab */}
+          <TabsContent value="withdrawals" className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-2">Withdrawal Analytics</h2>
+              <p className="text-muted-foreground">
+                Track your withdrawal performance, success rates, and trends
+              </p>
+            </div>
+            <WithdrawalAnalytics coachId={user?.id} />
           </TabsContent>
         </Tabs>
       </div>

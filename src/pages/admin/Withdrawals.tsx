@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { CheckCircle, XCircle, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, Clock, AlertCircle, Loader2, AlertTriangle, Filter } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminSidebarSections } from "@/config/navigation";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function AdminWithdrawals() {
   const { user } = useAuth();
@@ -19,6 +21,7 @@ export default function AdminWithdrawals() {
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<any>(null);
   const [action, setAction] = useState<"approve" | "reject" | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data: withdrawalRequests, isLoading } = useQuery({
     queryKey: ["admin-withdrawal-requests"],
@@ -133,11 +136,39 @@ export default function AdminWithdrawals() {
               Monitor and process coach withdrawal requests
             </p>
           </div>
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+
+        {/* Critical Alerts for Failed Withdrawals */}
+        {withdrawalRequests && withdrawalRequests.filter((r: any) => r.status === "failed" && r.rejection_reason?.includes("Reference:")).length > 0 && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Critical:</strong> {withdrawalRequests.filter((r: any) => r.status === "failed" && r.rejection_reason?.includes("Reference:")).length} withdrawal(s) require manual intervention. Check failed withdrawals below.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {withdrawalRequests && withdrawalRequests.length > 0 ? (
           <div className="grid gap-4">
-            {withdrawalRequests.map((request: any) => (
+            {withdrawalRequests
+              .filter((request: any) => statusFilter === "all" || request.status === statusFilter)
+              .map((request: any) => (
               <Card key={request.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex justify-between items-start">
@@ -189,6 +220,35 @@ export default function AdminWithdrawals() {
                     </div>
                   )}
 
+                  {request.rejection_reason && (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium text-muted-foreground mb-1">Failure Reason</p>
+                      <p className={`text-sm p-2 rounded border-l-4 ${
+                        request.rejection_reason.includes("Reference:") 
+                          ? "bg-red-50 text-red-700 border-red-400" 
+                          : "bg-orange-50 text-orange-700 border-orange-400"
+                      }`}>
+                        {request.rejection_reason}
+                      </p>
+                    </div>
+                  )}
+
+                  {request.fraud_score && request.fraud_score > 50 && (
+                    <Alert className="mb-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <strong>Fraud Score:</strong> {request.fraud_score}/100
+                        {request.fraud_reasons && request.fraud_reasons.length > 0 && (
+                          <ul className="mt-1 text-xs list-disc list-inside">
+                            {request.fraud_reasons.map((reason: string, idx: number) => (
+                              <li key={idx}>{reason}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   <div className="flex justify-between items-center text-sm text-muted-foreground mb-4">
                     <span>Requested: {new Date(request.created_at).toLocaleString()}</span>
                     {request.processed_at && (
@@ -214,6 +274,30 @@ export default function AdminWithdrawals() {
                       >
                         <XCircle className="w-4 h-4 mr-2" />
                         Reject
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Action Buttons for Failed Withdrawals */}
+                  {request.status === "failed" && (
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => handleProcessWithdrawal(request, "approve")}
+                        className="flex-1"
+                        variant="outline"
+                        title="Manually approve and retry this failed withdrawal"
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Retry Payout
+                      </Button>
+                      <Button
+                        onClick={() => handleProcessWithdrawal(request, "reject")}
+                        className="flex-1"
+                        variant="outline"
+                        title="Mark as rejected and close the case"
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        Close Case
                       </Button>
                     </div>
                   )}

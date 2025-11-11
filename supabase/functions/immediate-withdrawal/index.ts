@@ -199,12 +199,38 @@ async function executePayout(
   const result = await resp.json();
   console.log('Payout API response:', JSON.stringify(result, null, 2));
 
-  if (!resp.ok || result.status !== "success" || result.data?.transaction?.status !== "success") {
-    console.error("PayChangu payout error:", result);
-    throw new Error("Failed to execute payout");
+  // Handle different PayChangu response scenarios
+  if (!resp.ok) {
+    console.error("PayChangu API error:", resp.status, result);
+    const errorMsg = result.message || result.error || "Payment provider unavailable";
+    throw new Error(`Payout failed: ${errorMsg}`);
   }
 
-  return result.data;
+  // Check transaction status
+  const txStatus = result.data?.transaction?.status;
+  
+  if (result.status === "success" && txStatus === "success") {
+    return result.data;
+  }
+  
+  // Handle pending status (PayChangu may process asynchronously)
+  if (txStatus === "pending" || txStatus === "processing") {
+    console.warn("PayChangu payout is pending:", result);
+    return {
+      ...result.data,
+      _pending: true,
+    };
+  }
+  
+  // Handle explicit failure
+  if (txStatus === "failed" || result.status === "failed") {
+    const reason = result.data?.transaction?.failure_reason || result.message || "Unknown error";
+    throw new Error(`Payout rejected: ${reason}`);
+  }
+  
+  // Unknown status - treat as error
+  console.error("Unexpected PayChangu response:", result);
+  throw new Error("Payout status unclear. Contact support if funds were deducted.");
 }
 
 async function finalizeWithdrawal(
@@ -492,6 +518,8 @@ serve(async (req: Request) => {
         fraud_reasons: fraudCheck.reasons,
         ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || null,
         user_agent: req.headers.get("user-agent") || null,
+        retry_count: 0,
+        original_withdrawal_id: body.original_withdrawal_id || null,
       })
       .select()
       .single();
@@ -503,6 +531,8 @@ serve(async (req: Request) => {
     // Operator & payout
     const operatorId = await getOperatorId(payChanguSecret, payment_details.mobile);
     let payoutData;
+    let payoutError: Error | null = null;
+    
     try {
       payoutData = await executePayout(
         payChanguSecret,
@@ -512,42 +542,127 @@ serve(async (req: Request) => {
         amountMWK
       );
     } catch (err) {
-      // Mark withdrawal as failed
+      payoutError = err instanceof Error ? err : new Error(String(err));
+      console.error("Payout execution failed:", payoutError);
+      
+      // Mark withdrawal as failed with detailed error
       await supabase
         .from("withdrawal_requests")
         .update({
           status: "failed",
           processed_at: new Date().toISOString(),
           processed_by: user.id,
+          rejection_reason: payoutError.message,
         })
         .eq("id", withdrawalRequest.id);
 
-      // Optional: Refund credits to wallet
-      const refundAmount = creditsToWithdraw;
+      // Attempt automatic refund
+      console.log("Attempting automatic refund...");
       const { error: refundError } = await supabase.rpc('refund_failed_withdrawal', {
         coach_id: user.id,
-        credits_amount: refundAmount,
+        credits_amount: creditsToWithdraw,
         withdrawal_id: withdrawalRequest.id,
       });
 
       if (refundError) {
-        console.error("Failed to refund credits:", refundError);
-        // Log but don't throw - we already have the main error
+        console.error("CRITICAL: Failed to refund credits:", refundError);
+        
+        // Send critical alert - manual intervention needed
+        await sendAlert({
+          level: 'critical',
+          title: 'Failed Withdrawal Refund Error',
+          message: `Failed to refund ${creditsToWithdraw} credits to user ${user.id} after payout failure`,
+          metadata: {
+            user_id: user.id,
+            withdrawal_id: withdrawalRequest.id,
+            credits_amount: creditsToWithdraw,
+            payout_error: payoutError.message,
+            refund_error: refundError.message,
+          },
+          user_id: user.id,
+        });
+        
+        throw new Error(
+          "Withdrawal failed and automatic refund failed. " +
+          "Support has been notified and will process your refund manually within 24 hours. " +
+          `Reference: ${withdrawalRequest.id}`
+        );
       }
-
-      throw err;
+      
+      console.log("✓ Refund successful");
+      
+      // Throw user-friendly error
+      throw new Error(
+        `Withdrawal failed: ${payoutError.message}. ` +
+        "Your credits have been automatically refunded to your wallet."
+      );
     }
 
-    const newBalance = await finalizeWithdrawal(
-      supabase,
-      user.id,
-      withdrawalRequest,
-      creditsToWithdraw,
-      walletBalance,
-      payoutData,
-      payment_method,
-      amountMWK
-    );
+    // Handle pending payouts differently
+    const isPending = payoutData._pending === true;
+    let newBalance: number;
+    
+    if (isPending) {
+      // Mark as processing, don't deduct credits yet
+      await supabase
+        .from("withdrawal_requests")
+        .update({
+          status: "processing",
+          notes: "Payout pending with payment provider. Credits will be deducted upon confirmation.",
+        })
+        .eq("id", withdrawalRequest.id);
+      
+      console.log("⏳ Payout pending - awaiting webhook confirmation");
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          pending: true,
+          withdrawal_request_id: withdrawalRequest.id,
+          credits_amount: creditsToWithdraw,
+          amount_mwk: amountMWK,
+          message: "Withdrawal is being processed. You'll receive confirmation shortly.",
+        }),
+        { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    // Finalize successful payout
+    try {
+      newBalance = await finalizeWithdrawal(
+        supabase,
+        user.id,
+        withdrawalRequest,
+        creditsToWithdraw,
+        walletBalance,
+        payoutData,
+        payment_method,
+        amountMWK
+      );
+    } catch (finalizationError) {
+      console.error("CRITICAL: Payout succeeded but finalization failed:", finalizationError);
+      
+      // This is a critical state - payout went through but DB not updated
+      await sendAlert({
+        level: 'critical',
+        title: 'Withdrawal Finalization Error',
+        message: `Payout succeeded but DB update failed for user ${user.id}`,
+        metadata: {
+          user_id: user.id,
+          withdrawal_id: withdrawalRequest.id,
+          credits_amount: creditsToWithdraw,
+          payout_ref: payoutData.transaction?.ref_id,
+          error: finalizationError instanceof Error ? finalizationError.message : String(finalizationError),
+        },
+        user_id: user.id,
+      });
+      
+      throw new Error(
+        "Payout was successful but we couldn't update your balance. " +
+        "Support has been notified and will resolve this within 24 hours. " +
+        `Reference: ${withdrawalRequest.id}`
+      );
+    }
 
     return new Response(
       JSON.stringify({

@@ -1400,12 +1400,15 @@ export type Database = {
           fraud_score: number | null
           id: string
           ip_address: string | null
+          last_retry_at: string | null
           notes: string | null
+          original_withdrawal_id: string | null
           payment_details: Json
           payment_method: string
           processed_at: string | null
           processed_by: string | null
           rejection_reason: string | null
+          retry_count: number | null
           status: string
           transaction_ref: string | null
           updated_at: string
@@ -1420,12 +1423,15 @@ export type Database = {
           fraud_score?: number | null
           id?: string
           ip_address?: string | null
+          last_retry_at?: string | null
           notes?: string | null
+          original_withdrawal_id?: string | null
           payment_details: Json
           payment_method?: string
           processed_at?: string | null
           processed_by?: string | null
           rejection_reason?: string | null
+          retry_count?: number | null
           status?: string
           transaction_ref?: string | null
           updated_at?: string
@@ -1440,12 +1446,15 @@ export type Database = {
           fraud_score?: number | null
           id?: string
           ip_address?: string | null
+          last_retry_at?: string | null
           notes?: string | null
+          original_withdrawal_id?: string | null
           payment_details?: Json
           payment_method?: string
           processed_at?: string | null
           processed_by?: string | null
           rejection_reason?: string | null
+          retry_count?: number | null
           status?: string
           transaction_ref?: string | null
           updated_at?: string
