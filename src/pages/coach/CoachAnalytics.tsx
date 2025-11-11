@@ -5,7 +5,7 @@ import { coachSidebarSections } from "@/config/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
-import { BookOpen, Users, TrendingUp, Clock, Target, Award, BarChart3, Calendar } from "lucide-react";
+import { BookOpen, Users, TrendingUp, Clock, Target, Award, BarChart3, Calendar, Banknote, Hourglass } from "lucide-react";
 import { 
   ChartContainer, 
   ChartTooltip, 
@@ -21,19 +21,20 @@ import {
   XAxis, 
   YAxis, 
   CartesianGrid,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
+  ResponsiveContainer
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCredits } from "@/hooks/useCredits";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 
 const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--accent))", "hsl(142, 76%, 36%)", "hsl(24, 95%, 53%)", "hsl(262, 83%, 58%)"];
 
 export default function CoachAnalytics() {
   const { user } = useAuth();
-
+    const { wallet, transactions, withdrawalRequests } = useCredits();
+  
   // Fetch courses with modules and lessons
   const { data: courses, isLoading: coursesLoading } = useQuery({
     queryKey: ["coach-courses-analytics", user?.id],
@@ -111,6 +112,40 @@ export default function CoachAnalytics() {
     },
     enabled: !!user?.id && !!enrollments,
   });
+
+      const financialData = useMemo(() => {
+        if (!wallet || !transactions || !withdrawalRequests) return null;
+
+    const earningsByMonth = new Map<string, number>();
+    const last6Months = Array.from({ length: 6 }, (_, i) => {
+      const date = new Date();
+      date.setMonth(date.getMonth() - (5 - i));
+      return date.toISOString().slice(0, 7);
+    });
+
+    last6Months.forEach(month => earningsByMonth.set(month, 0));
+
+    transactions.forEach(transaction => {
+      if (transaction.transaction_type === 'course_enrollment') {
+        const month = new Date(transaction.created_at).toISOString().slice(0, 7);
+        if (earningsByMonth.has(month)) {
+          earningsByMonth.set(month, (earningsByMonth.get(month) || 0) + transaction.amount);
+        }
+      }
+    });
+
+    const earningsTrend = Array.from(earningsByMonth.entries()).map(([month, earnings]) => ({
+      month: new Date(month + "-01").toLocaleDateString("en-US", { month: "short" }),
+      earnings: earnings
+    }));
+
+    return {
+      totalEarned: wallet.total_earned || 0,
+      pendingWithdrawal: wallet.balance || 0,
+      totalWithdrawn: (wallet.total_earned || 0) - (wallet.balance || 0),
+      earningsTrend
+    };
+  }, [wallet, transactions]);
 
   const analyticsData = useMemo(() => {
     if (!courses || !enrollments || !lessonProgress) return null;
@@ -219,13 +254,20 @@ export default function CoachAnalytics() {
 
   const isLoading = coursesLoading || enrollmentsLoading || progressLoading;
 
-  return (
+    return (
     <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
           <p className="text-muted-foreground">Track your coaching performance and student progress</p>
         </div>
+
+        <Tabs defaultValue="student-analytics">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="student-analytics">Student Analytics</TabsTrigger>
+            <TabsTrigger value="financial-analytics">Financial Analytics</TabsTrigger>
+          </TabsList>
+          <TabsContent value="student-analytics" className="mt-6">
 
         {/* Key Metrics */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -465,7 +507,141 @@ export default function CoachAnalytics() {
               </div>
             )}
           </CardContent>
-        </Card>
+            </Card>
+          </TabsContent>
+          <TabsContent value="financial-analytics" className="mt-6 space-y-6">
+            {/* Financial Metrics */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {isLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="bg-muted/30 rounded-lg p-6 animate-pulse">
+                    <div className="space-y-2">
+                      <div className="h-4 bg-muted rounded w-3/4"></div>
+                      <div className="h-6 bg-muted rounded w-1/2"></div>
+                    </div>
+                  </div>
+                ))
+              ) : financialData ? (
+                [
+                  {
+                    title: "Total Earnings",
+                    value: `CR ${financialData.totalEarned.toLocaleString()}`,
+                    icon: Banknote,
+                    color: "text-primary"
+                  },
+                  {
+                    title: "Available for Withdrawal",
+                    value: `CR ${financialData.pendingWithdrawal.toLocaleString()}`,
+                    icon: Hourglass,
+                    color: "text-amber-600"
+                  },
+                  {
+                    title: "Total Withdrawn",
+                    value: `CR ${financialData.totalWithdrawn.toLocaleString()}`,
+                    icon: TrendingUp,
+                    color: "text-green-600"
+                  }
+                ].map((stat, i) => {
+                  const Icon = stat.icon;
+                  return (
+                    <div key={i} className="bg-muted/30 rounded-lg p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">{stat.title}</p>
+                          <p className="text-2xl font-bold">{stat.value}</p>
+                        </div>
+                        <div className={`w-12 h-12 bg-muted rounded-lg flex items-center justify-center ${stat.color}`}>
+                          <Icon className="w-6 h-6" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : null}
+            </div>
+
+            {/* Earnings Trend */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Earnings Trend
+                </CardTitle>
+                <CardDescription>Your earnings from course enrollments over the last 6 months</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="h-[300px] flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : financialData ? (
+                  <ChartContainer
+                    config={{
+                      earnings: {
+                        label: "Earnings",
+                        color: "hsl(var(--primary))",
+                      },
+                    }}
+                    className="h-[300px]"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={financialData.earningsTrend}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" />
+                        <YAxis />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Line 
+                          type="monotone" 
+                          dataKey="earnings" 
+                          stroke="hsl(var(--primary))" 
+                          strokeWidth={2}
+                          dot={{ fill: "hsl(var(--primary))", r: 4 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            {/* Recent Withdrawals */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Banknote className="h-5 w-5" />
+                  Recent Withdrawals
+                </CardTitle>
+                <CardDescription>Your recent withdrawal requests</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Amount (CR)</TableHead>
+                      <TableHead>Amount (MWK)</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                                        {withdrawalRequests?.slice(0, 5).map(withdrawal => (
+                      <TableRow key={withdrawal.id}>
+                        <TableCell>{new Date(withdrawal.created_at).toLocaleDateString()}</TableCell>
+                                                <TableCell>{withdrawal.credits_amount.toLocaleString()}</TableCell>
+                                                <TableCell>{withdrawal.amount.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge variant={withdrawal.status === 'completed' ? 'default' : 'secondary'}>
+                            {withdrawal.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

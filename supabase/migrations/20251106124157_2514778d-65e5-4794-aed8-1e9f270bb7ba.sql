@@ -77,7 +77,7 @@ COMMENT ON FUNCTION public.get_coach_payment_key(UUID) IS
   'Securely retrieves PayChangu secret key for a coach. Enforces authorization and uses vault when configured. Falls back to legacy plain text storage during migration period.';
 
 -- Part 4: Update RLS policy for profiles to be more restrictive
-DROP POLICY IF EXISTS "Authenticated users can view limited profile data" ON public.profiles;
+DROP POLICY IF EXISTS "Authenticated users can view profiles in shared courses" ON public.profiles;
 
 CREATE POLICY "Authenticated users can view profiles in shared courses"
 ON public.profiles

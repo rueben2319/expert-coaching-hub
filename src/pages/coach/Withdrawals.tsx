@@ -47,7 +47,7 @@ export default function Withdrawals() {
   
   // Enhanced validation
   const isAmountValid = creditsAmount >= MIN_WITHDRAWAL && creditsAmount <= MAX_WITHDRAWAL && creditsAmount <= balance;
-  const isPhoneValid = phoneNumber && /^\+?265\s?\d{3}\s?\d{3}\s?\d{3}$/.test(phoneNumber.replace(/\s/g, ''));
+    const isPhoneValid = phoneNumber && /^(0|\+?265)?(99|98|90|88|86|85|84|83)\d{7}$/.test(phoneNumber.replace(/\s/g, ''));
   const canSubmit = isAmountValid && paymentMethod === "mobile_money" && isPhoneValid;
 
   const handleSubmit = () => {
@@ -249,7 +249,7 @@ export default function Withdrawals() {
                       aria-describedby={!!phoneNumber && !isPhoneValid ? "phone-error" : undefined}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Supported: Airtel (99/88), TNM (77/76)
+                                            Supported: Airtel (099, 098, 090), TNM (088, 086, 085, 084, 083)
                     </p>
                     {phoneNumber && !isPhoneValid && (
                       <p id="phone-error" className="text-xs text-destructive">

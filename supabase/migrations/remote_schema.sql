@@ -944,7 +944,7 @@ BEGIN
   SET
     status = 'completed',
     processed_at = now(),
-    processed_by = coach_id
+            processed_by = coach_id
   WHERE id = withdrawal_id;
 
   -- Return result

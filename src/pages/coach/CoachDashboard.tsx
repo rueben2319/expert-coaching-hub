@@ -2,15 +2,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Users, BarChart3, Calendar, Video, Plus, TrendingUp, Clock } from "lucide-react";
+import { BookOpen, Users, BarChart3, Banknote, Video, Plus, TrendingUp, Clock, Hourglass } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useCredits } from "@/hooks/useCredits";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function CoachDashboard() {
   const { user } = useAuth();
+  const { wallet, walletLoading } = useCredits();
   const navigate = useNavigate();
 
   if (!user) return null;
@@ -64,6 +66,9 @@ export default function CoachDashboard() {
     }, 0) || 0);
   }, 0) || 0;
 
+  const totalEarnings = wallet?.total_earned || 0;
+  const pendingWithdrawal = wallet?.balance || 0;
+
   const totalContent = courses?.reduce((acc, course) => {
     return acc + (course.course_modules?.reduce((moduleAcc: number, module: any) => {
       return moduleAcc + (module.lessons?.reduce((lessonAcc: number, lesson: any) => {
@@ -73,7 +78,7 @@ export default function CoachDashboard() {
   }, 0) || 0;
 
   // Initial page load skeleton
-  if ((coursesLoading || enrollmentsLoading) && !courses) {
+  if ((coursesLoading || enrollmentsLoading || walletLoading) && !courses) {
     return (
       <DashboardLayout
         sidebarSections={coachSidebarSections}
@@ -86,8 +91,8 @@ export default function CoachDashboard() {
           </div>
           <Skeleton className="h-10 w-32" />
         </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {[1, 2, 3, 4, 5].map((i) => (
             <Card key={i}>
               <CardHeader>
                 <Skeleton className="h-12 w-12 rounded-lg mb-4" />
@@ -126,7 +131,39 @@ export default function CoachDashboard() {
         </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate("/coach/analytics", { state: { defaultTab: 'financial-analytics' } })}>
+          <CardHeader>
+            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
+              <Banknote className="w-6 h-6 text-green-600" />
+            </div>
+            <CardTitle>Total Earnings</CardTitle>
+            <CardDescription>Lifetime earnings from courses</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-green-600">
+              {walletLoading ? "..." : `CR ${totalEarnings.toLocaleString()}`}
+            </div>
+            <p className="text-sm text-muted-foreground">Updated in real-time</p>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate("/coach/withdrawals")}>
+          <CardHeader>
+            <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center mb-4">
+              <Hourglass className="w-6 h-6 text-amber-600" />
+            </div>
+            <CardTitle>For Withdrawal</CardTitle>
+            <CardDescription>Available credit balance</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-amber-600">
+              {walletLoading ? "..." : `CR ${pendingWithdrawal.toLocaleString()}`}
+            </div>
+            <p className="text-sm text-muted-foreground">Ready for payout</p>
+          </CardContent>
+        </Card>
+
         <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate("/coach/courses")}>
           <CardHeader>
             <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
@@ -165,36 +202,18 @@ export default function CoachDashboard() {
 
         <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate("/coach/analytics")}>
           <CardHeader>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
-              <Video className="w-6 h-6 text-green-600" />
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
+              <Video className="w-6 h-6 text-blue-600" />
             </div>
             <CardTitle>Lessons</CardTitle>
             <CardDescription>Total lesson content</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-green-600">
+            <div className="text-3xl font-bold mb-2 text-blue-600">
               {coursesLoading ? "..." : totalLessons}
             </div>
             <p className="text-sm text-muted-foreground">
               {totalLessons === 1 ? "Lesson created" : "Lessons created"}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate("/coach/analytics")}>
-          <CardHeader>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-              <BarChart3 className="w-6 h-6 text-blue-600" />
-            </div>
-            <CardTitle>Content Items</CardTitle>
-            <CardDescription>Total content pieces</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold mb-2 text-blue-600">
-              {coursesLoading ? "..." : totalContent}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {totalContent === 1 ? "Content item" : "Content items"}
             </p>
           </CardContent>
         </Card>
