@@ -143,29 +143,32 @@ export function DashboardLayout({
   };
 
   const renderSidebarContent = (collapsed: boolean = false) => (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-gradient-to-b from-background to-muted/20">
       {/* Sidebar Header - Mobile Only */}
       {!collapsed && (
-        <div className="md:hidden p-6 border-b">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg overflow-hidden">
-              <img src={expertsLogo} alt="Experts Coaching Hub" className="w-full h-full object-contain" />
+        <div className="md:hidden p-6 border-b bg-gradient-to-r from-primary/5 to-accent/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg overflow-hidden ring-2 ring-primary/20 bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+              <img src={expertsLogo} alt="Experts Coaching Hub" className="w-6 h-6 object-contain" />
             </div>
-            <span className="font-semibold text-lg">{brandName}</span>
+            <div>
+              <span className="font-bold text-lg text-foreground">{brandName}</span>
+              <p className="text-xs text-muted-foreground">Professional Coaching</p>
+            </div>
           </div>
         </div>
       )}
 
       {/* Sidebar Items */}
-      <div className="flex-1 overflow-y-auto py-4">
+      <div className="flex-1 overflow-y-auto py-4 px-2">
         {sidebarSections.map((section, sectionIdx) => (
           <div key={sectionIdx} className="mb-6">
             {section.title && !collapsed && (
-              <h3 className="px-4 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+              <h3 className="px-3 text-xs font-bold text-muted-foreground mb-3 uppercase tracking-widest opacity-70">
                 {section.title}
               </h3>
             )}
-            <div className="space-y-1 px-2">
+            <div className="space-y-1">
               {section.items.map((item, itemIdx) => {
                 const isActive = item.href && isCurrentPath(item.href);
                 const ItemButton = (
@@ -174,18 +177,21 @@ export function DashboardLayout({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      "w-full transition-colors",
-                      collapsed ? "justify-center px-2 h-10" : "justify-start h-9",
+                      "w-full transition-all duration-200 rounded-lg",
+                      collapsed ? "justify-center px-2 h-10" : "justify-start h-10 px-3",
                       isActive
-                        ? "bg-primary/10 text-primary hover:bg-primary/15"
-                        : "hover:bg-accent"
+                        ? "bg-primary/15 text-primary font-semibold shadow-sm border border-primary/20 hover:bg-primary/20"
+                        : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
                     )}
                     onClick={() => handleSidebarItemClick(item)}
                   >
-                    <span className={cn("flex items-center", collapsed ? "" : "mr-3")}>
+                    <span className={cn("flex items-center flex-shrink-0", collapsed ? "" : "mr-3")}>
                       {item.icon}
                     </span>
-                    {!collapsed && <span className="flex-1 text-left text-sm">{item.label}</span>}
+                    {!collapsed && <span className="flex-1 text-left text-sm font-medium">{item.label}</span>}
+                    {!collapsed && isActive && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary ml-2 flex-shrink-0" />
+                    )}
                   </Button>
                 );
 
@@ -193,7 +199,7 @@ export function DashboardLayout({
                   return (
                     <Tooltip key={itemIdx} delayDuration={0}>
                       <TooltipTrigger asChild>{ItemButton}</TooltipTrigger>
-                      <TooltipContent side="right">{item.label}</TooltipContent>
+                      <TooltipContent side="right" className="font-medium">{item.label}</TooltipContent>
                     </Tooltip>
                   );
                 }
@@ -206,25 +212,25 @@ export function DashboardLayout({
       </div>
 
       {/* User Section - Bottom */}
-      <div className="border-t p-2">
+      <div className="border-t bg-gradient-to-t from-muted/30 to-transparent p-3 space-y-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               className={cn(
-                "w-full hover:bg-accent",
-                collapsed ? "justify-center px-2 h-10" : "justify-start h-auto py-2"
+                "w-full transition-all duration-200 rounded-lg hover:bg-accent/50",
+                collapsed ? "justify-center px-2 h-10" : "justify-start h-auto py-2.5 px-3 hover:bg-primary/5"
               )}
             >
-              <Avatar className={cn("h-8 w-8", !collapsed && "mr-3")}>
+              <Avatar className={cn("h-9 w-9 ring-2 ring-primary/20", !collapsed && "mr-3")}>
                 <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
-                <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs font-semibold">
                   {getInitials(user?.user_metadata?.full_name)}
                 </AvatarFallback>
               </Avatar>
               {!collapsed && (
                 <div className="flex flex-col items-start flex-1 min-w-0">
-                  <span className="text-sm font-medium truncate w-full">
+                  <span className="text-sm font-semibold truncate w-full text-foreground">
                     {user?.user_metadata?.full_name || "User"}
                   </span>
                   <span className="text-xs text-muted-foreground truncate w-full">
@@ -237,93 +243,137 @@ export function DashboardLayout({
           <DropdownMenuContent
             align="end"
             side={collapsed ? "right" : "top"}
-            className="w-72 p-0"
+            className="w-80 p-0 shadow-lg"
           >
-            <div className="px-4 pt-4 pb-3 flex items-start gap-3">
-              <Avatar className="h-12 w-12">
+            {/* Profile Header Section */}
+            <div className="bg-gradient-to-r from-primary/5 to-accent/5 px-4 pt-4 pb-4 flex items-start gap-3 border-b">
+              <Avatar className="h-14 w-14 ring-2 ring-primary/20">
                 <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
-                <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground font-semibold">
                   {getInitials(user?.user_metadata?.full_name)}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold leading-tight truncate">
+              <div className="flex-1 min-w-0 pt-1">
+                <p className="text-sm font-bold leading-tight truncate text-foreground">
                   {user?.user_metadata?.full_name || "User"}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {role ? role.charAt(0).toUpperCase() + role.slice(1) : "Member"}
-                  {user?.created_at ? ` • Member since ${new Date(user.created_at).getFullYear()}` : ""}
+                <p className="text-xs text-muted-foreground truncate mt-0.5">
+                  {user?.email}
                 </p>
-                <div className="mt-2 flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline" className="text-xs font-medium">
-                    {walletLoading ? "Loading credits..." : `${balance ?? 0} credits`}
-                  </Badge>
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-primary hover:underline"
-                    onClick={() => navigate("/profile?tab=credits")}
+                <div className="mt-2 flex items-center gap-2">
+                  <Badge 
+                    variant="secondary" 
+                    className="text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20"
                   >
-                    Buy credits
-                  </button>
+                    {role ? role.charAt(0).toUpperCase() + role.slice(1) : "Member"}
+                  </Badge>
+                  {user?.created_at && (
+                    <span className="text-xs text-muted-foreground">
+                      Since {new Date(user.created_at).getFullYear()}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            <DropdownMenuSeparator />
-            <div className="py-1">
-              <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach" : role === "admin" ? "/admin" : "/client")}>
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Dashboard
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}>
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Progress
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/profile")}>
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </DropdownMenuItem>
-            </div>
-            <DropdownMenuSeparator />
-            <div className="py-1">
-              <DropdownMenuItem onClick={() => navigate("/privacy")}>
-                Privacy
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/terms")}>
-                Terms
-              </DropdownMenuItem>
-            </div>
-            <DropdownMenuSeparator />
-            <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem 
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    setSignOutDialogOpen(true);
-                  }}
-                  className="text-destructive focus:text-destructive"
+
+            {/* Credits Section */}
+            <div className="px-4 py-3 bg-muted/30 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Available Credits</p>
+                  <p className="text-lg font-bold text-foreground">
+                    {walletLoading ? "..." : `${balance ?? 0}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                  onClick={() => navigate("/profile?tab=credits")}
                 >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Sign out?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Are you sure you want to sign out? You'll need to sign in again to access your account.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={signOut}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  Buy
+                </button>
+              </div>
+            </div>
+
+            {/* Main Menu Items */}
+            <div className="py-2">
+              <DropdownMenuItem 
+                onClick={() => navigate(role === "coach" ? "/coach" : role === "admin" ? "/admin" : "/client")}
+                className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+              >
+                <LayoutDashboard className="mr-3 h-4 w-4 text-primary" />
+                <span className="font-medium">Dashboard</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}
+                className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+              >
+                <BarChart3 className="mr-3 h-4 w-4 text-primary" />
+                <span className="font-medium">Progress</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => navigate("/profile")}
+                className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+              >
+                <Settings className="mr-3 h-4 w-4 text-primary" />
+                <span className="font-medium">Settings</span>
+              </DropdownMenuItem>
+            </div>
+
+            <DropdownMenuSeparator className="my-1" />
+
+            {/* Secondary Menu Items */}
+            <div className="py-2">
+              <DropdownMenuItem 
+                onClick={() => navigate("/privacy")}
+                className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm"
+              >
+                Privacy Policy
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => navigate("/terms")}
+                className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm"
+              >
+                Terms of Service
+              </DropdownMenuItem>
+            </div>
+
+            <DropdownMenuSeparator className="my-1" />
+
+            {/* Sign Out */}
+            <div className="py-2">
+              <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem 
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setSignOutDialogOpen(true);
+                    }}
+                    className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-destructive/10 text-destructive hover:text-destructive transition-colors font-medium"
                   >
+                    <LogOut className="mr-3 h-4 w-4" />
                     Sign out
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to sign out? You'll need to sign in again to access your account.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={signOut}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Sign out
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -332,11 +382,11 @@ export function DashboardLayout({
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start mt-1 hidden md:flex hover:bg-accent"
+            className="w-full justify-start mt-1 hidden md:flex hover:bg-accent rounded-lg mx-2 mb-2"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           >
             <ChevronLeft className="mr-2 h-4 w-4" />
-            <span className="text-sm">Collapse</span>
+            <span className="text-xs font-medium">Collapse</span>
           </Button>
         )}
       </div>
@@ -498,98 +548,145 @@ export function DashboardLayout({
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72 p-0">
-                <div className="px-4 pt-4 pb-3 flex items-start gap-3">
-                  <Avatar className="h-12 w-12">
+              <DropdownMenuContent align="end" className="w-80 p-0 shadow-lg">
+                {/* Profile Header Section */}
+                <div className="bg-gradient-to-r from-primary/5 to-accent/5 px-4 pt-4 pb-4 flex items-start gap-3 border-b">
+                  <Avatar className="h-14 w-14 ring-2 ring-primary/20">
                     <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.full_name} />
-                    <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground">
+                    <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground font-semibold">
                       {getInitials(user?.user_metadata?.full_name)}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold leading-tight truncate">
+                  <div className="flex-1 min-w-0 pt-1">
+                    <p className="text-sm font-bold leading-tight truncate text-foreground">
                       {user?.user_metadata?.full_name || "User"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {role ? role.charAt(0).toUpperCase() + role.slice(1) : "Member"}
-                      {user?.created_at ? ` • Member since ${new Date(user.created_at).getFullYear()}` : ""}
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
+                      {user?.email}
                     </p>
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-xs font-medium">
-                        {walletLoading ? "Loading credits..." : `${balance ?? 0} credits`}
-                      </Badge>
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-primary hover:underline"
-                        onClick={() => navigate("/profile?tab=credits")}
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge 
+                        variant="secondary" 
+                        className="text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20"
                       >
-                        Buy credits
-                      </button>
+                        {role ? role.charAt(0).toUpperCase() + role.slice(1) : "Member"}
+                      </Badge>
+                      {user?.created_at && (
+                        <span className="text-xs text-muted-foreground">
+                          Since {new Date(user.created_at).getFullYear()}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
-                <DropdownMenuSeparator />
-                <div className="py-1">
-                  <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach" : role === "admin" ? "/admin" : "/client")}>
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
-                    Dashboard
+
+                {/* Credits Section */}
+                <div className="px-4 py-3 bg-muted/30 border-b">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Available Credits</p>
+                      <p className="text-lg font-bold text-foreground">
+                        {walletLoading ? "..." : `${balance ?? 0}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                      onClick={() => navigate("/profile?tab=credits")}
+                    >
+                      Buy
+                    </button>
+                  </div>
+                </div>
+
+                {/* Main Menu Items */}
+                <div className="py-2">
+                  <DropdownMenuItem 
+                    onClick={() => navigate(role === "coach" ? "/coach" : role === "admin" ? "/admin" : "/client")}
+                    className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <LayoutDashboard className="mr-3 h-4 w-4 text-primary" />
+                    <span className="font-medium">Dashboard</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}>
-                    <BarChart3 className="mr-2 h-4 w-4" />
-                    Progress
+                  <DropdownMenuItem 
+                    onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}
+                    className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <BarChart3 className="mr-3 h-4 w-4 text-primary" />
+                    <span className="font-medium">Progress</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/profile")}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
+                  <DropdownMenuItem 
+                    onClick={() => navigate("/profile")}
+                    className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <Settings className="mr-3 h-4 w-4 text-primary" />
+                    <span className="font-medium">Settings</span>
                   </DropdownMenuItem>
                   <TokenManagementDialog>
-                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                      <Shield className="mr-2 h-4 w-4" />
-                      Token Management
+                    <DropdownMenuItem 
+                      onSelect={(e) => e.preventDefault()}
+                      className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+                    >
+                      <Shield className="mr-3 h-4 w-4 text-primary" />
+                      <span className="font-medium">Token Management</span>
                     </DropdownMenuItem>
                   </TokenManagementDialog>
                 </div>
-                <DropdownMenuSeparator />
-                <div className="py-1">
-                  <DropdownMenuItem onClick={() => navigate("/privacy")}>
-                    Privacy
+
+                <DropdownMenuSeparator className="my-1" />
+
+                {/* Secondary Menu Items */}
+                <div className="py-2">
+                  <DropdownMenuItem 
+                    onClick={() => navigate("/privacy")}
+                    className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm"
+                  >
+                    Privacy Policy
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/terms")}>
-                    Terms
+                  <DropdownMenuItem 
+                    onClick={() => navigate("/terms")}
+                    className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm"
+                  >
+                    Terms of Service
                   </DropdownMenuItem>
                 </div>
-                <DropdownMenuSeparator />
-                <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem 
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        setSignOutDialogOpen(true);
-                      }}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Sign out
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Sign out?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to sign out? You'll need to sign in again to access your account.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={signOut}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+
+                <DropdownMenuSeparator className="my-1" />
+
+                {/* Sign Out */}
+                <div className="py-2">
+                  <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>
+                    <AlertDialogTrigger asChild>
+                      <DropdownMenuItem 
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setSignOutDialogOpen(true);
+                        }}
+                        className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-destructive/10 text-destructive hover:text-destructive transition-colors font-medium"
                       >
+                        <LogOut className="mr-3 h-4 w-4" />
                         Sign out
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                      </DropdownMenuItem>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to sign out? You'll need to sign in again to access your account.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={signOut}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Sign out
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
