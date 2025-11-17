@@ -17,6 +17,53 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const GRACE_PERIOD_DAYS = Number(Deno.env.get("GRACE_PERIOD_DAYS") ?? 3);
+const RENEWAL_MAX_ATTEMPTS = Number(Deno.env.get("RENEWAL_MAX_ATTEMPTS") ?? 3);
+const SUBSCRIPTION_ALERT_WEBHOOK = Deno.env.get("SUBSCRIPTION_ALERT_WEBHOOK");
+
+async function notifySubscriptionAlert(params: {
+  supabase: ReturnType<typeof createClient>;
+  subscriptionId: string;
+  oldStatus: string;
+  newStatus: string;
+  reason: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const { supabase, subscriptionId, oldStatus, newStatus, reason, metadata } = params;
+  try {
+    await supabase.from("subscription_audit_log").insert({
+      subscription_id: subscriptionId,
+      subscription_type: "coach",
+      old_status: oldStatus,
+      new_status: newStatus,
+      changed_by: null,
+      change_reason: reason,
+      metadata,
+    });
+  } catch (error) {
+    console.error("Failed to write subscription audit log:", error);
+  }
+
+  if (SUBSCRIPTION_ALERT_WEBHOOK) {
+    try {
+      await fetch(SUBSCRIPTION_ALERT_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscription_id: subscriptionId,
+          old_status: oldStatus,
+          new_status: newStatus,
+          reason,
+          metadata,
+        }),
+      });
+    } catch (webhookError) {
+      console.error("Failed to send subscription alert webhook:", webhookError);
+    }
+  }
+}
+
 type WebhookPayload = {
   status: string;
   message?: string;
@@ -26,6 +73,7 @@ type WebhookPayload = {
     currency?: string;
     status?: string;
     charge_id?: string; // ✅ Added charge_id
+    reference?: string;
   };
   // PayChangu sends tx_ref at root level
   tx_ref?: string;
@@ -45,6 +93,39 @@ type WebhookPayload = {
   customization?: any;
   meta?: any;
 };
+
+function firstTruthyString(values: Array<unknown>): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function extractTxRef(payload: WebhookPayload): string | null {
+  const nestedData = (payload.data as any)?.data;
+  return firstTruthyString([
+    payload.tx_ref,
+    payload.reference,
+    payload.data?.tx_ref,
+    payload.data?.reference,
+    nestedData?.tx_ref,
+    nestedData?.reference,
+    payload.meta?.tx_ref,
+    payload.meta?.reference,
+  ]);
+}
+
+function extractStatus(payload: WebhookPayload): string | null {
+  const nestedData = (payload.data as any)?.data;
+  return firstTruthyString([
+    payload.data?.status,
+    nestedData?.status,
+    payload.status,
+    payload.message,
+  ]);
+}
 
 function timingSafeEqual(a: string, b: string): boolean {
   // Constant-time compare for equal-length strings
@@ -171,19 +252,67 @@ serve(async (req: Request) => {
     });
   }
 
+  let logEntryId: string | null = null;
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  let supabaseClient: ReturnType<typeof createClient> | null = null;
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) throw new Error("Missing Supabase environment configuration");
     const supabase = createClient(supabaseUrl, supabaseKey);
+    supabaseClient = supabase;
 
-    const status = payload.data?.status || payload.status;
-    const tx_ref = payload.data?.tx_ref || (payload as any).tx_ref;
+    const status = extractStatus(payload);
+    const tx_ref = extractTxRef(payload);
 
+    if (!status) throw new Error("Missing status in webhook payload");
     if (!tx_ref) throw new Error("Missing tx_ref in webhook payload");
 
     console.log("Webhook payload status:", status);
     console.log("Transaction ref:", tx_ref);
+
+    // Idempotency guard
+    const { data: existingLog, error: logFetchError } = await supabase
+      .from("webhook_processing_log")
+      .select("id, status, processed_at")
+      .eq("tx_ref", tx_ref)
+      .maybeSingle();
+
+    if (logFetchError) {
+      console.error("Failed to read webhook_processing_log:", logFetchError);
+    }
+
+    if (existingLog?.status === "processed") {
+      console.log("Webhook already processed for tx_ref:", tx_ref);
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!existingLog) {
+      const { data: newLog, error: logInsertError } = await supabase
+        .from("webhook_processing_log")
+        .insert({
+          tx_ref,
+          payload: payload as Record<string, unknown>,
+          status: "processing",
+          processed_at: null,
+          error_message: null,
+        })
+        .select("id")
+        .single();
+
+      if (logInsertError || !newLog) {
+        console.error("Failed to create webhook log entry:", logInsertError);
+      } else {
+        logEntryId = newLog.id;
+      }
+    } else {
+      logEntryId = existingLog.id;
+      console.log("Reusing existing webhook log entry", existingLog.id, "with status", existingLog.status);
+    }
 
     // Find transaction with all necessary fields
     const { data: tx, error: txErr } = await supabase
@@ -205,7 +334,9 @@ serve(async (req: Request) => {
 
     if (txErr || !tx) throw new Error("Transaction not found");
 
-    const success = status === "successful" || status === "success" || status === "completed";
+    const normalizedStatus = status.toLowerCase();
+    const successStatuses = ["successful", "success", "completed", "paid"];
+    const success = successStatuses.includes(normalizedStatus);
     console.log("Payment success status:", success);
 
     // Update transaction status and gateway response
@@ -360,7 +491,7 @@ serve(async (req: Request) => {
         // Fetch billing cycle to set renewal_date
         const { data: sub, error: subErr } = await supabase
           .from("coach_subscriptions")
-          .select("id, billing_cycle")
+          .select("id, billing_cycle, status")
           .eq("id", tx.subscription_id)
           .single();
         if (!subErr && sub) {
@@ -373,7 +504,9 @@ serve(async (req: Request) => {
             status: "active",
             renewal_date: renewal.toISOString(),
             transaction_id: tx.id,
-            start_date: now.toISOString()
+            start_date: now.toISOString(),
+            grace_expires_at: null,
+            failed_renewal_attempts: 0,
           };
           console.log("Updating subscription with:", updateData);
 
@@ -387,6 +520,19 @@ serve(async (req: Request) => {
             throw new Error("Failed to update subscription status");
           } else {
             console.log("Successfully updated subscription to active");
+
+            await notifySubscriptionAlert({
+              supabase,
+              subscriptionId: tx.subscription_id,
+              oldStatus: sub.status,
+              newStatus: "active",
+              reason: tx.transaction_mode === "coach_subscription_renewal" ? "renewal_payment_confirmed" : "initial_payment_confirmed",
+              metadata: {
+                transaction_id: tx.id,
+                tx_ref,
+                amount: tx.amount,
+              },
+            });
           }
 
           // Create invoice
@@ -511,6 +657,101 @@ serve(async (req: Request) => {
           }
         }
       }
+
+      // Clean up orphaned subscriptions created during checkout if payment failed
+      if (tx.subscription_id) {
+        console.log("Checking pending subscription for cleanup:", tx.subscription_id);
+        const { data: pendingSub, error: subFetchError } = await supabase
+          .from("coach_subscriptions")
+          .select("id, status")
+          .eq("id", tx.subscription_id)
+          .single();
+
+        if (subFetchError) {
+          console.error("Failed to fetch subscription for cleanup:", subFetchError);
+        } else if (pendingSub?.status === "pending") {
+          const { error: deleteSubError } = await supabase
+            .from("coach_subscriptions")
+            .delete()
+            .eq("id", pendingSub.id);
+
+          if (deleteSubError) {
+            console.error("Failed to delete pending subscription after payment failure:", deleteSubError);
+          } else {
+            console.log("Deleted pending subscription after payment failure:", pendingSub.id);
+          }
+        }
+      }
+
+      if (tx.subscription_id && !isPayout) {
+        console.log("Updating subscription after failed payment:", tx.subscription_id);
+        const { data: subscription, error: subscriptionError } = await supabase
+          .from("coach_subscriptions")
+          .select("id, status, failed_renewal_attempts")
+          .eq("id", tx.subscription_id)
+          .single();
+
+        if (subscriptionError) {
+          console.error("Failed to fetch subscription for grace handling:", subscriptionError);
+        } else if (subscription && ["active", "grace"].includes(subscription.status)) {
+          const attempts = (subscription.failed_renewal_attempts ?? 0) + 1;
+          const graceExpiresAt = new Date(Date.now() + GRACE_PERIOD_DAYS * DAY_IN_MS).toISOString();
+          const reachedLimit = attempts >= RENEWAL_MAX_ATTEMPTS;
+          const updatePayload =
+            reachedLimit
+              ? {
+                  status: "expired",
+                  end_date: new Date().toISOString(),
+                  failed_renewal_attempts: attempts,
+                  grace_expires_at: null,
+                }
+              : {
+                  status: "grace",
+                  failed_renewal_attempts: attempts,
+                  grace_expires_at: graceExpiresAt,
+                };
+
+          const { error: subscriptionUpdateError } = await supabase
+            .from("coach_subscriptions")
+            .update(updatePayload)
+            .eq("id", subscription.id);
+
+          if (subscriptionUpdateError) {
+            console.error("Failed to update subscription grace status:", subscriptionUpdateError);
+          } else {
+            console.log("Subscription updated after failed payment:", {
+              subscription_id: subscription.id,
+              status: updatePayload.status,
+              attempts,
+              grace_expires_at: updatePayload.grace_expires_at,
+            });
+
+            await notifySubscriptionAlert({
+              supabase,
+              subscriptionId: subscription.id,
+              oldStatus: subscription.status,
+              newStatus: updatePayload.status,
+              reason: "payment_failed",
+              metadata: {
+                failed_attempts: attempts,
+                grace_expires_at: updatePayload.grace_expires_at,
+                reached_limit: reachedLimit,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    if (logEntryId) {
+      await supabase
+        .from("webhook_processing_log")
+        .update({
+          status: "processed",
+          processed_at: new Date().toISOString(),
+          error_message: null,
+        })
+        .eq("id", logEntryId);
     }
 
     // Always return JSON for webhook acknowledgement
@@ -522,6 +763,21 @@ serve(async (req: Request) => {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("❌ WEBHOOK PROCESSING ERROR:", msg);
     console.error("Error details:", e);
+
+    if (logEntryId && supabaseClient) {
+      try {
+        await supabaseClient
+          .from("webhook_processing_log")
+          .update({
+            status: "failed",
+            error_message: msg,
+          })
+          .eq("id", logEntryId);
+      } catch (logError) {
+        console.error("Failed to update webhook log after error:", logError);
+      }
+    }
+
     return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

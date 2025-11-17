@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { usePayments } from "@/hooks/usePayments";
@@ -7,16 +7,33 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { coachSidebarSections } from "@/config/navigation";
+import { AlertCircle, Clock, Loader2 } from "lucide-react";
 
 const CoachBilling = () => {
   const { user } = useAuth();
-  const { createCoachSubscription } = usePayments();
+  const { createCoachSubscription, cancelCoachSubscription } = usePayments();
   const queryClient = useQueryClient();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const [showPlans, setShowPlans] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
 
   // Invalidate subscription data on component mount to ensure fresh data
   useEffect(() => {
@@ -56,7 +73,7 @@ const CoachBilling = () => {
       try {
         const { data, error } = await supabase
           .from("coach_subscriptions")
-          .select("id, status, tier_id, billing_cycle, start_date, renewal_date")
+          .select("id, status, tier_id, billing_cycle, start_date, renewal_date, grace_expires_at, failed_renewal_attempts")
           .eq("coach_id", user!.id)
           .order("start_date", { ascending: false })
           .limit(1)
@@ -87,6 +104,26 @@ const CoachBilling = () => {
         console.error("Error fetching invoices:", e);
         return [];
       }
+    },
+  });
+
+  const cancelSubscription = useMutation({
+    mutationFn: async () => {
+      if (!currentSub?.id) {
+        throw new Error("No active subscription found");
+      }
+      return await cancelCoachSubscription(currentSub.id, cancelReason || undefined, true);
+    },
+    onSuccess: () => {
+      toast.success("Subscription cancelled successfully");
+      setCancelDialogOpen(false);
+      setCancelReason("");
+      queryClient.invalidateQueries({ queryKey: ["coach_subscription", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["invoices", user?.id] });
+    },
+    onError: (error: any) => {
+      console.error("Error cancelling subscription:", error);
+      toast.error(error?.message || "Failed to cancel subscription");
     },
   });
 
@@ -147,6 +184,45 @@ const CoachBilling = () => {
 
   const isActiveSubscription = currentSub && currentSub.status === 'active';
 
+  const formatDateTime = (dateValue?: string | null) => {
+    if (!dateValue) return null;
+    return new Date(dateValue).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  };
+
+  const statusLabels: Record<string, string> = {
+    active: "Active",
+    pending: "Pending payment",
+    cancelled: "Cancelled",
+    expired: "Expired",
+    grace: "Grace period",
+  };
+
+  const getStatusBadgeClass = (status?: string) => {
+    switch (status) {
+      case "active":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      case "grace":
+        return "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100";
+      case "pending":
+        return "bg-blue-100 text-blue-900 dark:bg-blue-900 dark:text-blue-100";
+      case "expired":
+      case "cancelled":
+        return "bg-destructive text-destructive-foreground";
+      default:
+        return "bg-muted text-foreground";
+    }
+  };
+
+  const currentStatusLabel = currentSub ? statusLabels[currentSub.status] || currentSub.status : null;
+  const graceExpiresFormatted = formatDateTime(currentSub?.grace_expires_at);
+  const renewalDateFormatted = formatDateTime(currentSub?.renewal_date);
+  const failedAttempts = currentSub?.failed_renewal_attempts ?? 0;
+  const showGraceAlert = currentSub?.status === "grace";
+  const showPendingAlert = currentSub?.status === "pending";
+
   return (
     <DashboardLayout sidebarSections={coachSidebarSections}>
       <div className="space-y-6">
@@ -164,16 +240,56 @@ const CoachBilling = () => {
           </RadioGroup>
         </div>
 
+        {showGraceAlert && (
+          <Alert className="border-amber-500/60 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+            <AlertCircle className="h-4 w-4" aria-hidden="true" />
+            <AlertTitle>Payment required</AlertTitle>
+            <AlertDescription>
+              We tried to renew your subscription but the payment failed. Premium access continues until{" "}
+              <span className="font-semibold">{graceExpiresFormatted || "grace period ends"}</span>. Please update your
+              payment method or repurchase the plan to avoid interruption.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {showPendingAlert && (
+          <Alert className="bg-blue-50 text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+            <Clock className="h-4 w-4" aria-hidden="true" />
+            <AlertTitle>Pending confirmation</AlertTitle>
+            <AlertDescription>
+              Your subscription is currently awaiting payment confirmation. If you already paid, this will update
+              automatically once the provider notifies us.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {currentSub && (
           <Card>
             <CardHeader>
               <CardTitle>Current Plan</CardTitle>
-              <CardDescription>Status: {currentSub.status}</CardDescription>
+              <CardDescription className="flex flex-wrap items-center gap-2">
+                Status:
+                <Badge className={getStatusBadgeClass(currentSub.status)}>
+                  {currentStatusLabel}
+                </Badge>
+                {failedAttempts > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Failed renewals: {failedAttempts}
+                  </span>
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-sm text-muted-foreground">Billing cycle: {currentSub.billing_cycle}</div>
-              {currentSub.renewal_date && (
-                <div className="text-sm text-muted-foreground">Renews on: {new Date(currentSub.renewal_date).toLocaleDateString()}</div>
+              {renewalDateFormatted && (
+                <div className="text-sm text-muted-foreground">
+                  Renews on: {renewalDateFormatted}
+                </div>
+              )}
+              {currentSub.status === "grace" && graceExpiresFormatted && (
+                <div className="text-sm text-muted-foreground">
+                  Grace access ends: {graceExpiresFormatted}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -209,9 +325,79 @@ const CoachBilling = () => {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button variant="destructive" className="w-full">
-                    Cancel Subscription
-                  </Button>
+                  <AlertDialog
+                    open={cancelDialogOpen}
+                    onOpenChange={(open) => {
+                      setCancelDialogOpen(open);
+                      if (!open) {
+                        setCancelReason("");
+                      }
+                    }}
+                  >
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        className="w-full"
+                        disabled={cancelSubscription.isPending}
+                        aria-busy={cancelSubscription.isPending}
+                        aria-live="polite"
+                      >
+                        {cancelSubscription.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          "Cancel Subscription"
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This immediately stops future billing and limits access to premium coach features.
+                          You can resubscribe later at any time.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="space-y-2">
+                        <Label htmlFor="cancel-reason">Cancellation reason (optional)</Label>
+                        <Textarea
+                          id="cancel-reason"
+                          value={cancelReason}
+                          onChange={(event) => setCancelReason(event.target.value)}
+                          placeholder="Let us know why you're leaving..."
+                          aria-describedby="cancel-reason-helper"
+                          minLength={0}
+                        />
+                        <p id="cancel-reason-helper" className="text-sm text-muted-foreground">
+                          Feedback helps us improve the coach experience.
+                        </p>
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={cancelSubscription.isPending}>Keep subscription</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={(event) => {
+                            event.preventDefault();
+                            if (!cancelSubscription.isPending) {
+                              cancelSubscription.mutate();
+                            }
+                          }}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          disabled={cancelSubscription.isPending}
+                        >
+                          {cancelSubscription.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                              Cancelling...
+                            </>
+                          ) : (
+                            "Confirm cancellation"
+                          )}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </CardFooter>
               </Card>
 

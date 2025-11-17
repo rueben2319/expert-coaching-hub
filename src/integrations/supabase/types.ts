@@ -157,6 +157,8 @@ export type Database = {
           billing_cycle: string
           coach_id: string
           created_at: string
+          failed_renewal_attempts: number
+          grace_expires_at: string | null
           end_date: string | null
           id: string
           payment_method: string | null
@@ -171,6 +173,8 @@ export type Database = {
           billing_cycle: string
           coach_id: string
           created_at?: string
+          failed_renewal_attempts?: number
+          grace_expires_at?: string | null
           end_date?: string | null
           id?: string
           payment_method?: string | null
@@ -185,6 +189,8 @@ export type Database = {
           billing_cycle?: string
           coach_id?: string
           created_at?: string
+          failed_renewal_attempts?: number
+          grace_expires_at?: string | null
           end_date?: string | null
           id?: string
           payment_method?: string | null

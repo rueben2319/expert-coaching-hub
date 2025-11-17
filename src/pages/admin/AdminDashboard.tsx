@@ -4,10 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { BookOpen, Users, Shield, DollarSign, TrendingUp, CreditCard, AlertCircle } from "lucide-react";
+import { BookOpen, Users, Shield, DollarSign, TrendingUp, CreditCard, AlertCircle, Clock, ExternalLink, Copy } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminSidebarSections } from "@/config/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 
 interface RevenueStats {
   daily: number;
@@ -26,6 +27,9 @@ export default function AdminDashboard() {
   const [coachRevenue, setCoachRevenue] = useState<RevenueStats>({ daily: 0, monthly: 0, annual: 0 });
   const [creditRevenue, setCreditRevenue] = useState<RevenueStats>({ daily: 0, monthly: 0, annual: 0 });
   const [activeSubscriptions, setActiveSubscriptions] = useState<number>(0);
+  const [graceSubscriptions, setGraceSubscriptions] = useState<number>(0);
+  const [failedRenewalSubscriptions, setFailedRenewalSubscriptions] = useState<number>(0);
+  const [renewalIssues, setRenewalIssues] = useState<any[]>([]);
   const [totalTransactions, setTotalTransactions] = useState<number>(0);
 
   useEffect(() => {
@@ -54,6 +58,33 @@ export default function AdminDashboard() {
           .select('*', { count: 'exact', head: true })
           .eq('status', 'active');
         if (mounted) setActiveSubscriptions(activeSubsRes.count ?? 0);
+
+        const graceSubsRes = await supabase
+          .from('coach_subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'grace');
+        if (mounted) setGraceSubscriptions(graceSubsRes.count ?? 0);
+
+        const failedRenewalsRes = await supabase
+          .from('coach_subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'expired')
+          .gt('failed_renewal_attempts', 0);
+        if (mounted) setFailedRenewalSubscriptions(failedRenewalsRes.count ?? 0);
+
+        const { data: renewalRows, error: renewalErr } = await supabase
+          .from('transactions')
+          .select('id, subscription_id, transaction_ref, status, created_at, gateway_response')
+          .eq('transaction_mode', 'coach_subscription_renewal')
+          .in('status', ['pending', 'failed'])
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (renewalErr) {
+          console.error('Error loading renewal issues', renewalErr);
+        } else if (mounted) {
+          setRenewalIssues(renewalRows || []);
+        }
 
         // Coach subscription revenue
         const now = new Date();
@@ -153,6 +184,26 @@ export default function AdminDashboard() {
     }).format(amount);
   };
 
+  const extractCheckoutUrl = (gatewayResponse: any): string | null => {
+    return (
+      gatewayResponse?.data?.checkout_url ||
+      gatewayResponse?.checkout_url ||
+      gatewayResponse?.data?.data?.checkout_url ||
+      null
+    );
+  };
+
+  const handleCopyCheckoutUrl = async (url: string | null) => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Renewal link copied to clipboard");
+    } catch (error) {
+      console.error("Failed to copy renewal link", error);
+      toast.error("Failed to copy link");
+    }
+  };
+
   return (
     <DashboardLayout
       sidebarSections={adminSidebarSections}
@@ -221,7 +272,97 @@ export default function AdminDashboard() {
             </Button>
           </CardContent>
         </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-amber-500/10 rounded-lg flex items-center justify-center mb-4">
+              <Clock className="w-6 h-6 text-amber-500" />
+            </div>
+            <CardTitle>Grace Period</CardTitle>
+            <CardDescription>Renewals needing payment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-amber-600">{loading ? '...' : graceSubscriptions}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <div className="w-12 h-12 bg-destructive/10 rounded-lg flex items-center justify-center mb-4">
+              <AlertCircle className="w-6 h-6 text-destructive" />
+            </div>
+            <CardTitle>Failed Renewals</CardTitle>
+            <CardDescription>Expired after attempts</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold mb-2 text-destructive">{loading ? '...' : failedRenewalSubscriptions}</div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Renewal Recovery */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle>Renewal Recovery Queue</CardTitle>
+          <CardDescription>Links generated by auto-renewal that still require payment</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {renewalIssues.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending or failed renewals at the moment.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="py-2 pr-4">Subscription</th>
+                    <th className="py-2 pr-4">Status</th>
+                    <th className="py-2 pr-4">Created</th>
+                    <th className="py-2 pr-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renewalIssues.map((issue) => {
+                    const checkoutUrl = extractCheckoutUrl(issue.gateway_response);
+                    return (
+                      <tr key={issue.id} className="border-t">
+                        <td className="py-2 pr-4 font-mono text-xs">
+                          {issue.subscription_id || "—"}
+                        </td>
+                        <td className="py-2 pr-4 capitalize">
+                          {issue.status}
+                        </td>
+                        <td className="py-2 pr-4 text-muted-foreground">
+                          {new Date(issue.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2 pr-4 flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!checkoutUrl}
+                            onClick={() => handleCopyCheckoutUrl(checkoutUrl)}
+                          >
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy link
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={!checkoutUrl}
+                            onClick={() => checkoutUrl && window.open(checkoutUrl, "_blank", "noopener")}
+                          >
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Open
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Revenue Analytics */}
       <div className="mb-8">
