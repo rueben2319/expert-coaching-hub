@@ -944,7 +944,8 @@ BEGIN
   SET
     status = 'completed',
     processed_at = now(),
-            processed_by = coach_id
+    processed_by = coach_id,
+    transaction_ref = COALESCE(payout_trans_id, payout_ref)
   WHERE id = withdrawal_id;
 
   -- Return result

@@ -26,9 +26,11 @@ BEGIN
   -- Calculate new balance
   new_balance := wallet_record.balance - credits_amount;
 
-  -- Update wallet balance
+  -- Update wallet balance and increment total_spent
   UPDATE credit_wallets
-  SET balance = new_balance, updated_at = now()
+  SET balance = new_balance, 
+      total_spent = COALESCE(total_spent, 0) + credits_amount,
+      updated_at = now()
   WHERE user_id = coach_id;
 
   -- Insert transaction record
@@ -64,7 +66,8 @@ BEGIN
   SET
     status = 'completed',
     processed_at = now(),
-    processed_by = process_withdrawal.coach_id
+    processed_by = process_withdrawal.coach_id,
+    transaction_ref = COALESCE(payout_trans_id, payout_ref)
   WHERE id = withdrawal_id;
 
   -- Return result

@@ -503,6 +503,40 @@ serve(async (req: Request) => {
     // Log high-value transactions
     await logHighValueTransaction('withdrawal', user.id, creditsToWithdraw, amountMWK);
 
+    // ✅ IDEMPOTENCY CHECK: Prevent duplicate withdrawals
+    // Check if there's a recent processing withdrawal with same amount to same phone
+    const { data: recentWithdrawals } = await supabase
+      .from("withdrawal_requests")
+      .select("id, status, transaction_ref, created_at")
+      .eq("coach_id", user.id)
+      .eq("credits_amount", creditsToWithdraw)
+      .in("status", ["processing", "completed"])
+      .gte("created_at", new Date(Date.now() - 60000).toISOString()); // Last 60 seconds
+    
+    if (recentWithdrawals && recentWithdrawals.length > 0) {
+      const recent = recentWithdrawals[0];
+      console.warn(`⚠️ DUPLICATE WITHDRAWAL ATTEMPT DETECTED`, {
+        user_id: user.id,
+        amount: creditsToWithdraw,
+        existing_withdrawal_id: recent.id,
+        existing_status: recent.status,
+        existing_transaction_ref: recent.transaction_ref,
+      });
+      
+      // Return the existing withdrawal instead of creating a duplicate
+      return new Response(
+        JSON.stringify({
+          success: true,
+          duplicate: true,
+          withdrawal_request_id: recent.id,
+          status: recent.status,
+          transaction_ref: recent.transaction_ref,
+          message: "A withdrawal with this amount was just processed. Returning existing withdrawal.",
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Create withdrawal request with fraud tracking
     const { data: withdrawalRequest, error: withdrawalError } = await supabase
       .from("withdrawal_requests")
@@ -541,6 +575,19 @@ serve(async (req: Request) => {
         operatorId,
         amountMWK
       );
+      
+      // ✅ CRITICAL: Store transaction ID immediately after PayChangu response
+      // This prevents duplicate withdrawals and ensures we can track the transaction
+      const transactionRef = payoutData.transaction?.trans_id || payoutData.transaction?.ref_id;
+      if (transactionRef) {
+        console.log(`✓ Storing transaction reference: ${transactionRef}`);
+        await supabase
+          .from("withdrawal_requests")
+          .update({
+            transaction_ref: transactionRef,
+          })
+          .eq("id", withdrawalRequest.id);
+      }
     } catch (err) {
       payoutError = err instanceof Error ? err : new Error(String(err));
       console.error("Payout execution failed:", payoutError);

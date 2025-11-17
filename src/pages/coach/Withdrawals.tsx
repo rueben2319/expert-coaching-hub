@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { coachSidebarSections } from "@/config/navigation";
 import { useCredits } from "@/hooks/useCredits";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +15,8 @@ import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle, Loader2, AlertCir
 import { CreditWallet } from "@/components/CreditWallet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { WITHDRAWAL_LIMITS } from "@/lib/withdrawalLimits";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +37,8 @@ const CREDIT_AGING_DAYS = WITHDRAWAL_LIMITS.CREDIT_AGING_DAYS; // Credits must a
 
 export default function Withdrawals() {
   const { balance, requestWithdrawal, retryWithdrawal, withdrawalRequests, withdrawalsLoading } = useCredits();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("mobile_money");
   const [accountNumber, setAccountNumber] = useState("");
@@ -41,6 +47,7 @@ export default function Withdrawals() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
 
   const creditsAmount = Number(amount) || 0;
   const mwkAmount = creditsAmount * CONVERSION_RATE;
@@ -70,6 +77,50 @@ export default function Withdrawals() {
     setPhoneNumber("");
     setNotes("");
     setConfirmOpen(false);
+  };
+
+  const handleCheckWithdrawalStatus = async (withdrawalId: string) => {
+    try {
+      setCheckingStatusId(withdrawalId);
+      
+      // Get the current session for authorization
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+      
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/check-withdrawal-status`,
+        {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ withdrawalId })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to check status');
+      }
+
+      const result = await response.json();
+      
+      if (result.updated) {
+        // Refresh the withdrawals list
+        queryClient.invalidateQueries({ queryKey: ["withdrawal_requests", user?.id] });
+        toast.success(`Withdrawal status updated to: ${result.status}`);
+      } else {
+        toast.info(result.message || 'Status is still pending. Please try again in a few moments.');
+      }
+    } catch (error) {
+      toast.error('Failed to check status: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setCheckingStatusId(null);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -374,7 +425,23 @@ export default function Withdrawals() {
               </div>
             ) : withdrawalRequests && withdrawalRequests.length > 0 ? (
               <div className="space-y-4">
-                {withdrawalRequests.map((request) => (
+                {(() => {
+                  const validRequests = withdrawalRequests.filter((request) =>
+                    ["completed", "pending", "failed", "rejected", "cancelled"].includes(request.status) ||
+                    (request.status === "processing" && request.transaction_ref)
+                  );
+                  
+                  if (validRequests.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                        <p>No valid withdrawal requests to display</p>
+                        <p className="text-xs mt-2">Withdrawals without transaction IDs are not shown</p>
+                      </div>
+                    );
+                  }
+                  
+                  return validRequests.map((request) => (
                   <div
                     key={request.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -444,9 +511,30 @@ export default function Withdrawals() {
                           </div>
                         )}
                         {request.status === "processing" && (
-                          <p className="text-sm text-blue-600">
-                            ⏳ Processing with payment provider. This usually takes a few minutes.
-                          </p>
+                          <div className="space-y-2">
+                            <p className="text-sm text-blue-600">
+                              ⏳ Processing with payment provider. This usually takes a few minutes.
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCheckWithdrawalStatus(request.id)}
+                              disabled={checkingStatusId === request.id}
+                              className="w-full sm:w-auto"
+                            >
+                              {checkingStatusId === request.id ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                  Checking...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-3 w-3 mr-2" />
+                                  Check Status
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         )}
                         {request.notes && (
                           <p className="text-sm text-muted-foreground">
@@ -459,7 +547,8 @@ export default function Withdrawals() {
                       {request.status}
                     </Badge>
                   </div>
-                ))}
+                ));
+                })()}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
