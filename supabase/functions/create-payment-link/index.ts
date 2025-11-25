@@ -200,6 +200,7 @@ serve(async (req: Request) => {
       gateway_response: null,
       order_id: orderId,
       subscription_id: subscriptionId,
+      transaction_mode: mode,
     };
 
     console.log("Transaction data:", transactionData);
