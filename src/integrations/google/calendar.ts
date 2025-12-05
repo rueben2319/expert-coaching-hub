@@ -59,10 +59,12 @@ export interface GoogleCalendarResponse {
 class GoogleCalendarService {
   // User-scoped cache to prevent serving stale sessions across different users
   private sessionCache: Map<string, { session: any; timestamp: number }> = new Map();
+  private tokenCache: Map<string, { token: string; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 5000; // 5 seconds
+  private readonly TOKEN_CACHE_DURATION = 50 * 60 * 1000; // 50 minutes (tokens last 1 hour)
   // Prevent race conditions in concurrent token requests
   private pendingTokenFetches: Map<string, Promise<string>> = new Map();
-  private readonly SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+  private readonly SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
 
   private async getAccessToken(): Promise<string> {
     // Get current user ID for cache key
@@ -80,10 +82,17 @@ class GoogleCalendarService {
       return existingRequest;
     }
 
+    // Check token cache first (longer-lived than session cache)
+    const cachedToken = this.tokenCache.get(userId);
+    if (cachedToken && (now - cachedToken.timestamp) < this.TOKEN_CACHE_DURATION) {
+      return cachedToken.token;
+    }
+
     // Check user-specific cached session
     const cached = this.sessionCache.get(userId);
     if (cached && (now - cached.timestamp) < this.CACHE_DURATION) {
       if (cached.session?.provider_token) {
+        this.tokenCache.set(userId, { token: cached.session.provider_token, timestamp: now });
         return cached.session.provider_token;
       }
     }
@@ -94,6 +103,7 @@ class GoogleCalendarService {
 
     try {
       const token = await tokenPromise;
+      this.tokenCache.set(userId, { token, timestamp: now });
       return token;
     } finally {
       // Clean up the pending request
@@ -112,15 +122,47 @@ class GoogleCalendarService {
       throw new Error('No active session. Please sign in.');
     }
 
-    // Check for provider token in session
+    // Check for provider token in session (available immediately after OAuth)
     if (session.provider_token) {
+      // Store token to user metadata for persistence
+      await this.storeTokensToMetadata(userId, session.provider_token, session.provider_refresh_token);
       return session.provider_token;
     }
 
-    // Fallback: check user metadata for Google provider info
+    // Fallback: check user metadata for stored Google tokens
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated.');
+    }
+
+    // Check user metadata for stored tokens
+    const metadata = user.user_metadata;
+    if (metadata?.google_access_token) {
+      // Check if token is still valid (not expired)
+      const expiresAt = metadata.google_token_expires_at;
+      if (expiresAt) {
+        const expiryDate = new Date(expiresAt);
+        const bufferTime = 5 * 60 * 1000; // 5 minute buffer
+        if (expiryDate.getTime() - bufferTime > now) {
+          logger.log('Using stored Google access token from metadata');
+          return metadata.google_access_token;
+        }
+      }
+      
+      // Token expired, try to refresh
+      if (metadata.google_refresh_token) {
+        logger.log('Stored token expired, attempting refresh...');
+        try {
+          await this.refreshAccessToken();
+          // Get updated user metadata
+          const { data: { user: updatedUser } } = await supabase.auth.getUser();
+          if (updatedUser?.user_metadata?.google_access_token) {
+            return updatedUser.user_metadata.google_access_token;
+          }
+        } catch (refreshError) {
+          logger.error('Token refresh failed:', refreshError);
+        }
+      }
     }
 
     // Check if user has Google provider identity
@@ -130,7 +172,34 @@ class GoogleCalendarService {
     }
 
     // If no provider token is available, user needs to re-authenticate with calendar scopes
-    throw new Error('Google Calendar access not available. Please reconnect your Google account with calendar permissions.');
+    throw new Error('Google Calendar access token expired. Please reconnect your Google account.');
+  }
+
+  /**
+   * Store Google tokens to user metadata for persistence across sessions
+   */
+  private async storeTokensToMetadata(userId: string, accessToken: string, refreshToken?: string | null): Promise<void> {
+    try {
+      const expiresAt = new Date(Date.now() + (3600 * 1000)).toISOString(); // 1 hour from now
+      
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          google_access_token: accessToken,
+          google_refresh_token: refreshToken || undefined,
+          google_token_expires_at: expiresAt,
+          google_calendar_connected: true,
+          last_token_refresh: new Date().toISOString(),
+        }
+      });
+
+      if (error) {
+        logger.error('Failed to store tokens to metadata:', error);
+      } else {
+        logger.log('Google tokens stored to user metadata');
+      }
+    } catch (error) {
+      logger.error('Error storing tokens:', error);
+    }
   }
 
   /**
@@ -163,11 +232,12 @@ class GoogleCalendarService {
         throw new Error(result.error || 'Token refresh failed');
       }
 
-      // Clear session cache for current user to force refetch with new token
+      // Clear all caches for current user to force refetch with new token
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.id) {
         this.sessionCache.delete(user.id);
         this.pendingTokenFetches.delete(user.id);
+        this.tokenCache.delete(user.id);
       }
 
       // CRITICAL: Refresh the Supabase session to get updated provider tokens
@@ -179,6 +249,15 @@ class GoogleCalendarService {
         // Don't throw - we can still try to use the updated token from metadata
       } else {
         logger.log('Supabase session refreshed successfully');
+      }
+      
+      // Store the new token to user metadata
+      const { data: { user: updatedUser } } = await supabase.auth.getUser();
+      if (updatedUser?.user_metadata?.google_access_token) {
+        this.tokenCache.set(updatedUser.id, { 
+          token: updatedUser.user_metadata.google_access_token, 
+          timestamp: Date.now() 
+        });
       }
 
       // Wait a bit for the session to be fully updated
@@ -197,6 +276,7 @@ class GoogleCalendarService {
   clearUserCache(userId: string): void {
     this.sessionCache.delete(userId);
     this.pendingTokenFetches.delete(userId);
+    this.tokenCache.delete(userId);
   }
 
   /**
@@ -205,6 +285,7 @@ class GoogleCalendarService {
   clearAllCaches(): void {
     this.sessionCache.clear();
     this.pendingTokenFetches.clear();
+    this.tokenCache.clear();
   }
 
   private async makeCalendarRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {

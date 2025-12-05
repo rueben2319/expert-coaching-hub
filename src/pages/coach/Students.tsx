@@ -112,7 +112,7 @@ export default function Students() {
     profiles: Profile;
     courses: Course | undefined;
   }[]>({
-    queryKey: ["coach-students", user?.id],
+    queryKey: ["coach-students", user?.id, coachCourses?.length],
     queryFn: async () => {
       if (!coachCourses?.length) return [];
       
@@ -120,35 +120,38 @@ export default function Students() {
       
       const { data: enrollmentData, error: enrollmentError } = await supabase
         .from("course_enrollments")
-        .select(`
-          id,
-          user_id,
-          course_id,
-          enrolled_at,
-          profiles!inner(
-            id,
-            full_name,
-            email,
-            avatar_url,
-            updated_at
-          )
-        `)
+        .select("id, user_id, course_id, enrolled_at")
         .in("course_id", courseIds)
         .order("enrolled_at", { ascending: false });
       
       if (enrollmentError) throw enrollmentError;
       if (!enrollmentData?.length) return [];
 
+      // Fetch profiles separately
+      const userIds = [...new Set(enrollmentData.map(e => e.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, avatar_url, updated_at")
+        .in("id", userIds);
+      
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+
       return enrollmentData.map(enrollment => ({
         id: enrollment.id,
         user_id: enrollment.user_id,
         course_id: enrollment.course_id,
         enrolled_at: enrollment.enrolled_at,
-        profiles: enrollment.profiles,
+        profiles: profileMap.get(enrollment.user_id) || { 
+          id: enrollment.user_id, 
+          full_name: "Unknown", 
+          email: "", 
+          avatar_url: null,
+          updated_at: new Date().toISOString()
+        },
         courses: coachCourses.find(c => c.id === enrollment.course_id)
       }));
     },
-    enabled: !!user?.id && !!coachCourses,
+    enabled: !!user?.id && !!coachCourses?.length,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000
   });
@@ -215,7 +218,7 @@ export default function Students() {
           name: profile.full_name || 'Unknown',
           email: profile.email || '',
           avatar: profile.avatar_url,
-          lastActive: enrollment.last_accessed || enrollment.enrolled_at,
+          lastActive: enrollment.enrolled_at,
           status: 'inactive',
           progress: 0,
           enrollments: [],
