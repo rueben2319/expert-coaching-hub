@@ -157,9 +157,9 @@ export type Database = {
           billing_cycle: string
           coach_id: string
           created_at: string
+          end_date: string | null
           failed_renewal_attempts: number
           grace_expires_at: string | null
-          end_date: string | null
           id: string
           payment_method: string | null
           renewal_date: string | null
@@ -173,9 +173,9 @@ export type Database = {
           billing_cycle: string
           coach_id: string
           created_at?: string
+          end_date?: string | null
           failed_renewal_attempts?: number
           grace_expires_at?: string | null
-          end_date?: string | null
           id?: string
           payment_method?: string | null
           renewal_date?: string | null
@@ -189,9 +189,9 @@ export type Database = {
           billing_cycle?: string
           coach_id?: string
           created_at?: string
+          end_date?: string | null
           failed_renewal_attempts?: number
           grace_expires_at?: string | null
-          end_date?: string | null
           id?: string
           payment_method?: string | null
           renewal_date?: string | null
@@ -245,6 +245,50 @@ export type Database = {
             columns: ["content_id"]
             isOneToOne: false
             referencedRelation: "lesson_content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      course_certificates: {
+        Row: {
+          certificate_id: string
+          certificate_url: string | null
+          course_id: string
+          expires_at: string | null
+          id: string
+          issued_at: string | null
+          template_version: string | null
+          user_id: string
+          verification_status: string | null
+        }
+        Insert: {
+          certificate_id: string
+          certificate_url?: string | null
+          course_id: string
+          expires_at?: string | null
+          id?: string
+          issued_at?: string | null
+          template_version?: string | null
+          user_id: string
+          verification_status?: string | null
+        }
+        Update: {
+          certificate_id?: string
+          certificate_url?: string | null
+          course_id?: string
+          expires_at?: string | null
+          id?: string
+          issued_at?: string | null
+          template_version?: string | null
+          user_id?: string
+          verification_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_certificates_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
             referencedColumns: ["id"]
           },
         ]
@@ -383,6 +427,82 @@ export type Database = {
           },
         ]
       }
+      course_files: {
+        Row: {
+          course_id: string
+          description: string | null
+          download_count: number | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          is_public: boolean | null
+          lesson_id: string | null
+          mime_type: string
+          module_id: string | null
+          tags: string[] | null
+          uploaded_at: string | null
+          uploaded_by: string
+        }
+        Insert: {
+          course_id: string
+          description?: string | null
+          download_count?: number | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          is_public?: boolean | null
+          lesson_id?: string | null
+          mime_type: string
+          module_id?: string | null
+          tags?: string[] | null
+          uploaded_at?: string | null
+          uploaded_by: string
+        }
+        Update: {
+          course_id?: string
+          description?: string | null
+          download_count?: number | null
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          is_public?: boolean | null
+          lesson_id?: string | null
+          mime_type?: string
+          module_id?: string | null
+          tags?: string[] | null
+          uploaded_at?: string | null
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_files_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_files_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_files_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "course_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       course_modules: {
         Row: {
           course_id: string
@@ -421,8 +541,47 @@ export type Database = {
           },
         ]
       }
+      course_reviews: {
+        Row: {
+          course_id: string
+          created_at: string | null
+          id: string
+          rating: number
+          review_text: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string | null
+          id?: string
+          rating: number
+          review_text?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string | null
+          id?: string
+          rating?: number
+          review_text?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_reviews_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       courses: {
         Row: {
+          average_rating: number | null
           category: string | null
           coach_id: string
           created_at: string
@@ -431,6 +590,7 @@ export type Database = {
           is_free: boolean | null
           level: Database["public"]["Enums"]["course_level"] | null
           price_credits: number | null
+          review_count: number | null
           status: Database["public"]["Enums"]["course_status"]
           tag: string | null
           thumbnail_url: string | null
@@ -438,6 +598,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          average_rating?: number | null
           category?: string | null
           coach_id: string
           created_at?: string
@@ -446,6 +607,7 @@ export type Database = {
           is_free?: boolean | null
           level?: Database["public"]["Enums"]["course_level"] | null
           price_credits?: number | null
+          review_count?: number | null
           status?: Database["public"]["Enums"]["course_status"]
           tag?: string | null
           thumbnail_url?: string | null
@@ -453,6 +615,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          average_rating?: number | null
           category?: string | null
           coach_id?: string
           created_at?: string
@@ -461,6 +624,7 @@ export type Database = {
           is_free?: boolean | null
           level?: Database["public"]["Enums"]["course_level"] | null
           price_credits?: number | null
+          review_count?: number | null
           status?: Database["public"]["Enums"]["course_status"]
           tag?: string | null
           thumbnail_url?: string | null
@@ -702,6 +866,8 @@ export type Database = {
           content_data: Json
           content_type: Database["public"]["Enums"]["content_type"]
           created_at: string
+          file_metadata: Json | null
+          file_url: string | null
           id: string
           is_required: boolean
           lesson_id: string
@@ -712,6 +878,8 @@ export type Database = {
           content_data: Json
           content_type: Database["public"]["Enums"]["content_type"]
           created_at?: string
+          file_metadata?: Json | null
+          file_url?: string | null
           id?: string
           is_required?: boolean
           lesson_id: string
@@ -722,6 +890,8 @@ export type Database = {
           content_data?: Json
           content_type?: Database["public"]["Enums"]["content_type"]
           created_at?: string
+          file_metadata?: Json | null
+          file_url?: string | null
           id?: string
           is_required?: boolean
           lesson_id?: string
@@ -1466,10 +1636,38 @@ export type Database = {
           updated_at?: string
           user_agent?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "withdrawal_requests_original_withdrawal_id_fkey"
+            columns: ["original_withdrawal_id"]
+            isOneToOne: false
+            referencedRelation: "stuck_withdrawals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "withdrawal_requests_original_withdrawal_id_fkey"
+            columns: ["original_withdrawal_id"]
+            isOneToOne: false
+            referencedRelation: "withdrawal_requests"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
+      certificate_verification: {
+        Row: {
+          certificate_id: string | null
+          coach_id: string | null
+          coach_name: string | null
+          course_title: string | null
+          expires_at: string | null
+          issued_at: string | null
+          student_name: string | null
+          verification_status: string | null
+        }
+        Relationships: []
+      }
       profiles_public: {
         Row: {
           avatar_url: string | null
@@ -1491,6 +1689,45 @@ export type Database = {
           full_name?: string | null
           id?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      stuck_withdrawals: {
+        Row: {
+          amount: number | null
+          coach_id: string | null
+          created_at: string | null
+          credits_amount: number | null
+          hours_processing: number | null
+          id: string | null
+          payment_method: string | null
+          rejection_reason: string | null
+          status: string | null
+          transaction_ref: string | null
+        }
+        Insert: {
+          amount?: number | null
+          coach_id?: string | null
+          created_at?: string | null
+          credits_amount?: number | null
+          hours_processing?: never
+          id?: string | null
+          payment_method?: string | null
+          rejection_reason?: string | null
+          status?: string | null
+          transaction_ref?: string | null
+        }
+        Update: {
+          amount?: number | null
+          coach_id?: string | null
+          created_at?: string | null
+          credits_amount?: number | null
+          hours_processing?: never
+          id?: string | null
+          payment_method?: string | null
+          rejection_reason?: string | null
+          status?: string | null
+          transaction_ref?: string | null
         }
         Relationships: []
       }
@@ -1538,6 +1775,7 @@ export type Database = {
         Returns: boolean
       }
       cleanup_expired_recommendations: { Args: never; Returns: undefined }
+      cleanup_orphaned_files: { Args: never; Returns: undefined }
       commit_transaction: { Args: never; Returns: string }
       fn_practice_item_coach_access: {
         Args: {
@@ -1563,6 +1801,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      generate_certificate_id: { Args: never; Returns: string }
       generate_invoice_number: { Args: never; Returns: string }
       get_aged_credits: {
         Args: { p_min_age_days?: number; p_user_id: string }
@@ -1580,6 +1819,10 @@ export type Database = {
         Args: { coach_user_id: string }
         Returns: string
       }
+      get_file_signed_url_placeholder: {
+        Args: { file_path: string }
+        Returns: string
+      }
       get_next_lesson: {
         Args: { _course_id: string; _user_id: string }
         Returns: string
@@ -1591,13 +1834,27 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_file_download: { Args: { file_id: string }; Returns: undefined }
       is_subscription_expiring_soon: {
         Args: { _days_ahead?: number; _subscription_id: string }
         Returns: boolean
       }
+      issue_course_certificate: {
+        Args: { p_course_id: string; p_user_id: string }
+        Returns: string
+      }
       mark_lesson_complete: {
         Args: { _lesson_id: string; _user_id: string }
         Returns: boolean
+      }
+      mark_old_processing_withdrawals_as_pending: {
+        Args: never
+        Returns: {
+          hours_processing: number
+          new_status: string
+          old_status: string
+          withdrawal_id: string
+        }[]
       }
       process_withdrawal: {
         Args: {
@@ -1633,14 +1890,37 @@ export type Database = {
         }
         Returns: Json
       }
+      update_course_rating: {
+        Args: { course_uuid: string }
+        Returns: undefined
+      }
       upsert_own_role: {
         Args: { p_role: Database["public"]["Enums"]["app_role"] }
         Returns: Json
       }
+      verify_certificate: {
+        Args: { p_certificate_id: string }
+        Returns: {
+          certificate_id: string
+          coach_name: string
+          course_title: string
+          expires_at: string
+          is_valid: boolean
+          issued_at: string
+          student_name: string
+          verification_status: string
+        }[]
+      }
     }
     Enums: {
       app_role: "client" | "coach" | "admin"
-      content_type: "video" | "text" | "quiz" | "interactive" | "file"
+      content_type:
+        | "video"
+        | "text"
+        | "quiz"
+        | "interactive"
+        | "file"
+        | "meeting"
       course_level: "introduction" | "intermediate" | "advanced"
       course_status: "draft" | "published" | "archived"
       enrollment_status: "active" | "completed" | "dropped"
@@ -1772,7 +2052,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["client", "coach", "admin"],
-      content_type: ["video", "text", "quiz", "interactive", "file"],
+      content_type: ["video", "text", "quiz", "interactive", "file", "meeting"],
       course_level: ["introduction", "intermediate", "advanced"],
       course_status: ["draft", "published", "archived"],
       enrollment_status: ["active", "completed", "dropped"],
