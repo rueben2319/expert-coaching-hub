@@ -36,7 +36,7 @@ export default function Auth() {
   const [pendingRole, setPendingRole] = useState<"client" | "coach">("client");
   const [submittingRole, setSubmittingRole] = useState(false);
   const [isFromOAuth, setIsFromOAuth] = useState(false);
-  const [oauthRolePromptOpen, setOauthRolePromptOpen] = useState(false);
+  // oauthRolePromptOpen removed - no longer needed since we check role after OAuth
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -322,12 +322,16 @@ export default function Auth() {
     }
   };
 
-  const startOAuthWithRole = async (roleChoice: "client" | "coach") => {
+  const startOAuthWithRole = async (roleChoice?: "client" | "coach") => {
     try {
-      // store desired role and provider flag so on return we can auto-assign
-      try { localStorage.setItem('oauth_provider', 'google'); localStorage.setItem('oauth_role', roleChoice); } catch (e) { /* ignore */ }
+      // Store provider flag; role is optional (only for new signups)
+      try { 
+        localStorage.setItem('oauth_provider', 'google'); 
+        if (roleChoice) {
+          localStorage.setItem('oauth_role', roleChoice); 
+        }
+      } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
-      setOauthRolePromptOpen(false);
       setOauthLoading(true);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -358,16 +362,9 @@ export default function Auth() {
   };
 
   const handleGoogleAuth = async () => {
-    // If user already picked a desired OAuth role before, start immediately
-    let desired: string | null = null;
-    try { desired = localStorage.getItem('oauth_role'); } catch (e) { desired = null; }
-    if (desired === 'client' || desired === 'coach') {
-      await startOAuthWithRole(desired as "client" | "coach");
-      return;
-    }
-
-    // Otherwise prompt user to pick role first
-    setOauthRolePromptOpen(true);
+    // Start OAuth directly - we'll check for existing role after callback
+    // If user is new, they'll see role picker after OAuth completes
+    await startOAuthWithRole();
   };
 
   const handleRoleSubmit = async () => {
@@ -733,55 +730,7 @@ export default function Auth() {
         </CardContent>
       </Card>
 
-      {/* Pre-OAuth role prompt (shown before redirect) */}
-      <Dialog open={oauthRolePromptOpen} onOpenChange={setOauthRolePromptOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Before you continue</DialogTitle>
-            <DialogDescription>Pick a role so we can create your account correctly after Google sign-in.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <Label htmlFor="pre-oauth-role">I want to join as a</Label>
-            <Select value={pendingRole} onValueChange={(value: "client" | "coach") => setPendingRole(value)}>
-              <SelectTrigger id="pre-oauth-role">
-                <SelectValue placeholder="Select your role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="client">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    <div>
-                      <div className="font-medium">Student</div>
-                      <div className="text-xs text-muted-foreground">Learn from expert coaches</div>
-                    </div>
-                  </div>
-                </SelectItem>
-                <SelectItem value="coach">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-4 w-4" />
-                    <div>
-                      <div className="font-medium">Coach</div>
-                      <div className="text-xs text-muted-foreground">Create and teach courses</div>
-                    </div>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DialogFooter className="mt-4 gap-2">
-            <Button type="button" variant="ghost" onClick={() => setOauthRolePromptOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={() => startOAuthWithRole(pendingRole)}>
-              Continue with Google
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Post-OAuth role dialog (fallback if no preselected role) */}
+      {/* Post-OAuth role dialog (shown only for new users without a role) */}
       <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

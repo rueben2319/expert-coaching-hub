@@ -343,6 +343,7 @@ export function CourseReviewSystem({
           </Card>
         )}
       </div>
+      </div>
     </DatabaseStatus>
   );
 }
