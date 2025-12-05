@@ -49,10 +49,6 @@ export function CertificateGenerator({
           courses (
             title,
             coach_id
-          ),
-          profiles (
-            full_name,
-            avatar_url
           )
         `)
         .eq("user_id", userId);
@@ -64,7 +60,18 @@ export function CertificateGenerator({
       const { data, error } = await query.order("issued_at", { ascending: false });
 
       if (error) throw error;
-      return data as Certificate[];
+      
+      // Fetch profile data separately since there's no direct FK relationship
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", userId)
+        .single();
+      
+      return (data || []).map(cert => ({
+        ...cert,
+        profiles: profile || { full_name: "", avatar_url: null }
+      })) as unknown as Certificate[];
     },
     enabled: !!userId,
   });

@@ -43,29 +43,46 @@ export function CourseReviewSystem({
     queryFn: async () => {
       try {
         const { data, error } = await supabase
-          .from("course_reviews" as any)
-          .select(`
-            *,
-            profiles(full_name, avatar_url)
-          `)
+          .from("course_reviews")
+          .select("*")
           .eq("course_id", courseId)
           .order("created_at", { ascending: false });
 
         if (error) {
           console.error("Error fetching reviews:", error);
-          return []; // Return empty array if table doesn't exist yet
+          return [];
         }
         
-        return data as CourseReview[];
+        if (!data?.length) return [];
+        
+        // Fetch profiles for all reviewers
+        const userIds = [...new Set(data.map(r => r.user_id))];
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds);
+        
+        const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+        
+        return data.map(review => ({
+          ...review,
+          profiles: profileMap.get(review.user_id) || { full_name: "Anonymous", avatar_url: null }
+        })) as unknown as CourseReview[];
       } catch (err) {
         console.error("Database error:", err);
-        return []; // Return empty array on any error
+        return [];
       }
     },
     enabled: !!courseId,
   });
 
-  const { data: userReview } = useQuery({
+  const { data: userReview } = useQuery<{
+    id: string;
+    rating: number;
+    review_text: string | null;
+    course_id: string;
+    user_id: string;
+  } | null>({
     queryKey: ["user-review", courseId],
     queryFn: async () => {
       try {
@@ -73,8 +90,8 @@ export function CourseReviewSystem({
         if (!userData.user) return null;
 
         const { data, error } = await supabase
-          .from("course_reviews" as any)
-          .select("*")
+          .from("course_reviews")
+          .select("id, rating, review_text, course_id, user_id")
           .eq("course_id", courseId)
           .eq("user_id", userData.user.id)
           .single();
@@ -109,7 +126,7 @@ export function CourseReviewSystem({
         if (userReview) {
           // Update existing review
           const { error } = await supabase
-            .from("course_reviews" as any)
+            .from("course_reviews")
             .update({
               rating: data.rating,
               review_text: data.review_text || null,
@@ -121,7 +138,7 @@ export function CourseReviewSystem({
         } else {
           // Create new review
           const { error } = await supabase
-            .from("course_reviews" as any)
+            .from("course_reviews")
             .insert({
               course_id: courseId,
               user_id: userData.user.id,
