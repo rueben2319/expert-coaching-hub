@@ -117,6 +117,23 @@ export default function Auth() {
     };
   }, []);
 
+  // Reset OAuth loading state on page load (handles redirect back from OAuth)
+  useEffect(() => {
+    // Check if we're returning from OAuth (URL contains hash or code)
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace('#', '?'));
+    const hasOAuthParams = urlParams.has('code') || hashParams.has('access_token') || hashParams.has('error');
+    
+    if (hasOAuthParams) {
+      console.log('[OAuth] Detected OAuth callback, processing...');
+      setOauthLoading(true);
+      setIsFromOAuth(true);
+    } else {
+      // Reset loading state if not coming from OAuth
+      setOauthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user) {
       hasInitialized.current = false;
@@ -333,10 +350,15 @@ export default function Auth() {
       } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
       setOauthLoading(true);
-      const { error } = await supabase.auth.signInWithOAuth({
+      
+      // Use the current origin for redirect
+      const redirectUrl = `${window.location.origin}/auth`;
+      console.log('[OAuth] Starting Google OAuth with redirect:', redirectUrl);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth`,
+          redirectTo: redirectUrl,
           scopes: [
             'openid',
             'email',
@@ -346,14 +368,20 @@ export default function Auth() {
           ].join(' '),
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent'
+            prompt: 'select_account'  // Changed from 'consent' to avoid re-consent issues
           }
         },
       });
 
       if (error) throw error;
+      
+      // If we have a URL, redirect manually (fallback for mobile browsers)
+      if (data?.url) {
+        console.log('[OAuth] Redirecting to:', data.url);
+        window.location.href = data.url;
+      }
     } catch (error: any) {
-      console.error(error);
+      console.error('[OAuth] Error:', error);
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
       setIsFromOAuth(false);
