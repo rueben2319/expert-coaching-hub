@@ -253,43 +253,48 @@ serve(async (req: Request) => {
           amount: creditsRequired,
           original_transaction_id: transferResult.sender_transaction_id,
           reason: 'Enrollment creation failed'
-        }).catch(() => ({ error: { message: 'Refund function not available' } }));
+        });
         
         if (refundError) {
           console.error("Critical: Failed to refund credits after enrollment failure:", refundError);
           // Log for manual intervention - this is a critical data integrity issue
-          await supabase.from('error_logs').insert({
-            error_type: 'enrollment_refund_failed',
-            details: {
+          try {
+            await supabase.from('security_audit_log').insert({
+              event_type: 'enrollment_refund_failed',
               user_id: user.id,
-              course_id: course_id,
-              credits: creditsRequired,
-              enrollment_error: enrollError.message,
-              refund_error: refundError.message || 'Refund function not available',
-              transaction_id: transferResult.sender_transaction_id
-            }
-          }).catch((logError) => {
+              details: {
+                course_id: course_id,
+                credits: creditsRequired,
+                enrollment_error: enrollError.message,
+                refund_error: refundError.message || 'Refund function not available',
+                transaction_id: transferResult.sender_transaction_id
+              }
+            });
+          } catch (logError: unknown) {
             console.error("Failed to log error:", logError);
-          });
+          }
         } else {
           console.log("Successfully refunded credits after enrollment failure");
         }
-      } catch (refundErr: any) {
+      } catch (refundErr: unknown) {
+        const refundErrMsg = refundErr instanceof Error ? refundErr.message : 'Unknown error during refund';
         console.error("Failed to process refund:", refundErr);
         // Log for manual intervention
-        await supabase.from('error_logs').insert({
-          error_type: 'enrollment_refund_failed',
-          details: {
+        try {
+          await supabase.from('security_audit_log').insert({
+            event_type: 'enrollment_refund_failed',
             user_id: user.id,
-            course_id: course_id,
-            credits: creditsRequired,
-            enrollment_error: enrollError.message,
-            refund_error: refundErr.message || 'Unknown error during refund',
-            transaction_id: transferResult.sender_transaction_id
-          }
-        }).catch((logError) => {
+            details: {
+              course_id: course_id,
+              credits: creditsRequired,
+              enrollment_error: enrollError.message,
+              refund_error: refundErrMsg,
+              transaction_id: transferResult.sender_transaction_id
+            }
+          });
+        } catch (logError: unknown) {
           console.error("Failed to log error:", logError);
-        });
+        }
       }
       
       return new Response(

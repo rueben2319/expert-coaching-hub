@@ -22,6 +22,21 @@ type ManageCoachSubscriptionRequest = {
   cancel_immediately?: boolean;
 };
 
+interface SubscriptionRow {
+  id: string;
+  coach_id: string;
+  status: string;
+  start_date: string;
+  renewal_date: string | null;
+  billing_cycle: string;
+  transaction_id: string | null;
+  end_date: string | null;
+}
+
+interface RoleRow {
+  role: string;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -91,7 +106,7 @@ serve(async (req: Request) => {
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id)
-      .maybeSingle();
+      .maybeSingle() as { data: RoleRow | null };
 
     const userRole = roleRow?.role ?? null;
     const isAdmin = userRole === "admin";
@@ -100,7 +115,7 @@ serve(async (req: Request) => {
       .from("coach_subscriptions")
       .select("id, coach_id, status, start_date, renewal_date, billing_cycle, transaction_id, end_date")
       .eq("id", subscription_id)
-      .single();
+      .single() as { data: SubscriptionRow | null; error: any };
 
     if (subscriptionError || !subscription) {
       return new Response(JSON.stringify({ error: "Subscription not found" }), {
@@ -140,7 +155,7 @@ serve(async (req: Request) => {
       ? now.toISOString()
       : subscription.renewal_date ?? now.toISOString();
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await (supabase as any)
       .from("coach_subscriptions")
       .update({
         status: "cancelled",
@@ -153,7 +168,7 @@ serve(async (req: Request) => {
       throw updateError;
     }
 
-    await supabase.from("subscription_audit_log").insert({
+    await (supabase as any).from("subscription_audit_log").insert({
       subscription_id: subscription.id,
       subscription_type: "coach",
       old_status: subscription.status,

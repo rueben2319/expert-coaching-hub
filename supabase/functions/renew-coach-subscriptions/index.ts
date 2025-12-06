@@ -21,7 +21,7 @@ const RENEWAL_MAX_ATTEMPTS = Number(Deno.env.get("RENEWAL_MAX_ATTEMPTS") ?? 3);
 const SUBSCRIPTION_ALERT_WEBHOOK = Deno.env.get("SUBSCRIPTION_ALERT_WEBHOOK");
 
 async function notifySubscriptionAlert(params: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   subscriptionId: string;
   oldStatus: string;
   newStatus: string;

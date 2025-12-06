@@ -51,13 +51,15 @@ serve(async (req) => {
     }
 
     // Generate signed URL for file access
-    const { data: { signedUrl }, error: signedError } = await supabaseClient.storage
+    const { data: signedData, error: signedError } = await supabaseClient.storage
       .from('course-content')
       .createSignedUrl(filePath, 3600) // 1 hour expiry
 
-    if (signedError) {
+    if (signedError || !signedData) {
       throw new Error('Failed to generate signed URL')
     }
+    
+    const signedUrl = signedData.signedUrl;
 
     // Increment download count
     await supabaseClient.rpc('increment_file_download', { 
@@ -75,9 +77,10 @@ serve(async (req) => {
         status: 200 
       }
     )
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400 
