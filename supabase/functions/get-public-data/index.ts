@@ -74,7 +74,7 @@ serve(async (req: Request) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
-    // Fetch published courses with coach information
+    // Fetch published courses
     const { data: courses, error: coursesError } = await supabase
       .from('courses')
       .select(`
@@ -88,12 +88,7 @@ serve(async (req: Request) => {
         price_credits,
         is_free,
         created_at,
-        coach_id,
-        profiles!courses_coach_id_fkey (
-          id,
-          full_name,
-          avatar_url
-        )
+        coach_id
       `)
       .eq('status', 'published')
       .order('created_at', { ascending: false })
@@ -104,19 +99,29 @@ serve(async (req: Request) => {
       throw coursesError
     }
 
+    // Get unique coach IDs and fetch their profiles
+    const coachIds = [...new Set(courses.map((c: any) => c.coach_id))]
+    const { data: coachProfiles } = await supabase
+      .from('profiles_public')
+      .select('id, full_name, avatar_url')
+      .in('id', coachIds)
+
+    const profileMap = new Map((coachProfiles || []).map((p: any) => [p.id, p]))
+
     // Fetch enrollment counts for each course
     const coursesWithStats = await Promise.all(
-      courses.map(async (course: Course) => {
+      courses.map(async (course: any) => {
         const { data: enrollments, error: enrollError } = await supabase
           .from('course_enrollments')
           .select('id')
           .eq('course_id', course.id)
 
+        const profile = profileMap.get(course.coach_id)
         return {
           ...course,
           student_count: enrollError ? 0 : enrollments?.length || 0,
-          coach_name: course.profiles?.full_name || 'Expert Coach',
-          coach_avatar: course.profiles?.avatar_url || null
+          coach_name: profile?.full_name || 'Expert Coach',
+          coach_avatar: profile?.avatar_url || null
         }
       })
     )
