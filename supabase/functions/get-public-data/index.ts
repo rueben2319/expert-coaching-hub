@@ -127,40 +127,40 @@ serve(async (req: Request) => {
     )
 
     // Fetch top coaches (those with published courses)
-    const { data: coaches, error: coachesError } = await supabase
+    // Get courses with coach_ids for counting
+    const { data: coachCourses, error: coachCoursesError } = await supabase
       .from('courses')
-      .select(`
-        coach_id,
-        profiles!courses_coach_id_fkey (
-          id,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select('coach_id')
       .eq('status', 'published')
-      .limit(10)
 
-    if (coachesError) {
-      console.error('Error fetching coaches:', coachesError)
-      throw coachesError
+    if (coachCoursesError) {
+      console.error('Error fetching coach courses:', coachCoursesError)
+      throw coachCoursesError
     }
 
-    // Aggregate coach data and count their courses
-    const coachMap = new Map()
-    coaches.forEach((item: any) => {
-      const coach = item.profiles
-      if (coach && coach.id) {
-        if (!coachMap.has(coach.id)) {
-          coachMap.set(coach.id, {
-            ...coach,
-            course_count: 0
-          })
-        }
-        coachMap.get(coach.id).course_count++
-      }
+    // Count courses per coach
+    const coachCourseCount = new Map<string, number>()
+    coachCourses.forEach((item: any) => {
+      const count = coachCourseCount.get(item.coach_id) || 0
+      coachCourseCount.set(item.coach_id, count + 1)
     })
 
-    const uniqueCoaches = Array.from(coachMap.values()).slice(0, 6)
+    // Get unique coach IDs for top coaches section
+    const topCoachIds = [...coachCourseCount.keys()].slice(0, 6)
+    
+    // Fetch coach profiles separately
+    const { data: coachProfilesData } = await supabase
+      .from('profiles_public')
+      .select('id, full_name, avatar_url')
+      .in('id', topCoachIds)
+
+    // Build coaches array with course counts
+    const uniqueCoaches = (coachProfilesData || []).map((profile: any) => ({
+      id: profile.id,
+      full_name: profile.full_name,
+      avatar_url: profile.avatar_url,
+      course_count: coachCourseCount.get(profile.id) || 0
+    }))
 
     // Fetch testimonials/reviews (for now, we'll use sample data)
     // In a real implementation, you'd have a reviews table
