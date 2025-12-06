@@ -52,10 +52,13 @@ export const GoogleCalendarStatus = ({
   const handleReconnect = async () => {
     setIsReconnecting(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const redirectUrl = `${window.location.origin}${window.location.pathname}`;
+      console.log('[Calendar] Reconnecting with redirect:', redirectUrl);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}${window.location.pathname}`,
+          redirectTo: redirectUrl,
           scopes: [
             'openid',
             'email',
@@ -65,7 +68,7 @@ export const GoogleCalendarStatus = ({
           ].join(' '),
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent'
+            prompt: 'select_account'  // Changed from 'consent' to avoid re-consent issues
           }
         },
       });
@@ -74,7 +77,13 @@ export const GoogleCalendarStatus = ({
         throw error;
       }
 
-      toast.success('Redirecting to Google for calendar access...');
+      // Manual redirect fallback for mobile browsers
+      if (data?.url) {
+        console.log('[Calendar] Redirecting to:', data.url);
+        window.location.href = data.url;
+      } else {
+        toast.success('Redirecting to Google for calendar access...');
+      }
     } catch (error: any) {
       console.error('Failed to reconnect Google Calendar:', error);
       toast.error(error.message || 'Failed to reconnect Google Calendar');
