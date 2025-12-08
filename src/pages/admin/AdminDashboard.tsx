@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { BookOpen, Users, Shield, DollarSign, TrendingUp, CreditCard, AlertCircle, Clock, ExternalLink, Copy } from "lucide-react";
+import { BookOpen, Users, Shield, DollarSign, TrendingUp, CreditCard, AlertCircle, Clock, ExternalLink, Copy, GraduationCap, Wallet, CheckCircle, UserCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminSidebarSections } from "@/config/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,6 +31,14 @@ export default function AdminDashboard() {
   const [failedRenewalSubscriptions, setFailedRenewalSubscriptions] = useState<number>(0);
   const [renewalIssues, setRenewalIssues] = useState<any[]>([]);
   const [totalTransactions, setTotalTransactions] = useState<number>(0);
+  // Additional tracking metrics
+  const [totalEnrollments, setTotalEnrollments] = useState<number>(0);
+  const [activeCoaches, setActiveCoaches] = useState<number>(0);
+  const [totalCreditsInCirculation, setTotalCreditsInCirculation] = useState<number>(0);
+  const [processingWithdrawals, setProcessingWithdrawals] = useState<number>(0);
+  const [failedTransactions, setFailedTransactions] = useState<number>(0);
+  const [completedCourses, setCompletedCourses] = useState<number>(0);
+  const [publishedCourses, setPublishedCourses] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
@@ -139,6 +147,57 @@ export default function AdminDashboard() {
           .eq('status', 'success');
         if (mounted) setTotalTransactions(txnCount ?? 0);
 
+        // Failed transactions (last 30 days)
+        const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+        const { count: failedCount } = await supabase
+          .from('transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'failed')
+          .gte('created_at', thirtyDaysAgo.toISOString());
+        if (mounted) setFailedTransactions(failedCount ?? 0);
+
+        // Total enrollments
+        const { count: enrollmentCount } = await supabase
+          .from('course_enrollments')
+          .select('*', { count: 'exact', head: true });
+        if (mounted) setTotalEnrollments(enrollmentCount ?? 0);
+
+        // Completed courses (enrollments with status = completed)
+        const { count: completedCount } = await supabase
+          .from('course_enrollments')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'completed');
+        if (mounted) setCompletedCourses(completedCount ?? 0);
+
+        // Published courses
+        const { count: publishedCount } = await supabase
+          .from('courses')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'published');
+        if (mounted) setPublishedCourses(publishedCount ?? 0);
+
+        // Active coaches (coaches with at least one published course)
+        const { data: activeCoachData } = await supabase
+          .from('courses')
+          .select('coach_id')
+          .eq('status', 'published');
+        const uniqueCoaches = new Set((activeCoachData || []).map((c: any) => c.coach_id));
+        if (mounted) setActiveCoaches(uniqueCoaches.size);
+
+        // Total credits in circulation
+        const { data: walletData } = await supabase
+          .from('credit_wallets')
+          .select('balance');
+        const totalCredits = (walletData || []).reduce((sum: number, w: any) => sum + Number(w.balance), 0);
+        if (mounted) setTotalCreditsInCirculation(totalCredits);
+
+        // Processing withdrawals
+        const { count: processingCount } = await supabase
+          .from('withdrawal_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'processing');
+        if (mounted) setProcessingWithdrawals(processingCount ?? 0);
+
         // Recent users
         const { data: recent, error: recentErr } = await supabase
           .from('profiles')
@@ -216,86 +275,175 @@ export default function AdminDashboard() {
         <p className="text-muted-foreground">Monitor and manage platform activity & revenue</p>
       </div>
 
-      {/* Overview Stats */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
+      {/* Platform Overview */}
+      <h2 className="text-xl font-semibold mb-4">Platform Overview</h2>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
         <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-              <Users className="w-6 h-6 text-primary" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <Users className="w-5 h-5 text-primary" />
+              <span className="text-xs text-muted-foreground">All time</span>
             </div>
-            <CardTitle>Total Users</CardTitle>
-            <CardDescription>Registered platform users</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-primary">{loading ? '...' : totalUsers ?? 0}</div>
+            <div className="text-2xl font-bold text-primary">{loading ? '...' : totalUsers ?? 0}</div>
+            <p className="text-xs text-muted-foreground">Total Users</p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-              <BookOpen className="w-6 h-6 text-accent" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <UserCheck className="w-5 h-5 text-accent" />
+              <span className="text-xs text-muted-foreground">With courses</span>
             </div>
-            <CardTitle>Total Courses</CardTitle>
-            <CardDescription>Published courses</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-accent">{loading ? '...' : totalCourses ?? 0}</div>
+            <div className="text-2xl font-bold text-accent">{loading ? '...' : activeCoaches}</div>
+            <p className="text-xs text-muted-foreground">Active Coaches</p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
-              <TrendingUp className="w-6 h-6 text-green-500" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <BookOpen className="w-5 h-5 text-blue-500" />
+              <span className="text-xs text-muted-foreground">{publishedCourses} published</span>
             </div>
-            <CardTitle>Active Subscriptions</CardTitle>
-            <CardDescription>Coach subscriptions</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-green-500">{loading ? '...' : activeSubscriptions}</div>
+            <div className="text-2xl font-bold text-blue-500">{loading ? '...' : totalCourses ?? 0}</div>
+            <p className="text-xs text-muted-foreground">Total Courses</p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center mb-4">
-              <AlertCircle className="w-6 h-6 text-orange-500" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <GraduationCap className="w-5 h-5 text-purple-500" />
+              <span className="text-xs text-muted-foreground">{completedCourses} completed</span>
             </div>
-            <CardTitle>Pending Withdrawals</CardTitle>
-            <CardDescription>Awaiting approval</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-orange-500">{loading ? '...' : pendingWithdrawals ?? 0}</div>
-            <Button variant="outline" className="w-full mt-2" onClick={() => window.location.href = '/admin/withdrawals'}>
-              Manage
-            </Button>
+            <div className="text-2xl font-bold text-purple-500">{loading ? '...' : totalEnrollments}</div>
+            <p className="text-xs text-muted-foreground">Total Enrollments</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Financial & Subscription Health */}
+      <h2 className="text-xl font-semibold mb-4">Financial & Subscription Health</h2>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <TrendingUp className="w-5 h-5 text-green-500" />
+              <span className="text-xs text-muted-foreground">Active</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-500">{loading ? '...' : activeSubscriptions}</div>
+            <p className="text-xs text-muted-foreground">Coach Subscriptions</p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-amber-500/10 rounded-lg flex items-center justify-center mb-4">
-              <Clock className="w-6 h-6 text-amber-500" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <Wallet className="w-5 h-5 text-indigo-500" />
+              <span className="text-xs text-muted-foreground">In wallets</span>
             </div>
-            <CardTitle>Grace Period</CardTitle>
-            <CardDescription>Renewals needing payment</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-amber-600">{loading ? '...' : graceSubscriptions}</div>
+            <div className="text-2xl font-bold text-indigo-500">{loading ? '...' : totalCreditsInCirculation.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Credits in Circulation</p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-destructive/10 rounded-lg flex items-center justify-center mb-4">
-              <AlertCircle className="w-6 h-6 text-destructive" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <span className="text-xs text-muted-foreground">Successful</span>
             </div>
-            <CardTitle>Failed Renewals</CardTitle>
-            <CardDescription>Expired after attempts</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold mb-2 text-destructive">{loading ? '...' : failedRenewalSubscriptions}</div>
+            <div className="text-2xl font-bold text-emerald-500">{loading ? '...' : totalTransactions}</div>
+            <p className="text-xs text-muted-foreground">Total Transactions</p>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <AlertCircle className="w-5 h-5 text-red-500" />
+              <span className="text-xs text-muted-foreground">Last 30 days</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-500">{loading ? '...' : failedTransactions}</div>
+            <p className="text-xs text-muted-foreground">Failed Transactions</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Attention Required */}
+      <h2 className="text-xl font-semibold mb-4">Attention Required</h2>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        <Card className={`hover:shadow-lg transition-shadow ${(pendingWithdrawals ?? 0) > 0 ? 'border-orange-500 border-2' : ''}`}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <Clock className="w-5 h-5 text-orange-500" />
+              <span className="text-xs text-muted-foreground">Needs action</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-500">{loading ? '...' : pendingWithdrawals ?? 0}</div>
+            <p className="text-xs text-muted-foreground">Pending Withdrawals</p>
+            {(pendingWithdrawals ?? 0) > 0 && (
+              <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => navigate('/admin/withdrawals')}>
+                Review
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={`hover:shadow-lg transition-shadow ${processingWithdrawals > 0 ? 'border-blue-500 border-2' : ''}`}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <Clock className="w-5 h-5 text-blue-500" />
+              <span className="text-xs text-muted-foreground">In progress</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-500">{loading ? '...' : processingWithdrawals}</div>
+            <p className="text-xs text-muted-foreground">Processing Withdrawals</p>
+          </CardContent>
+        </Card>
+
+        <Card className={`hover:shadow-lg transition-shadow ${graceSubscriptions > 0 ? 'border-amber-500 border-2' : ''}`}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              <span className="text-xs text-muted-foreground">Payment needed</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-600">{loading ? '...' : graceSubscriptions}</div>
+            <p className="text-xs text-muted-foreground">Grace Period Subs</p>
+          </CardContent>
+        </Card>
+
+        <Card className={`hover:shadow-lg transition-shadow ${failedRenewalSubscriptions > 0 ? 'border-red-500 border-2' : ''}`}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <span className="text-xs text-muted-foreground">Expired</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-destructive">{loading ? '...' : failedRenewalSubscriptions}</div>
+            <p className="text-xs text-muted-foreground">Failed Renewals</p>
           </CardContent>
         </Card>
       </div>

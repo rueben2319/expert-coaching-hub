@@ -106,17 +106,22 @@ serve(async (req: Request) => {
 
     // Fetch enrollment counts for each course
     const coursesWithStats = await Promise.all(
-      courses.map(async (course: Course) => {
+      (courses || []).map(async (course: any) => {
         const { data: enrollments, error: enrollError } = await supabase
           .from('course_enrollments')
           .select('id')
           .eq('course_id', course.id)
 
+        // Handle profiles - it could be an array or object depending on the query
+        const profile = Array.isArray(course.profiles) 
+          ? course.profiles[0] 
+          : course.profiles;
+
         return {
           ...course,
           student_count: enrollError ? 0 : enrollments?.length || 0,
-          coach_name: course.profiles?.full_name || 'Expert Coach',
-          coach_avatar: course.profiles?.avatar_url || null
+          coach_name: profile?.full_name || 'Expert Coach',
+          coach_avatar: profile?.avatar_url || null
         }
       })
     )
