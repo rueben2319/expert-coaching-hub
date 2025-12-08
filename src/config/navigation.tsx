@@ -13,7 +13,8 @@ import {
   MessageCircle,
   Wallet,
   ArrowDownToLine,
-  CreditCard
+  CreditCard,
+  Activity
 } from "lucide-react";
 
 // Coach Sidebar Configuration
@@ -71,6 +72,12 @@ export const adminSidebarSections = [
       { icon: <GraduationCap className="w-4 h-4" />, label: "Courses", href: "/admin/courses" },
       { icon: <CreditCard className="w-4 h-4" />, label: "Transactions", href: "/admin/transactions" },
       { icon: <ArrowDownToLine className="w-4 h-4" />, label: "Withdrawals", href: "/admin/withdrawals" },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { icon: <Activity className="w-4 h-4" />, label: "System Health", href: "/admin/system-health" },
     ],
   },
 ];
