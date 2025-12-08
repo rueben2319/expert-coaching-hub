@@ -45,6 +45,7 @@ const UserDetail = lazy(() => import("./pages/admin/UserDetail"));
 const AdminWithdrawals = lazy(() => import("./pages/admin/Withdrawals"));
 const AdminTransactions = lazy(() => import("./pages/admin/Transactions"));
 const AdminCourses = lazy(() => import("./pages/admin/Courses"));
+const SystemHealth = lazy(() => import("./pages/admin/SystemHealth"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const Terms = lazy(() => import("./pages/Terms"));
@@ -334,6 +335,15 @@ const App = () => {
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
                   <AdminCourses />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/system-health"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <SystemHealth />
                 </ProtectedRoute>
               }
             />
