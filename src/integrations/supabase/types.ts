@@ -128,8 +128,6 @@ export type Database = {
           created_at: string
           id: string
           paychangu_enabled: boolean
-          paychangu_key_vault_id: string | null
-          paychangu_secret_key: string | null
           updated_at: string
         }
         Insert: {
@@ -137,8 +135,6 @@ export type Database = {
           created_at?: string
           id?: string
           paychangu_enabled?: boolean
-          paychangu_key_vault_id?: string | null
-          paychangu_secret_key?: string | null
           updated_at?: string
         }
         Update: {
@@ -146,8 +142,6 @@ export type Database = {
           created_at?: string
           id?: string
           paychangu_enabled?: boolean
-          paychangu_key_vault_id?: string | null
-          paychangu_secret_key?: string | null
           updated_at?: string
         }
         Relationships: []
