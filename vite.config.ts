@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
-  base: './', // <--- This is critical for GCS static hosting
+  base: '/', // Use absolute paths for SPA routing
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
