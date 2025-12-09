@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -19,9 +19,25 @@ import {
   Zap,
   XCircle,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  BarChart3
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} from "recharts";
 
 interface EdgeFunctionLog {
   function_id: string;
@@ -52,6 +68,18 @@ interface AuthLog {
   error: string | null;
 }
 
+interface TimeSeriesData {
+  time: string;
+  value: number;
+  errors?: number;
+}
+
+interface StatusDistribution {
+  name: string;
+  value: number;
+  color: string;
+}
+
 interface HealthMetrics {
   edgeFunctions: {
     totalCalls: number;
@@ -59,18 +87,24 @@ interface HealthMetrics {
     avgResponseTime: number;
     errors: number;
     recentLogs: EdgeFunctionLog[];
+    responseTimeTrend: TimeSeriesData[];
+    requestsTrend: TimeSeriesData[];
+    statusDistribution: StatusDistribution[];
   };
   database: {
     totalQueries: number;
     errorCount: number;
     warningCount: number;
     recentLogs: DatabaseLog[];
+    severityDistribution: StatusDistribution[];
   };
   auth: {
     totalRequests: number;
     successRate: number;
     failedAttempts: number;
     recentLogs: AuthLog[];
+    requestsTrend: TimeSeriesData[];
+    statusDistribution: StatusDistribution[];
   };
 }
 
@@ -133,6 +167,60 @@ export default function SystemHealth() {
         l.metadata?.status >= 400
       ).length;
 
+      // Generate time series data for edge functions
+      const edgeTimeGroups: Record<string, { count: number; errors: number; totalTime: number }> = {};
+      edgeFunctionLogs.forEach((l: any) => {
+        const date = new Date(l.timestamp / 1000);
+        const hour = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (!edgeTimeGroups[hour]) {
+          edgeTimeGroups[hour] = { count: 0, errors: 0, totalTime: 0 };
+        }
+        edgeTimeGroups[hour].count++;
+        if (l.response?.status_code >= 400 || l.level === 'error') {
+          edgeTimeGroups[hour].errors++;
+        }
+        edgeTimeGroups[hour].totalTime += l.metadata?.execution_time_ms || 0;
+      });
+
+      const edgeResponseTimeTrend = Object.entries(edgeTimeGroups)
+        .slice(-12)
+        .map(([time, data]) => ({
+          time,
+          value: Math.round(data.totalTime / Math.max(data.count, 1)),
+          errors: data.errors
+        }));
+
+      const edgeRequestsTrend = Object.entries(edgeTimeGroups)
+        .slice(-12)
+        .map(([time, data]) => ({
+          time,
+          value: data.count,
+          errors: data.errors
+        }));
+
+      // Generate auth time series
+      const authTimeGroups: Record<string, { success: number; failed: number }> = {};
+      authenticationLogs.forEach((l: any) => {
+        const date = new Date(l.timestamp);
+        const hour = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (!authTimeGroups[hour]) {
+          authTimeGroups[hour] = { success: 0, failed: 0 };
+        }
+        if (l.metadata?.status >= 200 && l.metadata?.status < 400) {
+          authTimeGroups[hour].success++;
+        } else {
+          authTimeGroups[hour].failed++;
+        }
+      });
+
+      const authRequestsTrend = Object.entries(authTimeGroups)
+        .slice(-12)
+        .map(([time, data]) => ({
+          time,
+          value: data.success + data.failed,
+          errors: data.failed
+        }));
+
       return {
         edgeFunctions: {
           totalCalls: totalEdgeCalls,
@@ -148,7 +236,13 @@ export default function SystemHealth() {
             timestamp: l.timestamp || Date.now(),
             execution_time_ms: l.metadata?.execution_time_ms,
             status_code: l.response?.status_code
-          }))
+          })),
+          responseTimeTrend: edgeResponseTimeTrend,
+          requestsTrend: edgeRequestsTrend,
+          statusDistribution: [
+            { name: 'Success', value: successfulCalls, color: 'hsl(var(--chart-1))' },
+            { name: 'Errors', value: edgeErrors, color: 'hsl(var(--destructive))' }
+          ]
         },
         database: {
           totalQueries: databaseLogs.length,
@@ -159,7 +253,12 @@ export default function SystemHealth() {
             timestamp: l.timestamp || '',
             event_message: l.event_message || '',
             error_severity: l.parsed?.error_severity || 'LOG'
-          }))
+          })),
+          severityDistribution: [
+            { name: 'Normal', value: databaseLogs.length - dbErrors - dbWarnings, color: 'hsl(var(--chart-1))' },
+            { name: 'Warnings', value: dbWarnings, color: 'hsl(var(--chart-3))' },
+            { name: 'Errors', value: dbErrors, color: 'hsl(var(--destructive))' }
+          ]
         },
         auth: {
           totalRequests: authenticationLogs.length,
@@ -176,7 +275,12 @@ export default function SystemHealth() {
             path: l.metadata?.path || '',
             msg: l.metadata?.msg || '',
             error: l.metadata?.error || null
-          }))
+          })),
+          requestsTrend: authRequestsTrend,
+          statusDistribution: [
+            { name: 'Success', value: authSuccess, color: 'hsl(var(--chart-1))' },
+            { name: 'Failed', value: authFailed, color: 'hsl(var(--destructive))' }
+          ]
         }
       };
     },
@@ -337,6 +441,258 @@ export default function SystemHealth() {
                 <span className="text-red-500">{healthData?.auth.failedAttempts} failed</span>
               )}
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
+        {/* Response Time Trend */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Response Time Trend</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Edge function response times (ms)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthData?.edgeFunctions.responseTimeTrend.length ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={healthData.edgeFunctions.responseTimeTrend}>
+                  <defs>
+                    <linearGradient id="colorResponseTime" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                  <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }} 
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="hsl(var(--primary))"
+                    fillOpacity={1}
+                    fill="url(#colorResponseTime)"
+                    name="Avg Response Time (ms)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Request Volume */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Request Volume</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Edge function calls over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthData?.edgeFunctions.requestsTrend.length ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={healthData.edgeFunctions.requestsTrend}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                  <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }} 
+                  />
+                  <Bar dataKey="value" fill="hsl(var(--chart-1))" name="Requests" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="errors" fill="hsl(var(--destructive))" name="Errors" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Status Distribution */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Status Distribution</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Edge function success vs errors</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthData?.edgeFunctions.statusDistribution.some(d => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={healthData.edgeFunctions.statusDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {healthData.edgeFunctions.statusDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }} 
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Database Severity Distribution */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Database Health</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Log severity distribution</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthData?.database.severityDistribution.some(d => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={healthData.database.severityDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {healthData.database.severityDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }} 
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Auth Request Trend */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Server className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Auth Requests</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Authentication attempts over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthData?.auth.requestsTrend.length ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={healthData.auth.requestsTrend}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                  <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }} 
+                  />
+                  <Bar dataKey="value" fill="hsl(var(--chart-2))" name="Total" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="errors" fill="hsl(var(--destructive))" name="Failed" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Auth Status Distribution */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Auth Success Rate</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Success vs failed authentications</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthData?.auth.statusDistribution.some(d => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={healthData.auth.statusDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {healthData.auth.statusDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }} 
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
