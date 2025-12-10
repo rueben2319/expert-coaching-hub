@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { BookOpen, Users, Shield, DollarSign, TrendingUp, CreditCard, AlertCircle, Clock, ExternalLink, Copy, GraduationCap, Wallet, CheckCircle, UserCheck } from "lucide-react";
+import { DollarSign, TrendingUp, AlertCircle, Clock, ExternalLink, Copy, Wallet, CheckCircle, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminSidebarSections } from "@/config/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,10 +19,6 @@ interface RevenueStats {
 export default function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [totalUsers, setTotalUsers] = useState<number | null>(null);
-  const [totalCourses, setTotalCourses] = useState<number | null>(null);
-  const [pendingWithdrawals, setPendingWithdrawals] = useState<number | null>(null);
-  const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [coachRevenue, setCoachRevenue] = useState<RevenueStats>({ daily: 0, monthly: 0, annual: 0 });
   const [creditRevenue, setCreditRevenue] = useState<RevenueStats>({ daily: 0, monthly: 0, annual: 0 });
@@ -31,34 +27,29 @@ export default function AdminDashboard() {
   const [failedRenewalSubscriptions, setFailedRenewalSubscriptions] = useState<number>(0);
   const [renewalIssues, setRenewalIssues] = useState<any[]>([]);
   const [totalTransactions, setTotalTransactions] = useState<number>(0);
-  // Additional tracking metrics
-  const [totalEnrollments, setTotalEnrollments] = useState<number>(0);
-  const [activeCoaches, setActiveCoaches] = useState<number>(0);
   const [totalCreditsInCirculation, setTotalCreditsInCirculation] = useState<number>(0);
+  const [pendingWithdrawals, setPendingWithdrawals] = useState<number>(0);
   const [processingWithdrawals, setProcessingWithdrawals] = useState<number>(0);
   const [failedTransactions, setFailedTransactions] = useState<number>(0);
-  const [completedCourses, setCompletedCourses] = useState<number>(0);
-  const [publishedCourses, setPublishedCourses] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       setLoading(true);
       try {
-        // Total users from profiles
-        const usersCountRes = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-        if (mounted) setTotalUsers(usersCountRes.count ?? 0);
-
-        // Total courses
-        const coursesCountRes = await supabase.from('courses').select('*', { count: 'exact', head: true });
-        if (mounted) setTotalCourses(coursesCountRes.count ?? 0);
-
         // Pending withdrawals
         const withdrawalsCountRes = await supabase
           .from('withdrawal_requests')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'pending');
         if (mounted) setPendingWithdrawals(withdrawalsCountRes.count ?? 0);
+
+        // Processing withdrawals
+        const { count: processingCount } = await supabase
+          .from('withdrawal_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'processing');
+        if (mounted) setProcessingWithdrawals(processingCount ?? 0);
 
         // Active coach subscriptions
         const activeSubsRes = await supabase
@@ -94,13 +85,13 @@ export default function AdminDashboard() {
           setRenewalIssues(renewalRows || []);
         }
 
-        // Coach subscription revenue
+        // Revenue calculations
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const yearStart = new Date(now.getFullYear(), 0, 1);
 
-        // Coach subscriptions revenue (from transactions)
+        // Coach subscriptions revenue
         const { data: coachTxns } = await supabase
           .from('transactions')
           .select('amount, created_at')
@@ -156,34 +147,6 @@ export default function AdminDashboard() {
           .gte('created_at', thirtyDaysAgo.toISOString());
         if (mounted) setFailedTransactions(failedCount ?? 0);
 
-        // Total enrollments
-        const { count: enrollmentCount } = await supabase
-          .from('course_enrollments')
-          .select('*', { count: 'exact', head: true });
-        if (mounted) setTotalEnrollments(enrollmentCount ?? 0);
-
-        // Completed courses (enrollments with status = completed)
-        const { count: completedCount } = await supabase
-          .from('course_enrollments')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'completed');
-        if (mounted) setCompletedCourses(completedCount ?? 0);
-
-        // Published courses
-        const { count: publishedCount } = await supabase
-          .from('courses')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'published');
-        if (mounted) setPublishedCourses(publishedCount ?? 0);
-
-        // Active coaches (coaches with at least one published course)
-        const { data: activeCoachData } = await supabase
-          .from('courses')
-          .select('coach_id')
-          .eq('status', 'published');
-        const uniqueCoaches = new Set((activeCoachData || []).map((c: any) => c.coach_id));
-        if (mounted) setActiveCoaches(uniqueCoaches.size);
-
         // Total credits in circulation
         const { data: walletData } = await supabase
           .from('credit_wallets')
@@ -191,38 +154,6 @@ export default function AdminDashboard() {
         const totalCredits = (walletData || []).reduce((sum: number, w: any) => sum + Number(w.balance), 0);
         if (mounted) setTotalCreditsInCirculation(totalCredits);
 
-        // Processing withdrawals
-        const { count: processingCount } = await supabase
-          .from('withdrawal_requests')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'processing');
-        if (mounted) setProcessingWithdrawals(processingCount ?? 0);
-
-        // Recent users
-        const { data: recent, error: recentErr } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, created_at')
-          .order('created_at', { ascending: false })
-          .limit(6);
-        if (recentErr) console.error('Error loading recent users', recentErr);
-
-        if (recent && recent.length > 0) {
-          const ids = recent.map((r: any) => r.id);
-          const { data: roleRows, error: roleErr } = await supabase
-            .from('user_roles')
-            .select('user_id, role')
-            .in('user_id', ids as string[]);
-          if (roleErr) console.error('Error fetching roles for recent users', roleErr);
-          const roleMap: Record<string, string> = {};
-          (roleRows || []).forEach((row: any) => {
-            roleMap[row.user_id] = row.role;
-          });
-
-          const enriched = recent.map((r: any) => ({ ...r, role: roleMap[r.id] || 'client' }));
-          if (mounted) setRecentUsers(enriched);
-        } else {
-          if (mounted) setRecentUsers([]);
-        }
       } catch (e) {
         console.error('Error loading admin stats', e);
       } finally {
@@ -263,6 +194,12 @@ export default function AdminDashboard() {
     }
   };
 
+  const totalRevenue = {
+    daily: coachRevenue.daily + creditRevenue.daily,
+    monthly: coachRevenue.monthly + creditRevenue.monthly,
+    annual: coachRevenue.annual + creditRevenue.annual,
+  };
+
   return (
     <DashboardLayout
       sidebarSections={adminSidebarSections}
@@ -272,67 +209,253 @@ export default function AdminDashboard() {
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
           Admin Dashboard
         </h1>
-        <p className="text-muted-foreground">Monitor and manage platform activity & revenue</p>
+        <p className="text-muted-foreground">Revenue overview and action items</p>
       </div>
 
-      {/* Platform Overview */}
-      <h2 className="text-xl font-semibold mb-4">Platform Overview</h2>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <Users className="w-5 h-5 text-primary" />
-              <span className="text-xs text-muted-foreground">All time</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-primary">{loading ? '...' : totalUsers ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Total Users</p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <UserCheck className="w-5 h-5 text-accent" />
-              <span className="text-xs text-muted-foreground">With courses</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-accent">{loading ? '...' : activeCoaches}</div>
-            <p className="text-xs text-muted-foreground">Active Coaches</p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <BookOpen className="w-5 h-5 text-blue-500" />
-              <span className="text-xs text-muted-foreground">{publishedCourses} published</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-500">{loading ? '...' : totalCourses ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Total Courses</p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <GraduationCap className="w-5 h-5 text-purple-500" />
-              <span className="text-xs text-muted-foreground">{completedCourses} completed</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-500">{loading ? '...' : totalEnrollments}</div>
-            <p className="text-xs text-muted-foreground">Total Enrollments</p>
-          </CardContent>
-        </Card>
+      {/* Quick Links */}
+      <div className="grid gap-3 md:grid-cols-4 mb-8">
+        <Button variant="outline" className="justify-start h-auto py-3" onClick={() => navigate('/admin/users')}>
+          <div className="text-left">
+            <p className="font-medium">User Analytics</p>
+            <p className="text-xs text-muted-foreground">Demographics & trends</p>
+          </div>
+          <ArrowRight className="ml-auto h-4 w-4" />
+        </Button>
+        <Button variant="outline" className="justify-start h-auto py-3" onClick={() => navigate('/admin/courses')}>
+          <div className="text-left">
+            <p className="font-medium">Course Analytics</p>
+            <p className="text-xs text-muted-foreground">Stats & insights</p>
+          </div>
+          <ArrowRight className="ml-auto h-4 w-4" />
+        </Button>
+        <Button variant="outline" className="justify-start h-auto py-3" onClick={() => navigate('/admin/transactions')}>
+          <div className="text-left">
+            <p className="font-medium">Transactions</p>
+            <p className="text-xs text-muted-foreground">Payment history</p>
+          </div>
+          <ArrowRight className="ml-auto h-4 w-4" />
+        </Button>
+        <Button variant="outline" className="justify-start h-auto py-3" onClick={() => navigate('/admin/system-health')}>
+          <div className="text-left">
+            <p className="font-medium">System Health</p>
+            <p className="text-xs text-muted-foreground">Technical metrics</p>
+          </div>
+          <ArrowRight className="ml-auto h-4 w-4" />
+        </Button>
       </div>
 
-      {/* Financial & Subscription Health */}
-      <h2 className="text-xl font-semibold mb-4">Financial & Subscription Health</h2>
+      {/* Attention Required */}
+      {((pendingWithdrawals ?? 0) > 0 || (processingWithdrawals ?? 0) > 0 || graceSubscriptions > 0 || failedRenewalSubscriptions > 0 || failedTransactions > 0) && (
+        <>
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-orange-500" />
+            Attention Required
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+            {(pendingWithdrawals ?? 0) > 0 && (
+              <Card className="border-orange-500 border-2 hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <Clock className="w-5 h-5 text-orange-500" />
+                    <span className="text-xs text-muted-foreground">Needs action</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-orange-500">{pendingWithdrawals}</div>
+                  <p className="text-xs text-muted-foreground">Pending Withdrawals</p>
+                  <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => navigate('/admin/withdrawals')}>
+                    Review
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {(processingWithdrawals ?? 0) > 0 && (
+              <Card className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <Clock className="w-5 h-5 text-blue-500" />
+                    <span className="text-xs text-muted-foreground">In progress</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-500">{processingWithdrawals}</div>
+                  <p className="text-xs text-muted-foreground">Processing Withdrawals</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {graceSubscriptions > 0 && (
+              <Card className="border-yellow-500 border hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <AlertCircle className="w-5 h-5 text-yellow-500" />
+                    <span className="text-xs text-muted-foreground">Grace period</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-yellow-500">{graceSubscriptions}</div>
+                  <p className="text-xs text-muted-foreground">Subscriptions in Grace</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {failedTransactions > 0 && (
+              <Card className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <AlertCircle className="w-5 h-5 text-red-500" />
+                    <span className="text-xs text-muted-foreground">Last 30 days</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-500">{failedTransactions}</div>
+                  <p className="text-xs text-muted-foreground">Failed Transactions</p>
+                  <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => navigate('/admin/transactions')}>
+                    View
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Revenue Overview */}
+      <h2 className="text-xl font-semibold mb-4">Revenue Overview</h2>
+      <Tabs defaultValue="total" className="mb-8">
+        <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsTrigger value="total">Total</TabsTrigger>
+          <TabsTrigger value="subscriptions">Subscriptions</TabsTrigger>
+          <TabsTrigger value="credits">Credits</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="total" className="mt-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <DollarSign className="w-5 h-5 text-green-500" />
+                  <span className="text-xs text-muted-foreground">Today</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-500">{loading ? '...' : formatCurrency(totalRevenue.daily)}</div>
+                <p className="text-xs text-muted-foreground">Daily Revenue</p>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <span className="text-xs text-muted-foreground">This month</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-500">{loading ? '...' : formatCurrency(totalRevenue.monthly)}</div>
+                <p className="text-xs text-muted-foreground">Monthly Revenue</p>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <TrendingUp className="w-5 h-5 text-purple-500" />
+                  <span className="text-xs text-muted-foreground">This year</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-500">{loading ? '...' : formatCurrency(totalRevenue.annual)}</div>
+                <p className="text-xs text-muted-foreground">Annual Revenue</p>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="subscriptions" className="mt-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <DollarSign className="w-5 h-5 text-green-500" />
+                  <span className="text-xs text-muted-foreground">Today</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{loading ? '...' : formatCurrency(coachRevenue.daily)}</div>
+                <p className="text-xs text-muted-foreground">Coach Subscriptions</p>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <span className="text-xs text-muted-foreground">This month</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{loading ? '...' : formatCurrency(coachRevenue.monthly)}</div>
+                <p className="text-xs text-muted-foreground">Coach Subscriptions</p>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <TrendingUp className="w-5 h-5 text-purple-500" />
+                  <span className="text-xs text-muted-foreground">This year</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{loading ? '...' : formatCurrency(coachRevenue.annual)}</div>
+                <p className="text-xs text-muted-foreground">Coach Subscriptions</p>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="credits" className="mt-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <DollarSign className="w-5 h-5 text-green-500" />
+                  <span className="text-xs text-muted-foreground">Today</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{loading ? '...' : formatCurrency(creditRevenue.daily)}</div>
+                <p className="text-xs text-muted-foreground">Credit Purchases</p>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <span className="text-xs text-muted-foreground">This month</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{loading ? '...' : formatCurrency(creditRevenue.monthly)}</div>
+                <p className="text-xs text-muted-foreground">Credit Purchases</p>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <TrendingUp className="w-5 h-5 text-purple-500" />
+                  <span className="text-xs text-muted-foreground">This year</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{loading ? '...' : formatCurrency(creditRevenue.annual)}</div>
+                <p className="text-xs text-muted-foreground">Credit Purchases</p>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Financial Health */}
+      <h2 className="text-xl font-semibold mb-4">Financial Health</h2>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="pb-2">
@@ -376,131 +499,65 @@ export default function AdminDashboard() {
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-              <span className="text-xs text-muted-foreground">Last 30 days</span>
+              <AlertCircle className="w-5 h-5 text-orange-500" />
+              <span className="text-xs text-muted-foreground">Failed renewals</span>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-500">{loading ? '...' : failedTransactions}</div>
-            <p className="text-xs text-muted-foreground">Failed Transactions</p>
+            <div className="text-2xl font-bold text-orange-500">{loading ? '...' : failedRenewalSubscriptions}</div>
+            <p className="text-xs text-muted-foreground">Expired Subscriptions</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Attention Required */}
-      <h2 className="text-xl font-semibold mb-4">Attention Required</h2>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        <Card className={`hover:shadow-lg transition-shadow ${(pendingWithdrawals ?? 0) > 0 ? 'border-orange-500 border-2' : ''}`}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <Clock className="w-5 h-5 text-orange-500" />
-              <span className="text-xs text-muted-foreground">Needs action</span>
+      {/* Subscription Renewal Issues */}
+      {renewalIssues.length > 0 && (
+        <Card className="mb-8">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-500" />
+              <CardTitle>Subscription Renewal Issues</CardTitle>
             </div>
+            <CardDescription>
+              Pending or failed renewal transactions that may need attention
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{loading ? '...' : pendingWithdrawals ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Pending Withdrawals</p>
-            {(pendingWithdrawals ?? 0) > 0 && (
-              <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => navigate('/admin/withdrawals')}>
-                Review
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className={`hover:shadow-lg transition-shadow ${processingWithdrawals > 0 ? 'border-blue-500 border-2' : ''}`}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <Clock className="w-5 h-5 text-blue-500" />
-              <span className="text-xs text-muted-foreground">In progress</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-500">{loading ? '...' : processingWithdrawals}</div>
-            <p className="text-xs text-muted-foreground">Processing Withdrawals</p>
-          </CardContent>
-        </Card>
-
-        <Card className={`hover:shadow-lg transition-shadow ${graceSubscriptions > 0 ? 'border-amber-500 border-2' : ''}`}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <AlertCircle className="w-5 h-5 text-amber-500" />
-              <span className="text-xs text-muted-foreground">Payment needed</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">{loading ? '...' : graceSubscriptions}</div>
-            <p className="text-xs text-muted-foreground">Grace Period Subs</p>
-          </CardContent>
-        </Card>
-
-        <Card className={`hover:shadow-lg transition-shadow ${failedRenewalSubscriptions > 0 ? 'border-red-500 border-2' : ''}`}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <AlertCircle className="w-5 h-5 text-destructive" />
-              <span className="text-xs text-muted-foreground">Expired</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{loading ? '...' : failedRenewalSubscriptions}</div>
-            <p className="text-xs text-muted-foreground">Failed Renewals</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Renewal Recovery */}
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Renewal Recovery Queue</CardTitle>
-          <CardDescription>Links generated by auto-renewal that still require payment</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {renewalIssues.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending or failed renewals at the moment.</p>
-          ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-muted-foreground">
-                  <tr>
-                    <th className="py-2 pr-4">Subscription</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Created</th>
-                    <th className="py-2 pr-4">Actions</th>
+              <table className="w-full table-auto border-collapse text-sm">
+                <thead>
+                  <tr className="text-left text-muted-foreground border-b">
+                    <th className="py-2 px-3">Date</th>
+                    <th className="py-2 px-3">Transaction Ref</th>
+                    <th className="py-2 px-3">Status</th>
+                    <th className="py-2 px-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {renewalIssues.map((issue) => {
+                  {renewalIssues.map((issue: any) => {
                     const checkoutUrl = extractCheckoutUrl(issue.gateway_response);
                     return (
-                      <tr key={issue.id} className="border-t">
-                        <td className="py-2 pr-4 font-mono text-xs">
-                          {issue.subscription_id || "—"}
+                      <tr key={issue.id} className="border-b hover:bg-muted/50">
+                        <td className="py-2 px-3">{new Date(issue.created_at).toLocaleDateString()}</td>
+                        <td className="py-2 px-3 font-mono text-xs">{issue.transaction_ref}</td>
+                        <td className="py-2 px-3">
+                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                            issue.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {issue.status}
+                          </span>
                         </td>
-                        <td className="py-2 pr-4 capitalize">
-                          {issue.status}
-                        </td>
-                        <td className="py-2 pr-4 text-muted-foreground">
-                          {new Date(issue.created_at).toLocaleString()}
-                        </td>
-                        <td className="py-2 pr-4 flex flex-wrap gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={!checkoutUrl}
-                            onClick={() => handleCopyCheckoutUrl(checkoutUrl)}
-                          >
-                            <Copy className="mr-2 h-4 w-4" />
-                            Copy link
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={!checkoutUrl}
-                            onClick={() => checkoutUrl && window.open(checkoutUrl, "_blank", "noopener")}
-                          >
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            Open
-                          </Button>
+                        <td className="py-2 px-3">
+                          {checkoutUrl && (
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => window.open(checkoutUrl, '_blank')}>
+                                <ExternalLink className="w-3 h-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleCopyCheckoutUrl(checkoutUrl)}>
+                                <Copy className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -508,236 +565,9 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Revenue Analytics */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Revenue Analytics</h2>
-        <Tabs defaultValue="daily" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
-            <TabsTrigger value="daily">Daily</TabsTrigger>
-            <TabsTrigger value="monthly">Monthly</TabsTrigger>
-            <TabsTrigger value="annual">Annual</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="daily" className="space-y-4 mt-6">
-            <div className="grid gap-6 md:grid-cols-3">
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                    <DollarSign className="w-6 h-6 text-primary" />
-                  </div>
-                  <CardTitle>Coach Subscriptions</CardTitle>
-                  <CardDescription>Today's revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-primary">
-                    {loading ? '...' : formatCurrency(coachRevenue.daily)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-                    <CreditCard className="w-6 h-6 text-accent" />
-                  </div>
-                  <CardTitle>Credit Purchases</CardTitle>
-                  <CardDescription>Today's revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-accent">
-                    {loading ? '...' : formatCurrency(creditRevenue.daily)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <TrendingUp className="w-6 h-6 text-green-500" />
-                  </div>
-                  <CardTitle>Total Revenue</CardTitle>
-                  <CardDescription>Today's total</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-green-500">
-                    {loading ? '...' : formatCurrency(coachRevenue.daily + creditRevenue.daily)}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="monthly" className="space-y-4 mt-6">
-            <div className="grid gap-6 md:grid-cols-3">
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                    <DollarSign className="w-6 h-6 text-primary" />
-                  </div>
-                  <CardTitle>Coach Subscriptions</CardTitle>
-                  <CardDescription>This month's revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-primary">
-                    {loading ? '...' : formatCurrency(coachRevenue.monthly)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-                    <CreditCard className="w-6 h-6 text-accent" />
-                  </div>
-                  <CardTitle>Credit Purchases</CardTitle>
-                  <CardDescription>This month's revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-accent">
-                    {loading ? '...' : formatCurrency(creditRevenue.monthly)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <TrendingUp className="w-6 h-6 text-green-500" />
-                  </div>
-                  <CardTitle>Total Revenue</CardTitle>
-                  <CardDescription>This month's total</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-green-500">
-                    {loading ? '...' : formatCurrency(coachRevenue.monthly + creditRevenue.monthly)}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="annual" className="space-y-4 mt-6">
-            <div className="grid gap-6 md:grid-cols-3">
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                    <DollarSign className="w-6 h-6 text-primary" />
-                  </div>
-                  <CardTitle>Coach Subscriptions</CardTitle>
-                  <CardDescription>This year's revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-primary">
-                    {loading ? '...' : formatCurrency(coachRevenue.annual)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-                    <CreditCard className="w-6 h-6 text-accent" />
-                  </div>
-                  <CardTitle>Credit Purchases</CardTitle>
-                  <CardDescription>This year's revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-accent">
-                    {loading ? '...' : formatCurrency(creditRevenue.annual)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <TrendingUp className="w-6 h-6 text-green-500" />
-                  </div>
-                  <CardTitle>Total Revenue</CardTitle>
-                  <CardDescription>This year's total</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-green-500">
-                    {loading ? '...' : formatCurrency(coachRevenue.annual + creditRevenue.annual)}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid gap-6 md:grid-cols-2 mb-8">
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
-            <CardTitle>User Management</CardTitle>
-            <CardDescription>Manage user roles and access</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" className="w-full" onClick={() => window.location.href = '/admin/users'}>
-              Manage Users
-            </Button>
           </CardContent>
         </Card>
-
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-              <TrendingUp className="w-6 h-6 text-accent" />
-            </div>
-            <CardTitle>Transactions</CardTitle>
-            <CardDescription>Total successful transactions: {totalTransactions}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Monitor all platform transactions</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Users */}
-      <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">Recent Users</h2>
-        <div className="overflow-x-auto">
-          {recentUsers.length === 0 ? (
-            <div className="text-muted-foreground">No recent users</div>
-          ) : (
-            <table className="w-full table-auto border-collapse">
-              <thead>
-                <tr className="text-left text-sm text-muted-foreground border-b">
-                  <th className="py-3 px-4">Name</th>
-                  <th className="py-3 px-4">Email</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Joined</th>
-                  <th className="py-3 px-4">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-muted-foreground/5">
-                    <td className="py-3 px-4 align-top">{u.full_name || 'Unnamed'}</td>
-                    <td className="py-3 px-4 align-top text-sm text-muted-foreground">{u.email}</td>
-                    <td className="py-3 px-4 align-top text-sm">{u.role}</td>
-                    <td className="py-3 px-4 align-top text-sm text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
-                    <td className="py-3 px-4 align-top text-sm">
-                      <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/users/${u.id}`)}>
-                        View
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      )}
     </DashboardLayout>
   );
 }
