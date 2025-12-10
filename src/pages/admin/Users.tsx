@@ -1,199 +1,274 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { callSupabaseFunction } from '@/lib/supabaseFunctions';
 import { DashboardLayout } from '@/components/DashboardLayout';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
 import { adminSidebarSections } from '@/config/navigation';
-
-interface UserData {
-  data: any[];
-  total: number;
-}
+import { Users, UserCheck, GraduationCap, Shield, TrendingUp, Calendar } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 export default function AdminUsers() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [page, setPage] = useState(0);
-  const pageSize = 20;
-  const queryClient = useQueryClient();
+  // Fetch user demographics data
+  const { data: demographics, isLoading } = useQuery({
+    queryKey: ['admin-user-demographics'],
+    queryFn: async () => {
+      // Get total users count
+      const { count: totalUsers } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true });
 
-  // Update search when URL params change
-  useEffect(() => {
-    const urlSearch = searchParams.get('search') || '';
-    if (urlSearch !== search) {
-      setSearch(urlSearch);
-    }
-  }, [searchParams]);
+      // Get role distribution
+      const { data: roles } = await supabase
+        .from('user_roles')
+        .select('role');
 
-  const fetchUsers = async ({ queryKey }: any) => {
-    const [_key, page, search] = queryKey;
-    const offset = page * pageSize;
-
-    // Optimized query: Fetch profiles with roles in a single query using join
-    let profilesQuery = supabase
-      .from('profiles')
-      .select(`
-        id, 
-        full_name, 
-        email, 
-        created_at,
-        user_roles!left(role)
-      `, { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + pageSize - 1);
-
-    if (search && search.trim()) {
-      const trimmedSearch = search.trim();
-      
-      // Limit search length to prevent DoS attacks
-      if (trimmedSearch.length > 100) {
-        throw new Error("Search query too long (max 100 characters)");
-      }
-      
-      // Sanitize special LIKE characters (% and _) to prevent injection
-      // Escape backslashes first, then escape % and _
-      const sanitizedSearch = trimmedSearch
-        .replace(/\\/g, '\\\\')  // Escape backslashes first
-        .replace(/%/g, '\\%')     // Escape % 
-        .replace(/_/g, '\\_');    // Escape _
-      
-      const searchPattern = `%${sanitizedSearch}%`;
-      profilesQuery = profilesQuery.or(`full_name.ilike.${searchPattern},email.ilike.${searchPattern}`);
-    }
-
-    const { data: profiles, error, count } = await profilesQuery;
-    if (error) throw error;
-
-    if (!profiles || profiles.length === 0) return { data: [], total: 0 };
-
-    // Enrich profiles with roles from the joined data
-    // user_roles is an array (left join), take the first role if available
-    const enriched = profiles.map((p: any) => {
-      const roleData = Array.isArray(p.user_roles) && p.user_roles.length > 0 
-        ? p.user_roles[0] 
-        : null;
-      
-      return {
-        id: p.id,
-        full_name: p.full_name,
-        email: p.email,
-        created_at: p.created_at,
-        role: roleData?.role || 'client'
+      const roleDistribution = {
+        client: 0,
+        coach: 0,
+        admin: 0
       };
-    });
+      roles?.forEach((r: any) => {
+        if (r.role in roleDistribution) {
+          roleDistribution[r.role as keyof typeof roleDistribution]++;
+        }
+      });
 
-    return { data: enriched, total: count ?? enriched.length };
-  };
+      // Get users with credit wallets (active users)
+      const { count: activeWallets } = await supabase
+        .from('credit_wallets')
+        .select('*', { count: 'exact', head: true })
+        .gt('balance', 0);
 
-  const { data, isLoading, refetch } = useQuery<UserData>({
-    queryKey: ['admin-users', page, search],
-    queryFn: fetchUsers,
-    placeholderData: (previousData) => previousData, // Replaces keepPreviousData in v5
+      // Get signups by month (last 6 months)
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      
+      const { data: signups } = await supabase
+        .from('profiles')
+        .select('created_at')
+        .gte('created_at', sixMonthsAgo.toISOString());
+
+      // Group by month
+      const monthlySignups: Record<string, number> = {};
+      signups?.forEach((s: any) => {
+        const month = new Date(s.created_at).toLocaleString('default', { month: 'short', year: '2-digit' });
+        monthlySignups[month] = (monthlySignups[month] || 0) + 1;
+      });
+
+      // Get users with enrollments (engaged users)
+      const { data: enrolledUsers } = await supabase
+        .from('course_enrollments')
+        .select('user_id');
+      
+      const uniqueEnrolledUsers = new Set(enrolledUsers?.map((e: any) => e.user_id)).size;
+
+      // Get users who completed courses
+      const { count: completedUsers } = await supabase
+        .from('course_enrollments')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+
+      return {
+        totalUsers: totalUsers || 0,
+        roleDistribution,
+        activeWallets: activeWallets || 0,
+        monthlySignups,
+        uniqueEnrolledUsers,
+        completedUsers: completedUsers || 0
+      };
+    }
   });
 
-  const mutation = useMutation({
-    mutationFn: (payload: { user_id: string; role: string }) => callSupabaseFunction('upsert-user-role', payload),
-    onSuccess: async () => {
-      toast.success('Role updated');
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      refetch();
-    },
-    onError: (err: any) => {
-      console.error('Role update failed', err);
-      toast.error(err?.message || 'Failed to update role');
-    },
-  });
+  const roleData = demographics ? [
+    { name: 'Clients', value: demographics.roleDistribution.client, color: 'hsl(var(--primary))' },
+    { name: 'Coaches', value: demographics.roleDistribution.coach, color: 'hsl(var(--accent))' },
+    { name: 'Admins', value: demographics.roleDistribution.admin, color: 'hsl(var(--muted-foreground))' }
+  ].filter(r => r.value > 0) : [];
 
-  const handleChangeRole = async (userId: string, role: string) => {
-    if (!userId) return;
-    mutation.mutate({ user_id: userId, role });
-  };
+  const signupTrendData = demographics 
+    ? Object.entries(demographics.monthlySignups).map(([month, count]) => ({
+        month,
+        signups: count
+      }))
+    : [];
+
+  const engagementData = demographics ? [
+    { name: 'Enrolled', value: demographics.uniqueEnrolledUsers },
+    { name: 'Completed', value: demographics.completedUsers },
+    { name: 'With Balance', value: demographics.activeWallets }
+  ] : [];
 
   return (
     <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-muted-foreground">Search and manage platform users</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Input 
-            placeholder="Search by name or email" 
-            value={search} 
-            onChange={(e) => {
-              setSearch(e.target.value);
-              if (e.target.value) {
-                setSearchParams({ search: e.target.value });
-              } else {
-                setSearchParams({});
-              }
-            }} 
-          />
-          <Button onClick={() => { setPage(0); refetch(); }}>Search</Button>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          User Analytics
+        </h1>
+        <p className="text-muted-foreground">Platform user demographics and engagement insights</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Users</CardTitle>
-          <CardDescription>List of registered users</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full table-auto border-collapse">
-              <thead>
-                <tr className="text-left text-sm text-muted-foreground border-b">
-                  <th className="py-3 px-4">Name</th>
-                  <th className="py-3 px-4">Email</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Joined</th>
-                  <th className="py-3 px-4">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr><td colSpan={5} className="py-6 px-4 text-center">Loading...</td></tr>
-                ) : data && data.data && data.data.length > 0 ? (
-                  data.data.map((u: any) => (
-                    <tr key={u.id} className="hover:bg-muted-foreground/5">
-                      <td className="py-3 px-4 align-top">{u.full_name || 'Unnamed'}</td>
-                      <td className="py-3 px-4 align-top text-sm text-muted-foreground">{u.email}</td>
-                      <td className="py-3 px-4 align-top text-sm">
-                        <select value={u.role} onChange={(e) => handleChangeRole(u.id, e.target.value)} className="border px-2 py-1 rounded">
-                          <option value="client">Client</option>
-                          <option value="coach">Coach</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </td>
-                      <td className="py-3 px-4 align-top text-sm text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
-                      <td className="py-3 px-4 align-top text-sm">
-                        <Button variant="ghost" size="sm" onClick={() => window.location.href = `/admin/users/${u.id}`}>
-                          View
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan={5} className="py-6 px-4 text-center">No users found</td></tr>
-                )}
-              </tbody>
-            </table>
+      {isLoading ? (
+        <div className="text-center py-12">Loading analytics...</div>
+      ) : (
+        <>
+          {/* Key Metrics */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{demographics?.totalUsers || 0}</div>
+                <p className="text-xs text-muted-foreground">Registered accounts</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Coaches</CardTitle>
+                <GraduationCap className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{demographics?.roleDistribution.coach || 0}</div>
+                <p className="text-xs text-muted-foreground">Content creators</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Engaged Users</CardTitle>
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{demographics?.uniqueEnrolledUsers || 0}</div>
+                <p className="text-xs text-muted-foreground">Enrolled in courses</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Admins</CardTitle>
+                <Shield className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{demographics?.roleDistribution.admin || 0}</div>
+                <p className="text-xs text-muted-foreground">Platform managers</p>
+              </CardContent>
+            </Card>
           </div>
 
-          <div className="mt-4 flex items-center justify-between">
-            <div>
-              <Button variant="ghost" size="sm" onClick={() => { setPage(Math.max(0, page - 1)); refetch(); }} disabled={page === 0}>Previous</Button>
-              <Button variant="ghost" size="sm" onClick={() => { setPage(page + 1); refetch(); }} className="ml-2">Next</Button>
-            </div>
-            <div className="text-sm text-muted-foreground">Showing {data?.data?.length ?? 0} users</div>
+          {/* Charts Row */}
+          <div className="grid gap-6 md:grid-cols-2 mb-8">
+            {/* Role Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Role Distribution</CardTitle>
+                <CardDescription>Breakdown of user types on the platform</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {roleData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={roleData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {roleData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                    No role data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* User Engagement */}
+            <Card>
+              <CardHeader>
+                <CardTitle>User Engagement</CardTitle>
+                <CardDescription>Active user metrics</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {engagementData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={engagementData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="name" className="text-xs" />
+                      <YAxis className="text-xs" />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'hsl(var(--card))', 
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px'
+                        }} 
+                      />
+                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                    No engagement data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Signup Trend */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <CardTitle>Signup Trend</CardTitle>
+                  <CardDescription>New user registrations over the last 6 months</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {signupTrendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={signupTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="month" className="text-xs" />
+                    <YAxis className="text-xs" />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }} 
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="signups" 
+                      stroke="hsl(var(--primary))" 
+                      fill="hsl(var(--primary))" 
+                      fillOpacity={0.2} 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                  No signup data available
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </DashboardLayout>
   );
 }

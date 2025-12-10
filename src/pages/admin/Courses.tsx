@@ -1,203 +1,406 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { adminSidebarSections } from "@/config/navigation";
-import { BookOpen, Search, Eye } from "lucide-react";
+import { BookOpen, Users, TrendingUp, Star, DollarSign, BarChart3 } from "lucide-react";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function AdminCourses() {
-  const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [page, setPage] = useState(0);
-  const pageSize = 20;
-
-  const { data: courses, isLoading } = useQuery({
-    queryKey: ["admin-courses", page, search, statusFilter],
+  const { data: analytics, isLoading } = useQuery({
+    queryKey: ["admin-course-analytics"],
     queryFn: async () => {
-      const offset = page * pageSize;
-      let query = supabase
+      // Get courses by status
+      const { data: courses } = await supabase
         .from("courses")
-        .select(`
-          *,
-          coach:coach_id (full_name, email),
-          enrollments:course_enrollments(count)
-        `, { count: 'exact' })
-        .order("created_at", { ascending: false })
-        .range(offset, offset + pageSize - 1);
+        .select("status, level, is_free, price_credits, average_rating, category");
 
-      if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter as any);
-      }
+      const statusDistribution = { draft: 0, published: 0, archived: 0 };
+      const levelDistribution = { introduction: 0, intermediate: 0, advanced: 0 };
+      const pricingDistribution = { free: 0, paid: 0 };
+      const categoryDistribution: Record<string, number> = {};
+      let totalRating = 0;
+      let ratedCourses = 0;
 
-      if (search.trim()) {
-        const trimmedSearch = search.trim();
-        
-        // Limit search length to prevent DoS attacks
-        if (trimmedSearch.length > 100) {
-          throw new Error("Search query too long (max 100 characters)");
+      courses?.forEach((c: any) => {
+        // Status
+        if (c.status in statusDistribution) {
+          statusDistribution[c.status as keyof typeof statusDistribution]++;
         }
-        
-        // Sanitize special LIKE characters (% and _) to prevent injection
-        // Escape backslashes first, then escape % and _
-        const sanitizedSearch = trimmedSearch
-          .replace(/\\/g, '\\\\')  // Escape backslashes first
-          .replace(/%/g, '\\%')     // Escape %
-          .replace(/_/g, '\\_');    // Escape _
-        
-        const searchPattern = `%${sanitizedSearch}%`;
-        query = query.or(`title.ilike.${searchPattern},description.ilike.${searchPattern}`);
-      }
+        // Level
+        if (c.level && c.level in levelDistribution) {
+          levelDistribution[c.level as keyof typeof levelDistribution]++;
+        }
+        // Pricing
+        if (c.is_free) {
+          pricingDistribution.free++;
+        } else {
+          pricingDistribution.paid++;
+        }
+        // Rating
+        if (c.average_rating) {
+          totalRating += Number(c.average_rating);
+          ratedCourses++;
+        }
+        // Category
+        const category = c.category || 'Uncategorized';
+        categoryDistribution[category] = (categoryDistribution[category] || 0) + 1;
+      });
 
-      const { data, error, count } = await query;
-      if (error) throw error;
+      // Get enrollment stats
+      const { data: enrollments } = await supabase
+        .from("course_enrollments")
+        .select("status, progress_percentage");
 
-      return { data: data || [], total: count || 0 };
-    },
+      const enrollmentStatus = { active: 0, completed: 0, dropped: 0 };
+      let totalProgress = 0;
+
+      enrollments?.forEach((e: any) => {
+        if (e.status in enrollmentStatus) {
+          enrollmentStatus[e.status as keyof typeof enrollmentStatus]++;
+        }
+        totalProgress += e.progress_percentage || 0;
+      });
+
+      // Get top coaches by course count
+      const { data: coachCounts } = await supabase
+        .from("courses")
+        .select("coach_id, coach:coach_id(full_name)")
+        .eq("status", "published");
+
+      const coachDistribution: Record<string, { name: string; count: number }> = {};
+      coachCounts?.forEach((c: any) => {
+        const coachName = c.coach?.full_name || 'Unknown';
+        if (!coachDistribution[c.coach_id]) {
+          coachDistribution[c.coach_id] = { name: coachName, count: 0 };
+        }
+        coachDistribution[c.coach_id].count++;
+      });
+
+      const topCoaches = Object.values(coachDistribution)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+      return {
+        totalCourses: courses?.length || 0,
+        statusDistribution,
+        levelDistribution,
+        pricingDistribution,
+        categoryDistribution,
+        avgRating: ratedCourses > 0 ? (totalRating / ratedCourses).toFixed(1) : 'N/A',
+        totalEnrollments: enrollments?.length || 0,
+        enrollmentStatus,
+        avgProgress: enrollments?.length ? Math.round(totalProgress / enrollments.length) : 0,
+        topCoaches
+      };
+    }
   });
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "outline"> = {
-      published: "default",
-      draft: "secondary",
-      archived: "outline",
-    };
-    return <Badge variant={variants[status] || "outline"}>{status}</Badge>;
-  };
+  const statusData = analytics ? [
+    { name: 'Published', value: analytics.statusDistribution.published, color: 'hsl(var(--primary))' },
+    { name: 'Draft', value: analytics.statusDistribution.draft, color: 'hsl(var(--muted-foreground))' },
+    { name: 'Archived', value: analytics.statusDistribution.archived, color: 'hsl(var(--destructive))' }
+  ].filter(s => s.value > 0) : [];
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-MW', {
-      style: 'currency',
-      currency: 'MWK',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
+  const levelData = analytics ? [
+    { name: 'Introduction', value: analytics.levelDistribution.introduction },
+    { name: 'Intermediate', value: analytics.levelDistribution.intermediate },
+    { name: 'Advanced', value: analytics.levelDistribution.advanced }
+  ].filter(l => l.value > 0) : [];
+
+  const enrollmentData = analytics ? [
+    { name: 'Active', value: analytics.enrollmentStatus.active, color: 'hsl(var(--primary))' },
+    { name: 'Completed', value: analytics.enrollmentStatus.completed, color: 'hsl(var(--accent))' },
+    { name: 'Dropped', value: analytics.enrollmentStatus.dropped, color: 'hsl(var(--destructive))' }
+  ].filter(e => e.value > 0) : [];
+
+  const categoryData = analytics 
+    ? Object.entries(analytics.categoryDistribution)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 6)
+    : [];
 
   return (
     <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-          Course Management
+          Course Analytics
         </h1>
-        <p className="text-muted-foreground">Monitor and manage all platform courses</p>
+        <p className="text-muted-foreground">Platform course statistics and insights</p>
       </div>
 
-      {/* Filters */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Search and filter courses</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="relative col-span-2">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by title or description"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="published">Published</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Courses Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {isLoading ? (
-          <div className="col-span-full text-center py-12">Loading courses...</div>
-        ) : courses && courses.data.length > 0 ? (
-          courses.data.map((course: any) => (
-            <Card key={course.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between mb-2">
-                  {getStatusBadge(course.status)}
-                  <BookOpen className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <CardTitle className="line-clamp-2">{course.title}</CardTitle>
-                <CardDescription className="line-clamp-2">
-                  {course.description || "No description"}
-                </CardDescription>
+      {isLoading ? (
+        <div className="text-center py-12">Loading analytics...</div>
+      ) : (
+        <>
+          {/* Key Metrics */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Total Courses</CardTitle>
+                <BookOpen className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Coach:</span>
-                    <span className="font-medium">{course.coach?.full_name || "Unknown"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Enrollments:</span>
-                    <span className="font-medium">{course.enrollments?.[0]?.count || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Price:</span>
-                    <span className="font-medium">
-                      {course.is_free ? "Free" : formatCurrency(Number(course.price_credits))}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Level:</span>
-                    <span className="font-medium">{course.level || "N/A"}</span>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  className="w-full mt-4"
-                  onClick={() => navigate(`/coach/courses/${course.id}/edit`)}
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  View Course
-                </Button>
+                <div className="text-2xl font-bold">{analytics?.totalCourses || 0}</div>
+                <p className="text-xs text-muted-foreground">
+                  {analytics?.statusDistribution.published || 0} published
+                </p>
               </CardContent>
             </Card>
-          ))
-        ) : (
-          <div className="col-span-full text-center py-12 text-muted-foreground">
-            No courses found
-          </div>
-        )}
-      </div>
 
-      {/* Pagination */}
-      {courses && courses.data.length > 0 && (
-        <div className="mt-8 flex items-center justify-between">
-          <Button
-            variant="outline"
-            onClick={() => setPage(Math.max(0, page - 1))}
-            disabled={page === 0}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Showing {courses.data.length} of {courses.total} courses
-          </span>
-          <Button
-            variant="outline"
-            onClick={() => setPage(page + 1)}
-            disabled={courses.data.length < pageSize}
-          >
-            Next
-          </Button>
-        </div>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Total Enrollments</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics?.totalEnrollments || 0}</div>
+                <p className="text-xs text-muted-foreground">
+                  {analytics?.enrollmentStatus.completed || 0} completed
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Avg. Rating</CardTitle>
+                <Star className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics?.avgRating}</div>
+                <p className="text-xs text-muted-foreground">Out of 5 stars</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Avg. Progress</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics?.avgProgress || 0}%</div>
+                <p className="text-xs text-muted-foreground">Completion rate</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Charts Row 1 */}
+          <div className="grid gap-6 md:grid-cols-2 mb-8">
+            {/* Course Status Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Course Status</CardTitle>
+                <CardDescription>Distribution by publication status</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {statusData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={statusData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {statusData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                    No course data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Enrollment Status */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Enrollment Status</CardTitle>
+                <CardDescription>Student enrollment breakdown</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {enrollmentData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={enrollmentData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {enrollmentData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                    No enrollment data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Charts Row 2 */}
+          <div className="grid gap-6 md:grid-cols-2 mb-8">
+            {/* Courses by Level */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Courses by Level</CardTitle>
+                <CardDescription>Difficulty distribution</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {levelData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={levelData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="name" className="text-xs" />
+                      <YAxis className="text-xs" />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'hsl(var(--card))', 
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px'
+                        }} 
+                      />
+                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                    No level data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Courses by Category */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Categories</CardTitle>
+                <CardDescription>Most popular course categories</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {categoryData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={categoryData} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis type="number" className="text-xs" />
+                      <YAxis dataKey="name" type="category" className="text-xs" width={100} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'hsl(var(--card))', 
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px'
+                        }} 
+                      />
+                      <Bar dataKey="value" fill="hsl(var(--accent))" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                    No category data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Pricing & Top Coaches */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Pricing Distribution */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <CardTitle>Pricing Model</CardTitle>
+                    <CardDescription>Free vs paid courses</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Free Courses</span>
+                    <span className="text-2xl font-bold">{analytics?.pricingDistribution.free || 0}</span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-3">
+                    <div 
+                      className="bg-primary h-3 rounded-full" 
+                      style={{ 
+                        width: `${analytics?.totalCourses ? (analytics.pricingDistribution.free / analytics.totalCourses * 100) : 0}%` 
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Paid Courses</span>
+                    <span className="text-2xl font-bold">{analytics?.pricingDistribution.paid || 0}</span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-3">
+                    <div 
+                      className="bg-accent h-3 rounded-full" 
+                      style={{ 
+                        width: `${analytics?.totalCourses ? (analytics.pricingDistribution.paid / analytics.totalCourses * 100) : 0}%` 
+                      }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Top Coaches */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <CardTitle>Top Coaches</CardTitle>
+                    <CardDescription>By published course count</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {analytics?.topCoaches && analytics.topCoaches.length > 0 ? (
+                  <div className="space-y-4">
+                    {analytics.topCoaches.map((coach, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+                            {index + 1}
+                          </div>
+                          <span className="text-sm font-medium">{coach.name}</span>
+                        </div>
+                        <span className="text-sm text-muted-foreground">{coach.count} courses</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                    No coach data available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
     </DashboardLayout>
   );
