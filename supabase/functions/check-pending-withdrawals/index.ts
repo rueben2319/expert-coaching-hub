@@ -31,8 +31,38 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // SECURITY: Require admin authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .single();
+
+    if (roleData?.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Forbidden: Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Get all withdrawals that are still processing
-    // Only check those older than 5 minutes to avoid checking too frequently
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     
     const { data: pendingWithdrawals, error } = await supabase
@@ -40,7 +70,7 @@ serve(async (req: Request) => {
       .select("*")
       .eq("status", "processing")
       .lt("created_at", fiveMinutesAgo)
-      .limit(50); // Process in batches
+      .limit(50);
 
     if (error) {
       console.error("Error fetching pending withdrawals:", error);
@@ -53,20 +83,11 @@ serve(async (req: Request) => {
 
     for (const withdrawal of pendingWithdrawals || []) {
       try {
-        // Skip if no transaction ID
         if (!withdrawal.transaction_ref) {
-          console.log(`Skipping withdrawal ${withdrawal.id} - no transaction ID`);
-          results.push({
-            id: withdrawal.id,
-            status: "skipped",
-            reason: "no_transaction_id",
-          });
+          results.push({ id: withdrawal.id, status: "skipped", reason: "no_transaction_id" });
           continue;
         }
 
-        console.log(`Checking status for withdrawal ${withdrawal.id} with trans_id ${withdrawal.transaction_ref}`);
-
-        // Check transaction status with PayChangu
         const response = await fetch(
           `https://api.paychangu.com/mobile-money/payouts/status/${withdrawal.transaction_ref}`,
           {
@@ -78,30 +99,16 @@ serve(async (req: Request) => {
           }
         );
 
-        console.log(`PayChangu response status: ${response.status}`);
-
         if (!response.ok) {
-          console.warn(`PayChangu API error for withdrawal ${withdrawal.id}: ${response.status}`);
-          results.push({
-            id: withdrawal.id,
-            status: "error",
-            reason: `api_error_${response.status}`,
-          });
+          results.push({ id: withdrawal.id, status: "error", reason: `api_error_${response.status}` });
           continue;
         }
 
         const result = await response.json();
-        console.log(`PayChangu response for ${withdrawal.id}:`, JSON.stringify(result, null, 2));
-
         const txStatus = result.data?.status?.toLowerCase();
         
         if (!txStatus) {
-          console.warn(`No status in PayChangu response for withdrawal ${withdrawal.id}`);
-          results.push({
-            id: withdrawal.id,
-            status: "unknown",
-            reason: "no_status_in_response",
-          });
+          results.push({ id: withdrawal.id, status: "unknown", reason: "no_status_in_response" });
           continue;
         }
 
@@ -112,89 +119,47 @@ serve(async (req: Request) => {
           updateData.status = "completed";
           updateData.completed_at = new Date().toISOString();
           shouldUpdate = true;
-          console.log(`Marking withdrawal ${withdrawal.id} as completed`);
         } else if (["failed", "rejected", "cancelled"].includes(txStatus)) {
           updateData.status = "failed";
           updateData.failure_reason = result.data?.failure_reason || "Payment provider reported failure";
           shouldUpdate = true;
-          console.log(`Marking withdrawal ${withdrawal.id} as failed: ${updateData.failure_reason}`);
         } else if (txStatus === "pending" || txStatus === "processing") {
-          // Still processing, no update needed
-          console.log(`Withdrawal ${withdrawal.id} still pending with PayChangu`);
-          results.push({
-            id: withdrawal.id,
-            status: "still_processing",
-            reason: txStatus,
-          });
+          results.push({ id: withdrawal.id, status: "still_processing", reason: txStatus });
           continue;
         } else {
-          console.warn(`Unknown status for withdrawal ${withdrawal.id}: ${txStatus}`);
-          results.push({
-            id: withdrawal.id,
-            status: "unknown",
-            reason: txStatus,
-          });
+          results.push({ id: withdrawal.id, status: "unknown", reason: txStatus });
           continue;
         }
 
         if (shouldUpdate) {
-          // Update the withdrawal status
           const { error: updateError } = await supabase
             .from("withdrawal_requests")
             .update(updateData)
             .eq("id", withdrawal.id);
 
           if (updateError) {
-            console.error(`Error updating withdrawal ${withdrawal.id}:`, updateError);
-            results.push({
-              id: withdrawal.id,
-              status: "update_failed",
-              reason: updateError.message,
-            });
+            results.push({ id: withdrawal.id, status: "update_failed", reason: updateError.message });
           } else {
-            results.push({
-              id: withdrawal.id,
-              status: updateData.status,
-              updated: true,
-            });
+            results.push({ id: withdrawal.id, status: updateData.status, updated: true });
           }
         }
       } catch (err) {
-        console.error(`Error processing withdrawal ${withdrawal.id}:`, err);
         const errorMessage = err instanceof Error ? err.message : "Unknown error";
-        results.push({
-          id: withdrawal.id,
-          status: "error",
-          reason: errorMessage,
-        });
+        results.push({ id: withdrawal.id, status: "error", reason: errorMessage });
       }
     }
 
     return new Response(
-      JSON.stringify({
-        processed: results.length,
-        results,
-        message: "Processed pending withdrawals",
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      }
+      JSON.stringify({ processed: results.length, results, message: "Processed pending withdrawals" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
 
   } catch (error) {
     console.error("Check pending withdrawals error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const errorStack = error instanceof Error ? error.stack : undefined;
     return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        stack: errorStack,
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ error: errorMessage }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
