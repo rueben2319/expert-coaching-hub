@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Users, BarChart3, Banknote, Video, Plus, TrendingUp, Clock, Hourglass } from "lucide-react";
+import { BookOpen, Users, Banknote, Video, Plus, Clock, Hourglass } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
