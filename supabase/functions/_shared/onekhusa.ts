@@ -62,3 +62,23 @@ export async function requestToPay(params: {
   const data = await resp.json();
   return { resp, data };
 }
+
+export async function getCollectionTransaction(transactionReferenceNumber: string) {
+  const cfg = getOneKhusaConfig();
+
+  const resp = await fetch(`${cfg.baseUrl}/collections/getTransaction`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${cfg.apiToken}`,
+      "Content-Type": "application/json",
+      "Accept-Language": "en",
+    },
+    body: JSON.stringify({
+      merchantAccountNumber: cfg.merchantAccountNumber,
+      transactionReferenceNumber,
+    }),
+  });
+
+  const data = await resp.json();
+  return { resp, data };
+}

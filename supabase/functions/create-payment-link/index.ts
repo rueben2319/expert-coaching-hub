@@ -20,6 +20,24 @@ type BillingCycle = "monthly" | "yearly";
 
 type Mode = "coach_subscription";
 
+interface CreatePaymentRequest {
+  mode: Mode;
+  tier_id?: string;
+  billing_cycle?: BillingCycle;
+  currency?: string; // defaults to ONEKHUSA_DEFAULT_CURRENCY or MWK
+  return_url?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface OneKhusaResponse {
+  message: string;
+  status: string;
+  data?: {
+    checkout_url?: string;
+    data?: { tx_ref?: string; status?: string; amount?: number; currency?: string };
+  };
+}
+
 function redact(value: unknown): unknown {
   const sensitiveKeyPattern = /(email|authorization|token|secret|password|api[-_]?key|bearer|cookie)/i;
 
@@ -61,6 +79,20 @@ serve(async (req: Request) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) throw new Error("Missing Supabase environment configuration");
     console.log("Supabase env vars OK");
+
+    const onekhusaSecret = Deno.env.get("ONEKHUSA_SECRET_KEY");
+    console.log("ONEKHUSA_SECRET_KEY present:", !!onekhusaSecret);
+    if (!onekhusaSecret) {
+      console.log("ONEKHUSA_SECRET_KEY is missing");
+      throw new Error("Missing ONEKHUSA_SECRET_KEY env var");
+    }
+    console.log("OneKhusa env var OK");
+
+    const defaultCurrency = Deno.env.get("ONEKHUSA_DEFAULT_CURRENCY") || "MWK";
+    const appBaseUrl = Deno.env.get("APP_BASE_URL");
+    console.log("APP_BASE_URL raw value:", appBaseUrl);
+    console.log("APP_BASE_URL exists:", appBaseUrl !== undefined);
+    console.log("APP_BASE_URL truthy:", !!appBaseUrl);
 
     supabase = createClient(supabaseUrl, supabaseKey);
     console.log("Supabase client created");
@@ -131,7 +163,6 @@ serve(async (req: Request) => {
     }
 
     const tx_ref = crypto.randomUUID();
-    const currency = body.currency || "MWK";
     let amount = body.amount ?? 0;
     const orderId: string | null = null;
     let subscriptionId: string | null = null;
@@ -202,13 +233,65 @@ serve(async (req: Request) => {
     console.log("Transaction creation result:", { tx, txErr });
     if (txErr || !tx) throw new Error("Failed to create transaction record");
 
-    const { resp, data } = await requestToPay({
-      amount,
-      referenceNumber: tx_ref,
-      description,
-      idempotencyKey: tx_ref,
+    const callbackUrl = Deno.env.get("ONEKHUSA_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/onekhusa-webhook`;
+
+    // Set return URL based on mode
+    let returnUrl = body.return_url;
+    console.log("Initial return_url from body:", returnUrl);
+    console.log("appBaseUrl available:", !!appBaseUrl);
+    if (!returnUrl) {
+      // Use webhook URL with tx_ref so webhook can redirect to success page
+      returnUrl = `${supabaseUrl}/functions/v1/onekhusa-webhook?tx_ref=${tx_ref}`;
+      console.log("Using webhook return_url:", returnUrl);
+    }
+    console.log("Final return_url:", returnUrl);
+
+    const first_name = profile?.full_name?.split(" ")[0] || "";
+    const last_name = profile?.full_name?.split(" ").slice(1).join(" ") || "";
+
+    const payPayload = {
+      amount: String(amount),
+      currency,
+      email: profile?.email || user.email,
+      first_name,
+      last_name,
+      callback_url: callbackUrl,
+      return_url: returnUrl,
+      tx_ref,
+      customization: {
+        title: "Experts Coaching Hub",
+        description,
+      },
+      meta: {
+        mode,
+        order_id: orderId,
+        subscription_id: subscriptionId,
+        user_id: user.id,
+        ...body.metadata,
+      },
+    };
+
+    console.log("OneKhusa request prepared", {
+      tx_ref,
+      mode,
+      amount: payPayload.amount,
+      currency: payPayload.currency,
+      payload: redact(payPayload),
     });
 
+    const resp = await fetch("https://api.onekhusa.com/payment", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${onekhusaSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payPayload),
+    });
+
+    console.log("OneKhusa response received", { tx_ref, mode, response_status: resp.status });
+
+    const data = (await resp.json()) as OneKhusaResponse;
     console.log("OneKhusa response summary", {
       tx_ref,
       mode,
@@ -217,7 +300,7 @@ serve(async (req: Request) => {
       payload: redact(data),
     });
 
-    if (!resp.ok || !data?.timedAccountNumber) {
+    if (!resp.ok || data.status !== "success" || !data.data?.checkout_url) {
       console.log("OneKhusa payment initialization failed!");
       console.log("Response status:", resp.status);
       console.log("Response data:", redact(data));
