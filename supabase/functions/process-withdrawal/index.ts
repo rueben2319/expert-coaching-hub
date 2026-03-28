@@ -88,7 +88,7 @@ serve(async (req) => {
     let processedBy = user.id;
 
     if (action === "approve") {
-      // TODO: Integrate with actual payment gateway (PayChangu)
+      // TODO: Integrate with actual payment gateway (OneKhusa)
       // For now, we'll mark as completed
       newStatus = "completed";
 
