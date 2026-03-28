@@ -6,12 +6,10 @@ import {
   Video, 
   GraduationCap,
   Search,
-  TrendingUp,
   Settings,
   UserCheck,
   Shield,
   MessageCircle,
-  Wallet,
   ArrowDownToLine,
   CreditCard,
   Activity
