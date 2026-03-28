@@ -1,9 +1,9 @@
-import { 
-  BookOpen, 
-  Users, 
-  Calendar, 
-  BarChart3, 
-  Video, 
+import {
+  BookOpen,
+  Users,
+  Calendar,
+  BarChart3,
+  Video,
   GraduationCap,
   Search,
   Settings,
@@ -12,11 +12,12 @@ import {
   MessageCircle,
   ArrowDownToLine,
   CreditCard,
-  Activity
+  Activity,
 } from "lucide-react";
+import { DashboardNavSection } from "@/features/dashboard-shell/types";
 
 // Coach Sidebar Configuration
-export const coachSidebarSections = [
+export const coachSidebarSections: DashboardNavSection[] = [
   {
     title: "Course Management",
     items: [
@@ -43,7 +44,7 @@ export const coachSidebarSections = [
 ];
 
 // Client Sidebar Configuration
-export const clientSidebarSections = [
+export const clientSidebarSections: DashboardNavSection[] = [
   {
     title: "Learning",
     items: [
@@ -54,14 +55,12 @@ export const clientSidebarSections = [
   },
   {
     title: "Sessions",
-    items: [
-      { icon: <MessageCircle className="w-4 h-4" />, label: "My Sessions", href: "/client/sessions" },
-    ],
+    items: [{ icon: <MessageCircle className="w-4 h-4" />, label: "My Sessions", href: "/client/sessions" }],
   },
 ];
 
 // Admin Sidebar Configuration
-export const adminSidebarSections = [
+export const adminSidebarSections: DashboardNavSection[] = [
   {
     title: "Management",
     items: [
@@ -74,14 +73,12 @@ export const adminSidebarSections = [
   },
   {
     title: "System",
-    items: [
-      { icon: <Activity className="w-4 h-4" />, label: "System Health", href: "/admin/system-health" },
-    ],
+    items: [{ icon: <Activity className="w-4 h-4" />, label: "System Health", href: "/admin/system-health" }],
   },
 ];
 
 // Get sidebar sections based on role
-export const getProfileSidebarSections = (role: string) => {
+export const getProfileSidebarSections = (role: string): DashboardNavSection[] => {
   switch (role) {
     case "coach":
       return coachSidebarSections;
