@@ -510,7 +510,7 @@ export default function Profile() {
                               </div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Check className="h-3 w-3 text-green-600" />
-                                <span>Secure payment via PayChangu</span>
+                                <span>Secure payment via OneKhusa</span>
                               </div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Check className="h-3 w-3 text-green-600" />
@@ -537,7 +537,7 @@ export default function Profile() {
                   </div>
                   <div>
                     <p className="font-medium text-foreground">Purchase Credits</p>
-                    <p>Choose a package and complete payment via PayChangu</p>
+                    <p>Choose a package and complete payment via OneKhusa</p>
                   </div>
                 </div>
                 <div className="flex gap-3">

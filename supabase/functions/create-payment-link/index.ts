@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { requestToPay } from "../_shared/onekhusa.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -18,24 +19,6 @@ const corsHeaders = {
 type BillingCycle = "monthly" | "yearly";
 
 type Mode = "coach_subscription";
-
-interface CreatePaymentRequest {
-  mode: Mode;
-  tier_id?: string;
-  billing_cycle?: BillingCycle;
-  currency?: string; // defaults to PAYCHANGU_DEFAULT_CURRENCY or MWK
-  return_url?: string;
-  metadata?: Record<string, unknown>;
-}
-
-interface PayChanguResponse {
-  message: string;
-  status: string;
-  data?: {
-    checkout_url?: string;
-    data?: { tx_ref?: string; status?: string; amount?: number; currency?: string };
-  };
-}
 
 function redact(value: unknown): unknown {
   const sensitiveKeyPattern = /(email|authorization|token|secret|password|api[-_]?key|bearer|cookie)/i;
@@ -69,7 +52,6 @@ serve(async (req: Request) => {
   // Initialize variables for cleanup in catch block
   let supabase: any;
   let subscriptionId: string | null = null;
-  let orderId: string | null = null;
 
   try {
     console.log("Starting payment link creation");
@@ -79,20 +61,6 @@ serve(async (req: Request) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) throw new Error("Missing Supabase environment configuration");
     console.log("Supabase env vars OK");
-
-    const paychanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
-    console.log("PAYCHANGU_SECRET_KEY present:", !!paychanguSecret);
-    if (!paychanguSecret) {
-      console.log("PAYCHANGU_SECRET_KEY is missing");
-      throw new Error("Missing PAYCHANGU_SECRET_KEY env var");
-    }
-    console.log("PayChangu env var OK");
-
-    const defaultCurrency = Deno.env.get("PAYCHANGU_DEFAULT_CURRENCY") || "MWK";
-    const appBaseUrl = Deno.env.get("APP_BASE_URL");
-    console.log("APP_BASE_URL raw value:", appBaseUrl);
-    console.log("APP_BASE_URL exists:", appBaseUrl !== undefined);
-    console.log("APP_BASE_URL truthy:", !!appBaseUrl);
 
     supabase = createClient(supabaseUrl, supabaseKey);
     console.log("Supabase client created");
@@ -108,8 +76,8 @@ serve(async (req: Request) => {
     console.log("Getting user from token");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
-      console.error("User auth error:", userError);
-      return new Response(JSON.stringify({ error: "Unauthorized", details: userError?.message }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.error("User auth error");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log("User authenticated:", user.id);
@@ -162,14 +130,10 @@ serve(async (req: Request) => {
       }
     }
 
-    // Fetch profile for payer details
-    const { data: profile } = await supabase.from("profiles").select("email, full_name").eq("id", user.id).single();
-
     const tx_ref = crypto.randomUUID();
-    const currency = body.currency || defaultCurrency;
-
+    const currency = body.currency || "MWK";
     let amount = body.amount ?? 0;
-    let orderId: string | null = null;
+    const orderId: string | null = null;
     let subscriptionId: string | null = null;
     let description = "";
 
@@ -200,7 +164,7 @@ serve(async (req: Request) => {
           end_date: null,
           renewal_date: null,
           transaction_id: null,
-          payment_method: "paychangu",
+          payment_method: "onekhusa",
           billing_cycle: cycle,
         })
         .select()
@@ -227,7 +191,7 @@ serve(async (req: Request) => {
       transaction_mode: mode,
     };
 
-    console.log("Transaction data:", transactionData);
+    console.log("Transaction data prepared", { tx_ref, mode, amount, currency });
 
     const { data: tx, error: txErr } = await supabase
       .from("transactions")
@@ -238,75 +202,23 @@ serve(async (req: Request) => {
     console.log("Transaction creation result:", { tx, txErr });
     if (txErr || !tx) throw new Error("Failed to create transaction record");
 
-    const callbackUrl = Deno.env.get("PAYCHANGU_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/paychangu-webhook`;
-
-    // Set return URL based on mode
-    let returnUrl = body.return_url;
-    console.log("Initial return_url from body:", returnUrl);
-    console.log("appBaseUrl available:", !!appBaseUrl);
-    if (!returnUrl) {
-      // Use webhook URL with tx_ref so webhook can redirect to success page
-      returnUrl = `${supabaseUrl}/functions/v1/paychangu-webhook?tx_ref=${tx_ref}`;
-      console.log("Using webhook return_url:", returnUrl);
-    }
-    console.log("Final return_url:", returnUrl);
-
-    const first_name = profile?.full_name?.split(" ")[0] || "";
-    const last_name = profile?.full_name?.split(" ").slice(1).join(" ") || "";
-
-    const payPayload = {
-      amount: String(amount),
-      currency,
-      email: profile?.email || user.email,
-      first_name,
-      last_name,
-      callback_url: callbackUrl,
-      return_url: returnUrl,
-      tx_ref,
-      customization: {
-        title: "Experts Coaching Hub",
-        description,
-      },
-      meta: {
-        mode,
-        order_id: orderId,
-        subscription_id: subscriptionId,
-        user_id: user.id,
-        ...body.metadata,
-      },
-    };
-
-    console.log("PayChangu request prepared", {
-      tx_ref,
-      mode,
-      amount: payPayload.amount,
-      currency: payPayload.currency,
-      payload: redact(payPayload),
+    const { resp, data } = await requestToPay({
+      amount,
+      referenceNumber: tx_ref,
+      description,
+      idempotencyKey: tx_ref,
     });
 
-    const resp = await fetch("https://api.paychangu.com/payment", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${paychanguSecret}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payPayload),
-    });
-
-    console.log("PayChangu response received", { tx_ref, mode, response_status: resp.status });
-
-    const data = (await resp.json()) as PayChanguResponse;
-    console.log("PayChangu response summary", {
+    console.log("OneKhusa response summary", {
       tx_ref,
       mode,
       response_status: resp.status,
-      gateway_status: data?.status,
-      gateway_message: data?.message,
+      has_timed_account_number: Boolean(data?.timedAccountNumber),
+      payload: redact(data),
     });
 
-    if (!resp.ok || data.status !== "success" || !data.data?.checkout_url) {
-      console.log("PayChangu payment initialization failed!");
+    if (!resp.ok || !data?.timedAccountNumber) {
+      console.log("OneKhusa payment initialization failed!");
       console.log("Response status:", resp.status);
       console.log("Response data:", redact(data));
       // Payment initialization failed - clean up created records
@@ -324,21 +236,23 @@ serve(async (req: Request) => {
       // Note: client_orders table removed - client payment system not implemented
       // orderId cleanup no longer needed
 
-      const sanitizedGatewayResponse = redact(data);
+      const sanitizedGatewayResponse = {
+        provider: "OneKhusa",
+        responseStatus: resp.status,
+      };
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
         details: sanitizedGatewayResponse,
-        debug: {
-          coachId: body.coach_id,
-          mode,
-          responseStatus: resp.status
-        }
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     return new Response(
       JSON.stringify({
-        checkout_url: data.data.checkout_url,
+        checkout_url: null,
+        payment_channel: "onekhusa_tan",
+        timed_account_number: data.timedAccountNumber,
+        expires_at: data.expiryDate,
+        expires_in_minutes: data.expiryInMinutes,
         transaction_ref: tx_ref,
         order_id: orderId,
         subscription_id: subscriptionId,
