@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { SUPABASE_URL, supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
 
 export interface GoogleCalendarEvent {
@@ -72,7 +72,13 @@ class GoogleCalendarService {
   private readonly CACHE_DURATION = 5000; // 5 seconds
   // Prevent race conditions in concurrent token requests
   private pendingTokenFetches: Map<string, Promise<string>> = new Map();
-  private readonly SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+  private getSupabaseFunctionsUrl(path: string): string {
+    if (!SUPABASE_URL) {
+      throw new Error('Missing required environment variable: VITE_SUPABASE_URL. Please update your .env file.');
+    }
+
+    return `${SUPABASE_URL}/functions/v1/${path}`;
+  }
 
   private async getTokenStatus(): Promise<TokenStatusResponse> {
     const { data: { session } } = await supabase.auth.getSession();
@@ -81,7 +87,7 @@ class GoogleCalendarService {
       return { success: false, error: 'No active session' };
     }
 
-    const response = await fetch(`${this.SUPABASE_URL}/functions/v1/get-token-status`, {
+    const response = await fetch(this.getSupabaseFunctionsUrl('get-token-status'), {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
@@ -164,7 +170,7 @@ class GoogleCalendarService {
         throw new Error('No session found');
       }
 
-      const response = await fetch(`${this.SUPABASE_URL}/functions/v1/refresh-google-token`, {
+      const response = await fetch(this.getSupabaseFunctionsUrl('refresh-google-token'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
