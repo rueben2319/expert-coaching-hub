@@ -123,12 +123,23 @@ export function useCredits() {
       return callSupabaseFunction("purchase-credits", { package_id: packageId });
     },
     onSuccess: (data) => {
-      // Show user feedback before redirecting
-      toast.info("Redirecting to payment...");
-      // Small delay to ensure toast is visible before redirect
-      setTimeout(() => {
-        window.location.href = data.checkout_url;
-      }, 500);
+      if (data?.checkout_url) {
+        toast.info("Redirecting to payment...");
+        setTimeout(() => {
+          window.location.href = data.checkout_url;
+        }, 500);
+        return;
+      }
+
+      if (data?.payment_channel === "onekhusa_tan" && data?.timed_account_number) {
+        toast.success(
+          `Use TAN ${data.timed_account_number} to complete payment. Expires in ${data.expires_in_minutes ?? 15} minutes.`,
+          { duration: 10000 }
+        );
+        return;
+      }
+
+      toast.info("Payment request created. Please follow the payment instructions from OneKhusa.");
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to initiate credit purchase");

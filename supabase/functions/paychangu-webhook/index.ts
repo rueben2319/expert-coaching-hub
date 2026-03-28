@@ -219,7 +219,11 @@ serve(async (req: Request) => {
   console.log("Raw body length:", rawBody.length);
   console.log("Raw body preview:", rawBody.substring(0, 500) + (rawBody.length > 500 ? "..." : ""));
 
-  const signature = req.headers.get("Signature") || req.headers.get("signature");
+  const signature =
+    req.headers.get("X-OneKhusa-Webhook-Signature") ||
+    req.headers.get("x-onekhusa-webhook-signature") ||
+    req.headers.get("Signature") ||
+    req.headers.get("signature");
   console.log("Signature present:", !!signature);
 
   // Require secret and signature for all environments

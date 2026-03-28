@@ -174,8 +174,21 @@ const CoachBilling = () => {
       return;
     }
     try {
-      const { checkout_url } = await createCoachSubscription(tierId, billingCycle);
-      window.location.href = checkout_url;
+      const result = await createCoachSubscription(tierId, billingCycle);
+      if (result?.checkout_url) {
+        window.location.href = result.checkout_url;
+        return;
+      }
+
+      if (result?.payment_channel === "onekhusa_tan" && result?.timed_account_number) {
+        toast.success(
+          `Use TAN ${result.timed_account_number} to complete subscription payment. Expires in ${result.expires_in_minutes ?? 15} minutes.`,
+          { duration: 10000 }
+        );
+        return;
+      }
+
+      toast.info("Subscription payment request created. Complete payment using OneKhusa instructions.");
     } catch (e: any) {
       console.error("Error creating subscription:", e);
       toast.error(e.message || "Failed to start checkout");

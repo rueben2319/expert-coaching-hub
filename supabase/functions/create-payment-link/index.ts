@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+import { requestToPay } from "../_shared/onekhusa.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -162,12 +163,7 @@ serve(async (req: Request) => {
       }
     }
 
-    // Fetch profile for payer details
-    const { data: profile } = await supabase.from("profiles").select("email, full_name").eq("id", user.id).single();
-
     const tx_ref = crypto.randomUUID();
-    const currency = body.currency || defaultCurrency;
-
     let amount = body.amount ?? 0;
     let orderId: string | null = null;
     let subscriptionId: string | null = null;
@@ -301,8 +297,8 @@ serve(async (req: Request) => {
       tx_ref,
       mode,
       response_status: resp.status,
-      gateway_status: data?.status,
-      gateway_message: data?.message,
+      has_timed_account_number: Boolean(data?.timedAccountNumber),
+      payload: redact(data),
     });
 
     if (!resp.ok || data.status !== "success" || !data.data?.checkout_url) {
@@ -338,7 +334,11 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
-        checkout_url: data.data.checkout_url,
+        checkout_url: null,
+        payment_channel: "onekhusa_tan",
+        timed_account_number: data.timedAccountNumber,
+        expires_at: data.expiryDate,
+        expires_in_minutes: data.expiryInMinutes,
         transaction_ref: tx_ref,
         order_id: orderId,
         subscription_id: subscriptionId,
