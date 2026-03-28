@@ -37,6 +37,32 @@ interface PayChanguResponse {
   };
 }
 
+function redact(value: unknown): unknown {
+  const sensitiveKeyPattern = /(email|authorization|token|secret|password|api[-_]?key|bearer|cookie)/i;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redact(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => {
+        if (sensitiveKeyPattern.test(key)) {
+          return [key, "[REDACTED]"];
+        }
+        return [key, redact(nestedValue)];
+      }),
+    );
+  }
+
+  if (typeof value === "string") {
+    const isLikelyToken = /^(bearer\s+)?[a-z0-9_\-.]{24,}$/i.test(value) || value.includes("eyJ");
+    return isLikelyToken ? "[REDACTED]" : value;
+  }
+
+  return value;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -101,7 +127,6 @@ serve(async (req: Request) => {
     let rawBody;
     try {
       rawBody = await req.text();
-      console.log("Raw request body:", rawBody);
     } catch (textError) {
       console.error("Failed to read request as text:", textError);
       const message = textError instanceof Error ? textError.message : String(textError);
@@ -122,7 +147,6 @@ serve(async (req: Request) => {
       const message = parseError instanceof Error ? parseError.message : String(parseError);
       throw new Error(`Invalid JSON in request body: ${message}`);
     }
-    console.log("Request body:", JSON.stringify(body, null, 2));
     const mode = body.mode;
 
     if (!mode) throw new Error("mode is required");
@@ -252,9 +276,13 @@ serve(async (req: Request) => {
       },
     };
 
-    console.log("About to call PayChangu API");
-    console.log("Payment payload:", JSON.stringify(payPayload, null, 2));
-    console.log("Using payment secret (first 10 chars):", paychanguSecret.substring(0, 10) + "...");
+    console.log("PayChangu request prepared", {
+      tx_ref,
+      mode,
+      amount: payPayload.amount,
+      currency: payPayload.currency,
+      payload: redact(payPayload),
+    });
 
     const resp = await fetch("https://api.paychangu.com/payment", {
       method: "POST",
@@ -266,16 +294,21 @@ serve(async (req: Request) => {
       body: JSON.stringify(payPayload),
     });
 
-    console.log("PayChangu response status:", resp.status);
-    console.log("PayChangu response headers:", Object.fromEntries(resp.headers.entries()));
+    console.log("PayChangu response received", { tx_ref, mode, response_status: resp.status });
 
     const data = (await resp.json()) as PayChanguResponse;
-    console.log("PayChangu response data:", JSON.stringify(data, null, 2));
+    console.log("PayChangu response summary", {
+      tx_ref,
+      mode,
+      response_status: resp.status,
+      gateway_status: data?.status,
+      gateway_message: data?.message,
+    });
 
     if (!resp.ok || data.status !== "success" || !data.data?.checkout_url) {
       console.log("PayChangu payment initialization failed!");
       console.log("Response status:", resp.status);
-      console.log("Response data:", data);
+      console.log("Response data:", redact(data));
       // Payment initialization failed - clean up created records
       console.log("Payment initialization failed, cleaning up records");
 
@@ -291,9 +324,10 @@ serve(async (req: Request) => {
       // Note: client_orders table removed - client payment system not implemented
       // orderId cleanup no longer needed
 
+      const sanitizedGatewayResponse = redact(data);
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
-        details: data,
+        details: sanitizedGatewayResponse,
         debug: {
           coachId: body.coach_id,
           mode,
