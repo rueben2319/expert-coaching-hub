@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
-import { TokenStorage } from "../_shared/token-storage.ts";
+import { DatabaseTokenStorage, TokenStorage } from "../_shared/token-storage.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -53,36 +53,32 @@ serve(async (req: Request) => {
       throw new Error('Invalid authentication token');
     }
 
-    // Get user's session to access provider tokens
-    const { data: session, error: sessionError } = await supabase.auth.getSession();
-    
+    // Start from encrypted database token status as source of truth
+    const dbStatus = await TokenStorage.getTokenStatus(supabase, user.id, 'database', 'google');
+
     let tokenStatus = {
-      hasTokens: false,
-      isExpired: true,
-      expiresAt: null as Date | null,
-      refreshCount: 0,
-      lastRefresh: null as Date | null,
-      scope: null as string | null,
-      isValid: false,
-      expiresInMinutes: 0,
+      hasTokens: dbStatus.hasTokens,
+      isExpired: dbStatus.isExpired,
+      expiresAt: dbStatus.expiresAt ?? null as Date | null,
+      refreshCount: dbStatus.refreshCount,
+      lastRefresh: dbStatus.lastRefresh ?? null as Date | null,
+      scope: dbStatus.scope ?? null as string | null,
+      isValid: dbStatus.hasTokens && !dbStatus.isExpired,
+      expiresInMinutes: dbStatus.expiresAt
+        ? Math.max(Math.floor((dbStatus.expiresAt.getTime() - Date.now()) / 60000), 0)
+        : 0,
     };
 
-    if (!sessionError && session?.session?.provider_token) {
-      const { accessToken, refreshToken } = OAuthTokenManager.extractTokensFromSession(session);
-      
+    // If session has provider token, validate and backfill encrypted storage when needed.
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (!sessionError && sessionData?.session?.provider_token) {
+      const { accessToken, refreshToken } = OAuthTokenManager.extractTokensFromSession(sessionData);
+
       if (accessToken) {
         try {
-          let currentAccessToken = accessToken;
-          let tokenInfo: any | null = null;
-
-          try {
-            tokenInfo = await OAuthTokenManager.getTokenInfo(currentAccessToken);
-          } catch (infoError) {
-            console.warn('Could not fetch token info:', infoError);
-          }
-
           const validationResult = await OAuthTokenManager.validateAndRefreshToken(
-            currentAccessToken,
+            accessToken,
             refreshToken
           );
 
@@ -90,73 +86,47 @@ serve(async (req: Request) => {
             throw new Error(validationResult.error || 'Google token validation failed');
           }
 
-          currentAccessToken = validationResult.token;
+          const tokenInfo = await OAuthTokenManager.getTokenInfo(validationResult.token).catch(() => null);
+          const expiresInSeconds = tokenInfo?.exp
+            ? Math.max(tokenInfo.exp - Math.floor(Date.now() / 1000), 0)
+            : undefined;
+
+          // Persist latest token state to encrypted database storage.
+          const storeResult = await TokenStorage.storeTokens(
+            supabase,
+            user.id,
+            validationResult.token,
+            refreshToken,
+            expiresInSeconds,
+            tokenInfo?.scope,
+            'database',
+            'google'
+          );
+
+          if (!storeResult.success) {
+            console.error('Token storage failed:', storeResult.error);
+          }
 
           if (validationResult.refreshed) {
-            try {
-              tokenInfo = await OAuthTokenManager.getTokenInfo(currentAccessToken);
-            } catch (refetchError) {
-              console.warn('Could not fetch refreshed token info:', refetchError);
-              tokenInfo = null;
-            }
-
-            const expiresInSeconds = tokenInfo?.exp
-              ? Math.max(tokenInfo.exp - Math.floor(Date.now() / 1000), 0)
-              : undefined;
-
-            const storeResult = await TokenStorage.storeTokens(
-              supabase,
-              user.id,
-              currentAccessToken,
-              refreshToken,
-              expiresInSeconds,
-              tokenInfo?.scope
-            );
-
-            if (!storeResult.success) {
-              console.error('Token storage failed:', storeResult.error);
-              throw new Error('Failed to persist refreshed Google token');
-            }
-
-            const refreshMetaResult = await TokenStorage.updateRefreshMetadata(supabase, user.id);
-            if (!refreshMetaResult.success) {
-              console.error('Refresh metadata update failed:', refreshMetaResult.error);
-              throw new Error('Failed to update token metadata');
-            }
+            await TokenStorage.updateRefreshMetadata(supabase, user.id);
+            await DatabaseTokenStorage.incrementRefreshCount(supabase, user.id, 'google');
           }
 
-          const expiryInfo = tokenInfo
-            ? OAuthTokenManager.calculateTokenExpiry(tokenInfo)
-            : null;
-
+          const refreshedStatus = await TokenStorage.getTokenStatus(supabase, user.id, 'database', 'google');
           tokenStatus = {
-            hasTokens: true,
-            isExpired: expiryInfo ? expiryInfo.isExpired : true,
-            expiresAt: expiryInfo ? expiryInfo.expiresAt : null,
-            refreshCount: 0,
-            lastRefresh: null,
-            scope: tokenInfo?.scope,
-            isValid: validationResult.isValid,
-            expiresInMinutes: expiryInfo ? expiryInfo.expiresInMinutes : 0,
+            hasTokens: refreshedStatus.hasTokens,
+            isExpired: refreshedStatus.isExpired,
+            expiresAt: refreshedStatus.expiresAt ?? null,
+            refreshCount: refreshedStatus.refreshCount,
+            lastRefresh: refreshedStatus.lastRefresh ?? null,
+            scope: refreshedStatus.scope ?? null,
+            isValid: validationResult.isValid && !refreshedStatus.isExpired,
+            expiresInMinutes: refreshedStatus.expiresAt
+              ? Math.max(Math.floor((refreshedStatus.expiresAt.getTime() - Date.now()) / 60000), 0)
+              : 0,
           };
-
-          // Try to get additional metadata from user profile
-          try {
-            const { data: profile } = await supabase.auth.admin.getUserById(user.id);
-            if (profile?.user?.user_metadata) {
-              const metadata = profile.user.user_metadata;
-              tokenStatus.refreshCount = metadata.token_refresh_count || 0;
-              tokenStatus.lastRefresh = metadata.last_token_refresh 
-                ? new Date(metadata.last_token_refresh) 
-                : null;
-            }
-          } catch (metadataError) {
-            console.warn('Could not fetch user metadata:', metadataError);
-          }
-
         } catch (tokenError) {
           console.error('Token validation error:', tokenError);
-          tokenStatus.hasTokens = true;
           tokenStatus.isValid = false;
         }
       }

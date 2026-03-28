@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
-import { TokenStorage } from "../_shared/token-storage.ts";
+import { DatabaseTokenStorage, TokenStorage } from "../_shared/token-storage.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -53,18 +53,14 @@ serve(async (req: Request) => {
       throw new Error('Invalid authentication token');
     }
 
-    // Get stored tokens from user metadata
-    const storedTokens = await TokenStorage.getStoredTokens(supabase, user.id);
-    if (!storedTokens?.google_refresh_token) {
+    // Get encrypted tokens from database-backed storage
+    const storedTokens = await DatabaseTokenStorage.getTokenRecord(supabase, user.id, 'google');
+
+    if (!storedTokens?.refresh_token) {
       throw new Error('No valid Google OAuth refresh token found. Please sign in with Google again.');
     }
 
-    const accessToken = storedTokens.google_access_token;
-    const refreshToken = storedTokens.google_refresh_token;
-    
-    if (!refreshToken) {
-      throw new Error('No refresh token available. Please sign in with Google again.');
-    }
+    const refreshToken = storedTokens.refresh_token;
 
     // Refresh the access token
     const newAccessToken = await OAuthTokenManager.refreshAccessToken(refreshToken);
@@ -102,6 +98,8 @@ serve(async (req: Request) => {
       console.error('Refresh metadata update failed:', refreshMetaResult.error);
       throw new Error('Failed to update token refresh metadata.');
     }
+
+    await DatabaseTokenStorage.incrementRefreshCount(supabase, user.id, 'google');
 
     // CRITICAL: Update the user's session with the new provider token
     // This ensures frontend has access to the refreshed token
