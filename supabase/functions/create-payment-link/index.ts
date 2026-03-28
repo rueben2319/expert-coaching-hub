@@ -70,7 +70,6 @@ serve(async (req: Request) => {
   // Initialize variables for cleanup in catch block
   let supabase: any;
   let subscriptionId: string | null = null;
-  let orderId: string | null = null;
 
   try {
     console.log("Starting payment link creation");
@@ -109,8 +108,8 @@ serve(async (req: Request) => {
     console.log("Getting user from token");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
-      console.error("User auth error:", userError);
-      return new Response(JSON.stringify({ error: "Unauthorized", details: userError?.message }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.error("User auth error");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log("User authenticated:", user.id);
@@ -165,7 +164,7 @@ serve(async (req: Request) => {
 
     const tx_ref = crypto.randomUUID();
     let amount = body.amount ?? 0;
-    let orderId: string | null = null;
+    const orderId: string | null = null;
     let subscriptionId: string | null = null;
     let description = "";
 
@@ -223,7 +222,7 @@ serve(async (req: Request) => {
       transaction_mode: mode,
     };
 
-    console.log("Transaction data:", transactionData);
+    console.log("Transaction data prepared", { tx_ref, mode, amount, currency });
 
     const { data: tx, error: txErr } = await supabase
       .from("transactions")
@@ -320,15 +319,13 @@ serve(async (req: Request) => {
       // Note: client_orders table removed - client payment system not implemented
       // orderId cleanup no longer needed
 
-      const sanitizedGatewayResponse = redact(data);
+      const sanitizedGatewayResponse = {
+        provider: "OneKhusa",
+        responseStatus: resp.status,
+      };
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
         details: sanitizedGatewayResponse,
-        debug: {
-          coachId: body.coach_id,
-          mode,
-          responseStatus: resp.status
-        }
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 

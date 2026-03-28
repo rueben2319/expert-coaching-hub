@@ -1,7 +1,11 @@
-// @ts-ignore: Deno imports work at runtime
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-// @ts-ignore: Deno imports work at runtime
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+/**
+ * Backward-compatibility wrapper.
+ *
+ * Legacy integrations may still target /functions/v1/paychangu-webhook.
+ * We intentionally reuse the OneKhusa webhook implementation to avoid
+ * maintaining duplicate webhook processors.
+ */
+import "../onekhusa-webhook/index.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
