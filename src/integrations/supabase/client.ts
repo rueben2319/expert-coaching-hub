@@ -5,8 +5,27 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+/**
+ * Prefer server-managed session cookies (httpOnly + Secure + SameSite) over browser storage.
+ * If backend cookie sessions are not available yet, set VITE_SUPABASE_USE_BROWSER_STORAGE=true
+ * as a temporary fallback.
+ */
+const USE_BROWSER_STORAGE = import.meta.env.VITE_SUPABASE_USE_BROWSER_STORAGE === 'true';
+
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   throw new Error('Missing required Supabase environment variables. Please check your .env file.');
+}
+
+if (USE_BROWSER_STORAGE && typeof window !== 'undefined') {
+  const cspMeta = document.querySelector<HTMLMetaElement>('meta[http-equiv="Content-Security-Policy"]')?.content ?? '';
+  const hasStrictCspSignals = cspMeta.includes('script-src') && cspMeta.includes("object-src 'none'");
+
+  if (!window.isSecureContext || !hasStrictCspSignals) {
+    console.warn(
+      '[Security] Browser token storage fallback enabled without strict CSP/secure context signals. ' +
+        'Prefer httpOnly Secure SameSite cookies for Supabase session transport.'
+    );
+  }
 }
 
 // Import the supabase client like this:
@@ -14,9 +33,13 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
+    /**
+     * Cookie-first session transport:
+     * - persistSession=false disables localStorage token persistence in the browser
+     * - autoRefreshToken=false expects backend/session middleware to refresh cookie sessions
+     */
+    persistSession: USE_BROWSER_STORAGE,
+    autoRefreshToken: USE_BROWSER_STORAGE,
     detectSessionInUrl: true,
   },
   global: {
