@@ -132,23 +132,35 @@ serve(async (req: Request) => {
 
     const profileMap = new Map((coachProfiles || []).map((p: any) => [p.id, p]))
 
-    // Fetch enrollment counts for each course
-    const coursesWithStats = await Promise.all(
-      courses.map(async (course: any) => {
-        const { count, error: enrollError } = await supabase
-          .from('course_enrollments')
-          .select('*', { count: 'exact', head: true })
-          .eq('course_id', course.id)
+    // Fetch enrollment counts for all course IDs in one query, then map in memory
+    const courseIds = (courses || []).map((course: any) => course.id)
+    const enrollmentCountByCourseId = new Map<string, number>()
 
-        const profile = profileMap.get(course.coach_id)
-        return {
-          ...course,
-          student_count: enrollError ? 0 : count || 0,
-          coach_name: profile?.full_name || 'Expert Coach',
-          coach_avatar: profile?.avatar_url || null
+    if (courseIds.length > 0) {
+      const { data: enrollments, error: enrollmentsError } = await supabase
+        .from('course_enrollments')
+        .select('course_id')
+        .in('course_id', courseIds)
+
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError)
+      } else {
+        for (const enrollment of enrollments || []) {
+          const currentCount = enrollmentCountByCourseId.get(enrollment.course_id) || 0
+          enrollmentCountByCourseId.set(enrollment.course_id, currentCount + 1)
         }
-      })
-    )
+      }
+    }
+
+    const coursesWithStats = (courses || []).map((course: any) => {
+      const profile = profileMap.get(course.coach_id)
+      return {
+        ...course,
+        student_count: enrollmentCountByCourseId.get(course.id) || 0,
+        coach_name: profile?.full_name || 'Expert Coach',
+        coach_avatar: profile?.avatar_url || null
+      }
+    })
 
     // Fetch top coaches (those with published courses)
     // Get courses with coach_ids for counting
