@@ -18,26 +18,31 @@ export interface TokenSyncResult {
 }
 
 /**
- * Check if tokens need to be refreshed based on user metadata
+ * Check if tokens need to be refreshed based on backend token status.
  */
 export async function checkTokenRefreshNeeded(): Promise<boolean> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
 
-    const metadata = user.user_metadata;
-    if (!metadata) return false;
+    const statusResponse = await fetch(`${SUPABASE_URL}/functions/v1/get-token-status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-    // Check if token expires soon (within 10 minutes)
-    if (metadata.google_token_expires_at) {
-      const expiresAt = new Date(metadata.google_token_expires_at);
-      const now = new Date();
-      const tenMinutes = 10 * 60 * 1000;
-      
-      if (expiresAt.getTime() - now.getTime() < tenMinutes) {
-        logger.log('Token expires soon, refresh recommended');
-        return true;
-      }
+    if (!statusResponse.ok) {
+      return false;
+    }
+
+    const statusData = await statusResponse.json();
+    const expiresInMinutes = statusData?.tokenStatus?.expiresInMinutes;
+
+    if (typeof expiresInMinutes === 'number' && expiresInMinutes <= 10) {
+      logger.log('Token expires soon according to backend status, refresh recommended');
+      return true;
     }
 
     return false;
