@@ -23,12 +23,12 @@ interface CreatePaymentRequest {
   mode: Mode;
   tier_id?: string;
   billing_cycle?: BillingCycle;
-  currency?: string; // defaults to PAYCHANGU_DEFAULT_CURRENCY or MWK
+  currency?: string; // defaults to ONEKHUSA_DEFAULT_CURRENCY or MWK
   return_url?: string;
   metadata?: Record<string, unknown>;
 }
 
-interface PayChanguResponse {
+interface OneKhusaResponse {
   message: string;
   status: string;
   data?: {
@@ -80,15 +80,15 @@ serve(async (req: Request) => {
     if (!supabaseUrl || !supabaseKey) throw new Error("Missing Supabase environment configuration");
     console.log("Supabase env vars OK");
 
-    const paychanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
-    console.log("PAYCHANGU_SECRET_KEY present:", !!paychanguSecret);
-    if (!paychanguSecret) {
-      console.log("PAYCHANGU_SECRET_KEY is missing");
-      throw new Error("Missing PAYCHANGU_SECRET_KEY env var");
+    const onekhusaSecret = Deno.env.get("ONEKHUSA_SECRET_KEY");
+    console.log("ONEKHUSA_SECRET_KEY present:", !!onekhusaSecret);
+    if (!onekhusaSecret) {
+      console.log("ONEKHUSA_SECRET_KEY is missing");
+      throw new Error("Missing ONEKHUSA_SECRET_KEY env var");
     }
-    console.log("PayChangu env var OK");
+    console.log("OneKhusa env var OK");
 
-    const defaultCurrency = Deno.env.get("PAYCHANGU_DEFAULT_CURRENCY") || "MWK";
+    const defaultCurrency = Deno.env.get("ONEKHUSA_DEFAULT_CURRENCY") || "MWK";
     const appBaseUrl = Deno.env.get("APP_BASE_URL");
     console.log("APP_BASE_URL raw value:", appBaseUrl);
     console.log("APP_BASE_URL exists:", appBaseUrl !== undefined);
@@ -200,7 +200,7 @@ serve(async (req: Request) => {
           end_date: null,
           renewal_date: null,
           transaction_id: null,
-          payment_method: "paychangu",
+          payment_method: "onekhusa",
           billing_cycle: cycle,
         })
         .select()
@@ -238,7 +238,7 @@ serve(async (req: Request) => {
     console.log("Transaction creation result:", { tx, txErr });
     if (txErr || !tx) throw new Error("Failed to create transaction record");
 
-    const callbackUrl = Deno.env.get("PAYCHANGU_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/paychangu-webhook`;
+    const callbackUrl = Deno.env.get("ONEKHUSA_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/onekhusa-webhook`;
 
     // Set return URL based on mode
     let returnUrl = body.return_url;
@@ -246,7 +246,7 @@ serve(async (req: Request) => {
     console.log("appBaseUrl available:", !!appBaseUrl);
     if (!returnUrl) {
       // Use webhook URL with tx_ref so webhook can redirect to success page
-      returnUrl = `${supabaseUrl}/functions/v1/paychangu-webhook?tx_ref=${tx_ref}`;
+      returnUrl = `${supabaseUrl}/functions/v1/onekhusa-webhook?tx_ref=${tx_ref}`;
       console.log("Using webhook return_url:", returnUrl);
     }
     console.log("Final return_url:", returnUrl);
@@ -276,7 +276,7 @@ serve(async (req: Request) => {
       },
     };
 
-    console.log("PayChangu request prepared", {
+    console.log("OneKhusa request prepared", {
       tx_ref,
       mode,
       amount: payPayload.amount,
@@ -284,20 +284,20 @@ serve(async (req: Request) => {
       payload: redact(payPayload),
     });
 
-    const resp = await fetch("https://api.paychangu.com/payment", {
+    const resp = await fetch("https://api.onekhusa.com/payment", {
       method: "POST",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${paychanguSecret}`,
+        Authorization: `Bearer ${onekhusaSecret}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payPayload),
     });
 
-    console.log("PayChangu response received", { tx_ref, mode, response_status: resp.status });
+    console.log("OneKhusa response received", { tx_ref, mode, response_status: resp.status });
 
-    const data = (await resp.json()) as PayChanguResponse;
-    console.log("PayChangu response summary", {
+    const data = (await resp.json()) as OneKhusaResponse;
+    console.log("OneKhusa response summary", {
       tx_ref,
       mode,
       response_status: resp.status,
@@ -306,7 +306,7 @@ serve(async (req: Request) => {
     });
 
     if (!resp.ok || data.status !== "success" || !data.data?.checkout_url) {
-      console.log("PayChangu payment initialization failed!");
+      console.log("OneKhusa payment initialization failed!");
       console.log("Response status:", resp.status);
       console.log("Response data:", redact(data));
       // Payment initialization failed - clean up created records

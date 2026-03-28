@@ -92,11 +92,11 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const paychanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
-    const defaultCurrency = Deno.env.get("PAYCHANGU_DEFAULT_CURRENCY") || "MWK";
+    const onekhusaSecret = Deno.env.get("ONEKHUSA_SECRET_KEY");
+    const defaultCurrency = Deno.env.get("ONEKHUSA_DEFAULT_CURRENCY") || "MWK";
     const appBaseUrl = Deno.env.get("APP_BASE_URL") || "https://experts-coaching-hub.com";
 
-    if (!supabaseUrl || !supabaseKey || !paychanguSecret) {
+    if (!supabaseUrl || !supabaseKey || !onekhusaSecret) {
       throw new Error("Missing required environment variables");
     }
 
@@ -292,7 +292,7 @@ serve(async (req: Request) => {
         const first_name = profile?.full_name?.split(" ")[0] || "";
         const last_name = profile?.full_name?.split(" ")?.slice(1).join(" ") || "";
 
-        const callbackUrl = Deno.env.get("PAYCHANGU_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/paychangu-webhook`;
+        const callbackUrl = Deno.env.get("ONEKHUSA_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/onekhusa-webhook`;
         const returnUrl = `${appBaseUrl}/coach/billing/success?tx_ref=${txRef}&source=renewal`;
 
         const payPayload = {
@@ -316,11 +316,11 @@ serve(async (req: Request) => {
           },
         };
 
-        const payResponse = await fetch("https://api.paychangu.com/payment", {
+        const payResponse = await fetch("https://api.onekhusa.com/payment", {
           method: "POST",
           headers: {
             Accept: "application/json",
-            Authorization: `Bearer ${paychanguSecret}`,
+            Authorization: `Bearer ${onekhusaSecret}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payPayload),

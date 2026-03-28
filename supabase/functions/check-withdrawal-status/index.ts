@@ -28,9 +28,9 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const payChanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
+    const oneKhusaSecret = Deno.env.get("ONEKHUSA_SECRET_KEY");
 
-    if (!supabaseUrl || !supabaseKey || !payChanguSecret) {
+    if (!supabaseUrl || !supabaseKey || !oneKhusaSecret) {
       throw new Error("Missing required environment variables");
     }
 
@@ -84,22 +84,22 @@ serve(async (req: Request) => {
 
     console.log(`Checking status for withdrawal ${withdrawalId} with trans_id ${withdrawal.transaction_ref}`);
 
-    // Check transaction status with PayChangu
+    // Check transaction status with OneKhusa
     const response = await fetch(
-      `https://api.paychangu.com/mobile-money/payouts/status/${withdrawal.transaction_ref}`,
+      `https://api.onekhusa.com/mobile-money/payouts/status/${withdrawal.transaction_ref}`,
       {
         method: "GET",
         headers: {
           "Accept": "application/json",
-          "Authorization": `Bearer ${payChanguSecret}`,
+          "Authorization": `Bearer ${oneKhusaSecret}`,
         },
       }
     );
 
-    console.log(`PayChangu response status: ${response.status}`);
+    console.log(`OneKhusa response status: ${response.status}`);
 
     if (!response.ok) {
-      console.warn(`PayChangu API error: ${response.status}`);
+      console.warn(`OneKhusa API error: ${response.status}`);
       return new Response(
         JSON.stringify({
           updated: false,
@@ -111,7 +111,7 @@ serve(async (req: Request) => {
     }
 
     const result = await response.json();
-    console.log(`PayChangu response:`, JSON.stringify(result, null, 2));
+    console.log(`OneKhusa response:`, JSON.stringify(result, null, 2));
 
     const txStatus = result.data?.status?.toLowerCase();
 
@@ -144,7 +144,7 @@ serve(async (req: Request) => {
       console.log(`Marking withdrawal ${withdrawalId} as failed: ${updateData.failure_reason}`);
     } else if (txStatus === "pending" || txStatus === "processing") {
       // Still processing, no update needed
-      console.log(`Withdrawal ${withdrawalId} still pending with PayChangu`);
+      console.log(`Withdrawal ${withdrawalId} still pending with OneKhusa`);
       return new Response(
         JSON.stringify({
           updated: false,
