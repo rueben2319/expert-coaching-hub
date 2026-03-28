@@ -69,14 +69,6 @@ export default function CoachDashboard() {
   const totalEarnings = wallet?.total_earned || 0;
   const pendingWithdrawal = wallet?.balance || 0;
 
-  const totalContent = courses?.reduce((acc, course) => {
-    return acc + (course.course_modules?.reduce((moduleAcc: number, module: any) => {
-      return moduleAcc + (module.lessons?.reduce((lessonAcc: number, lesson: any) => {
-        return lessonAcc + (lesson.lesson_content?.length || 0);
-      }, 0) || 0);
-    }, 0) || 0);
-  }, 0) || 0;
-
   // Initial page load skeleton
   if ((coursesLoading || enrollmentsLoading || walletLoading) && !courses) {
     return (
