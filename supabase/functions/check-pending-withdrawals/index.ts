@@ -23,9 +23,9 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const payChanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
+    const oneKhusaSecret = Deno.env.get("ONEKHUSA_SECRET_KEY");
 
-    if (!supabaseUrl || !supabaseKey || !payChanguSecret) {
+    if (!supabaseUrl || !supabaseKey || !oneKhusaSecret) {
       throw new Error("Missing required environment variables");
     }
 
@@ -89,12 +89,12 @@ serve(async (req: Request) => {
         }
 
         const response = await fetch(
-          `https://api.paychangu.com/mobile-money/payouts/status/${withdrawal.transaction_ref}`,
+          `https://api.onekhusa.com/mobile-money/payouts/status/${withdrawal.transaction_ref}`,
           {
             method: "GET",
             headers: {
               "Accept": "application/json",
-              "Authorization": `Bearer ${payChanguSecret}`,
+              "Authorization": `Bearer ${oneKhusaSecret}`,
             },
           }
         );

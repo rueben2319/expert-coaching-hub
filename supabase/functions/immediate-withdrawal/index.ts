@@ -20,15 +20,15 @@ const corsHeaders = {
 
 /** ---------- Helper Functions ---------- **/
 
-async function getOperatorId(payChanguSecret: string, phoneNumber: string) {
+async function getOperatorId(oneKhusaSecret: string, phoneNumber: string) {
   try {
     const cleanNumber = phoneNumber.replace(/^\+?265/, '');
 
-    const operatorsResponse = await fetch('https://api.paychangu.com/mobile-money/', {
+    const operatorsResponse = await fetch('https://api.onekhusa.com/mobile-money/', {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'Authorization': `Bearer ${payChanguSecret}`,
+        'Authorization': `Bearer ${oneKhusaSecret}`,
       },
     });
 
@@ -159,7 +159,7 @@ async function getWalletBalance(supabase: any, userId: string) {
 }
 
 async function executePayout(
-  payChanguSecret: string,
+  oneKhusaSecret: string,
   withdrawal: any,
   payment_details: any,
   operatorId: string,
@@ -184,12 +184,12 @@ async function executePayout(
   const redacted = { ...payload, mobile: payload.mobile.replace(/\d(?=\d{2}$)/g, "•") };
   console.log('Payout payload:', JSON.stringify(redacted, null, 2));
 
-  const resp = await fetch("https://api.paychangu.com/mobile-money/payouts/initialize", {
+  const resp = await fetch("https://api.onekhusa.com/mobile-money/payouts/initialize", {
     method: "POST",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${payChanguSecret}`,
+      "Authorization": `Bearer ${oneKhusaSecret}`,
     },
     body: JSON.stringify(payload),
   });
@@ -199,9 +199,9 @@ async function executePayout(
   const result = await resp.json();
   console.log('Payout API response:', JSON.stringify(result, null, 2));
 
-  // Handle different PayChangu response scenarios
+  // Handle different OneKhusa response scenarios
   if (!resp.ok) {
-    console.error("PayChangu API error:", resp.status, result);
+    console.error("OneKhusa API error:", resp.status, result);
     const errorMsg = result.message || result.error || "Payment provider unavailable";
     throw new Error(`Payout failed: ${errorMsg}`);
   }
@@ -213,9 +213,9 @@ async function executePayout(
     return result.data;
   }
   
-  // Handle pending status (PayChangu may process asynchronously)
+  // Handle pending status (OneKhusa may process asynchronously)
   if (txStatus === "pending" || txStatus === "processing") {
-    console.warn("PayChangu payout is pending:", result);
+    console.warn("OneKhusa payout is pending:", result);
     return {
       ...result.data,
       _pending: true,
@@ -229,7 +229,7 @@ async function executePayout(
   }
   
   // Unknown status - treat as error
-  console.error("Unexpected PayChangu response:", result);
+  console.error("Unexpected OneKhusa response:", result);
   throw new Error("Payout status unclear. Contact support if funds were deducted.");
 }
 
@@ -423,9 +423,9 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const payChanguSecret = Deno.env.get("PAYCHANGU_SECRET_KEY");
+    const oneKhusaSecret = Deno.env.get("ONEKHUSA_SECRET_KEY");
 
-    if (!supabaseUrl || !supabaseKey || !payChanguSecret)
+    if (!supabaseUrl || !supabaseKey || !oneKhusaSecret)
       throw new Error("Missing configuration");
 
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -563,20 +563,20 @@ serve(async (req: Request) => {
     }
 
     // Operator & payout
-    const operatorId = await getOperatorId(payChanguSecret, payment_details.mobile);
+    const operatorId = await getOperatorId(oneKhusaSecret, payment_details.mobile);
     let payoutData;
     let payoutError: Error | null = null;
     
     try {
       payoutData = await executePayout(
-        payChanguSecret,
+        oneKhusaSecret,
         withdrawalRequest,
         payment_details,
         operatorId,
         amountMWK
       );
       
-      // ✅ CRITICAL: Store transaction ID immediately after PayChangu response
+      // ✅ CRITICAL: Store transaction ID immediately after OneKhusa response
       // This prevents duplicate withdrawals and ensures we can track the transaction
       const transactionRef = payoutData.transaction?.trans_id || payoutData.transaction?.ref_id;
       if (transactionRef) {

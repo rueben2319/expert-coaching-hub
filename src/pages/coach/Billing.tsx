@@ -162,7 +162,7 @@ const CoachBilling = () => {
 
   const handleUpdatePaymentMethod = async () => {
     // For now, just show a message that this feature is coming soon
-    // In a full implementation, this would integrate with PayChangu's saved payment methods
+    // In a full implementation, this would integrate with OneKhusa's saved payment methods
     toast.info("Payment method update coming soon - please contact support");
   };
 
@@ -174,8 +174,21 @@ const CoachBilling = () => {
       return;
     }
     try {
-      const { checkout_url } = await createCoachSubscription(tierId, billingCycle);
-      window.location.href = checkout_url;
+      const result = await createCoachSubscription(tierId, billingCycle);
+      if (result?.checkout_url) {
+        window.location.href = result.checkout_url;
+        return;
+      }
+
+      if (result?.payment_channel === "onekhusa_tan" && result?.timed_account_number) {
+        toast.success(
+          `Use TAN ${result.timed_account_number} to complete subscription payment. Expires in ${result.expires_in_minutes ?? 15} minutes.`,
+          { duration: 10000 }
+        );
+        return;
+      }
+
+      toast.info("Subscription payment request created. Complete payment using OneKhusa instructions.");
     } catch (e: any) {
       console.error("Error creating subscription:", e);
       toast.error(e.message || "Failed to start checkout");
@@ -317,7 +330,7 @@ const CoachBilling = () => {
                   <div className="flex items-center justify-between p-4 border rounded-lg">
                     <div>
                       <div className="font-medium">Payment Method</div>
-                      <div className="text-sm text-muted-foreground">PayChangu</div>
+                      <div className="text-sm text-muted-foreground">OneKhusa</div>
                     </div>
                     <Button variant="outline" size="sm" onClick={handleUpdatePaymentMethod}>
                       Update
