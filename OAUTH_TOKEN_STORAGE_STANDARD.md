@@ -23,6 +23,17 @@ After analyzing the architecture and limitations, we've implemented a **hybrid s
 - Frontend periodically syncs from metadata → Updates local session cache
 - Manual refresh triggers immediate synchronization
 
+### Session Transport Preference (Security-First)
+
+- **Preferred (recommended):** Backend-managed, cookie-based sessions with `httpOnly`, `Secure`, and `SameSite` attributes.
+- **Fallback (temporary):** Browser-managed Supabase session persistence when cookie transport is unavailable.
+
+When fallback browser storage is enabled, treat it as higher risk and enforce all of the following:
+
+1. **Strict CSP** at the app edge (`default-src 'self'`, strict `script-src`, and `object-src 'none'` minimum).
+2. **Runtime sanitization checks** on untrusted content (for example, DOM sanitization before HTML rendering and strict input validation).
+3. **Short-lived sessions + monitoring** so suspicious token activity can be detected quickly.
+
 ## 🔧 Implementation Details
 
 ### Backend Token Management
@@ -260,7 +271,7 @@ interface Session {
    const { accessToken } = await getValidatedGoogleToken(supabase);
    ```
 
-2. **Don't store tokens in plain state or localStorage**
+2. **Don't store tokens in plain state or localStorage unless fallback mode is explicitly enabled**
    ```typescript
    // ❌ Don't do this
    localStorage.setItem('google_token', token);
@@ -417,6 +428,6 @@ console.log('Token status:', status);
 
 ---
 
-**Last Updated:** 2025-10-23  
+**Last Updated:** 2026-03-28  
 **Version:** 1.0  
 **Status:** ✅ Implemented and Ready

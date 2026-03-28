@@ -136,6 +136,8 @@ https://vbrxgaxjmpwusbbbzzgl.supabase.co/auth/v1/callback
 - Regularly rotate OAuth credentials
 - Monitor OAuth usage in Google Cloud Console
 - Set up proper scopes (principle of least privilege)
+- Prefer cookie-based Supabase session transport (`httpOnly`, `Secure`, `SameSite`) when supported by your backend/session layer
+- If browser storage fallback is required temporarily, treat it as higher risk and enforce strict CSP plus runtime sanitization/input validation checks
 
 ## Support
 
