@@ -29,15 +29,19 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const onekhusaSecretKey = Deno.env.get("ONEKHUSA_SECRET_KEY");
+    const appBaseUrl = Deno.env.get("APP_BASE_URL") || "http://localhost:8080";
 
     const isDebug = (Deno.env.get("APP_ENV") ?? "production") !== "production";
     if (isDebug) {
       console.log("Environment variables:");
       console.log("- SUPABASE_URL:", supabaseUrl ? "SET" : "NOT SET");
       console.log("- SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "SET" : "NOT SET");
+      console.log("- ONEKHUSA_SECRET_KEY:", onekhusaSecretKey ? "SET" : "NOT SET");
+      console.log("- APP_BASE_URL:", appBaseUrl);
     }
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !supabaseKey || !onekhusaSecretKey) {
       throw new Error("Missing required environment variables");
     }
 
@@ -178,29 +182,67 @@ serve(async (req: Request) => {
     // Log high-value transactions
     await logHighValueTransaction('purchase', user.id, totalCredits, amount);
 
-    // Call OneKhusa Request-To-Pay API
+    // Call OneKhusa API
     if (isDebug) {
       console.log("About to call OneKhusa API for credit purchase");
-      console.log("Request-to-pay payload (redacted):", JSON.stringify({
-        merchantAccountNumber: "<configured>",
-        transactionAmount: amount,
-        transactionDescription: `Purchase ${creditPackage.name} (${totalCredits} credits)`,
-        referenceNumber: tx_ref,
-      }, null, 2));
+      console.log("Payment payload (redacted):", JSON.stringify({
+          amount: String(amount),
+          currency: "MWK",
+          email: "<redacted>",
+          first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
+          last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
+          callback_url: `${supabaseUrl}/functions/v1/onekhusa-webhook`,
+          return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
+          tx_ref: tx_ref,
+          customization: {
+            title: `Purchase ${creditPackage.name}`,
+            description: `${totalCredits} credits`,
+          },
+          meta: {
+            mode: "credit_purchase",
+            user_id: "<redacted>",
+            package_id: package_id,
+            credits_amount: totalCredits,
+          },
+        }, null, 2));
     }
 
-    const { resp: onekhusaResponse, data: onekhusaData } = await requestToPay({
-      amount,
-      referenceNumber: tx_ref,
-      description: `Purchase ${creditPackage.name} (${totalCredits} credits)`,
-      idempotencyKey: tx_ref,
+    const onekhusaResponse = await fetch("https://api.onekhusa.com/payment", {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${onekhusaSecretKey!}`,
+      },
+      body: JSON.stringify({
+        amount: String(amount),
+        currency: "MWK",
+        email: user.email,
+        first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
+        last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
+        callback_url: `${supabaseUrl}/functions/v1/onekhusa-webhook`,
+        return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
+        tx_ref: tx_ref,
+        customization: {
+          title: `Purchase ${creditPackage.name}`,
+          description: `${totalCredits} credits`,
+        },
+        meta: {
+          mode: "credit_purchase",
+          user_id: user.id,
+          package_id: package_id,
+          credits_amount: totalCredits,
+        },
+      }),
     });
+
+    const onekhusaData = await onekhusaResponse.json();
     if (isDebug) {
       console.log("OneKhusa response status:", onekhusaResponse.status);
       console.log("OneKhusa response data:", JSON.stringify(onekhusaData, null, 2));
     }
 
-    if (!onekhusaResponse.ok || !onekhusaData?.timedAccountNumber) {
+    if (!onekhusaResponse.ok || onekhusaData.status !== "success") {
       // Update transaction to failed
       await supabase
         .from("transactions")
@@ -218,11 +260,7 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
-        checkout_url: null,
-        payment_channel: "onekhusa_tan",
-        timed_account_number: onekhusaData.timedAccountNumber,
-        expires_at: onekhusaData.expiryDate,
-        expires_in_minutes: onekhusaData.expiryInMinutes,
+        checkout_url: onekhusaData.data.checkout_url,
         transaction_ref: tx_ref,
         credits_amount: totalCredits,
         package_name: creditPackage.name,
