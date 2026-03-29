@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
 import { logger } from "@/lib/logger";
+import { AuthSignOutOptions, useAuthService } from "@/hooks/useAuthService";
 
 type UserRole = "client" | "coach" | "admin";
 
@@ -11,7 +11,7 @@ interface AuthContextType {
   session: Session | null;
   role: UserRole | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  signOut: (options?: AuthSignOutOptions) => Promise<void>;
   refreshRole: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -64,9 +64,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
   const initializationAttempted = useRef(false);
   const authListenerReady = useRef(false);
+
+  const { signOut } = useAuthService({
+    onLocalAuthStateCleared: () => {
+      setUser(null);
+      setSession(null);
+      setRole(null);
+    },
+  });
 
   const fetchUserProfile = async (userId: string) => {
     try {
@@ -218,22 +225,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   }, [applyAuthSession, loading]);
-
-  const signOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-      setRole(null);
-      navigate("/");
-    } catch (error) {
-      logger.error('Error signing out:', error);
-      setUser(null);
-      setSession(null);
-      setRole(null);
-      navigate("/");
-    }
-  };
 
   const refreshUser = useCallback(async () => {
     try {
