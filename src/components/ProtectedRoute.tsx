@@ -1,6 +1,8 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { resolvePostAuthRoute } from "@/lib/authRouting";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -8,11 +10,11 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { user, role, loading, status } = useAuth();
+  const { user, role, authStatus, refreshUser } = useAuth();
   const location = useLocation();
   const intendedPath = location.pathname + location.search;
 
-  if (loading || status === "idle" || status === "bootstrapping") {
+  if (authStatus === "idle" || authStatus === "bootstrapping") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center">
@@ -27,16 +29,38 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  if (!user || status === "unauthenticated") {
+  if (authStatus === "unauthenticated" || !user) {
     return <Navigate to="/auth" replace state={{ from: intendedPath }} />;
   }
 
-  if (!role || status === "role_missing") {
-    return <Navigate to="/auth" replace state={{ from: intendedPath }} />;
+  if (authStatus === "role_missing" || !role) {
+    return <Navigate to="/auth/onboarding" replace state={{ from: intendedPath }} />;
   }
 
-  if (status === "error") {
-    return <Navigate to="/auth" replace state={{ from: intendedPath }} />;
+  if (authStatus === "error") {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background p-4">
+        <div className="w-full max-w-md rounded-lg border border-destructive/40 bg-card p-6 text-card-foreground shadow-sm">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            <h1 className="text-xl font-semibold">Authentication error</h1>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            We couldn&apos;t verify your session because of an unexpected error.
+          </p>
+          <div className="mt-5 flex gap-3">
+            <Button onClick={() => void refreshUser()} variant="outline">
+              Retry session sync
+            </Button>
+            <Button asChild>
+              <a href="/auth" aria-label="Go to sign in">
+                Go to sign in
+              </a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (allowedRoles && !allowedRoles.includes(role)) {

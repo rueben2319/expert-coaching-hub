@@ -18,6 +18,7 @@ interface AuthContextType {
   session: Session | null;
   role: UserRole | null;
   loading: boolean;
+  authStatus: AuthStatus;
   status: AuthStatus;
   signOut: (options?: AuthSignOutOptions) => Promise<void>;
   refreshRole: () => Promise<void>;
@@ -211,7 +212,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loading = status === "idle" || status === "bootstrapping";
 
   return (
-    <AuthContext.Provider value={{ user, session, role, loading, status, signOut, refreshRole, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, session, role, loading, authStatus: status, status, signOut, refreshRole, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -225,6 +228,7 @@ export function useAuth() {
       session: null,
       role: null,
       loading: true,
+      authStatus: "idle" as AuthStatus,
       status: "idle" as AuthStatus,
       signOut: async () => {},
       refreshRole: async () => {},
