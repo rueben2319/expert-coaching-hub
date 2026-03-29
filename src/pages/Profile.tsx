@@ -47,7 +47,6 @@ export default function Profile() {
   const { user, role, signOut, refreshUser } = useAuth();
   const { packages, packagesLoading, purchaseCredits } = useCredits();
   const queryClient = useQueryClient();
-  const [isDeleting, setIsDeleting] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
@@ -165,10 +164,10 @@ export default function Profile() {
 
   // Delete account mutation
   const deleteAccountMutation = useMutation({
-    mutationFn: async () => {
-      // Note: In a real app, you'd want to handle this server-side
-      // This is a simplified version for demonstration
-      const { error } = await supabase.auth.admin.deleteUser(user?.id || "");
+    mutationFn: async (confirmationText: string) => {
+      const { error } = await supabase.functions.invoke("delete-account", {
+        body: { confirmationText },
+      });
       if (error) throw error;
     },
     onSuccess: async () => {
@@ -184,7 +183,6 @@ export default function Profile() {
         description: error.message || "Failed to delete account.",
         variant: "destructive",
       });
-      setIsDeleting(false);
     },
   });
 
@@ -265,8 +263,18 @@ export default function Profile() {
   }, [profile?.avatar_url, queryClient, refreshUser, user?.id, user?.user_metadata, user?.user_metadata?.avatar_url]);
 
   const handleDeleteAccount = async () => {
-    setIsDeleting(true);
-    deleteAccountMutation.mutate();
+    const confirmationText = window.prompt("Type DELETE MY ACCOUNT to confirm account deletion.")?.trim();
+
+    if (confirmationText !== "DELETE MY ACCOUNT") {
+      toast({
+        title: "Deletion canceled",
+        description: "You must enter the exact confirmation text to delete your account.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    deleteAccountMutation.mutate(confirmationText);
   };
 
   const uploadAvatar = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -726,7 +734,7 @@ export default function Profile() {
                     </div>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={isDeleting}>
+                        <Button variant="destructive" disabled={deleteAccountMutation.isPending}>
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete Account
                         </Button>
@@ -743,6 +751,9 @@ export default function Profile() {
                               <li>Your learning progress (if you're a student)</li>
                               <li>All associated content and data</li>
                             </ul>
+                            <p className="mt-3">
+                              You will be asked to type <strong>DELETE MY ACCOUNT</strong> to confirm.
+                            </p>
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -751,7 +762,7 @@ export default function Profile() {
                             onClick={handleDeleteAccount}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           >
-                            Yes, delete my account
+                            {deleteAccountMutation.isPending ? "Deleting..." : "Yes, delete my account"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
