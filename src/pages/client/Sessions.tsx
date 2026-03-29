@@ -64,7 +64,7 @@ export default function ClientSessions() {
       const { data, error } = await supabase
         .from('meetings')
         .select('*')
-        .contains('attendees', [user.email])
+        .filter('attendees', 'cs', JSON.stringify([user.email]))
         .order('start_time', { ascending: true });
 
       if (error) {
