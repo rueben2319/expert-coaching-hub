@@ -13,6 +13,7 @@ import { Users, BookOpen, Mail, Loader2 } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { resolvePostAuthRoute } from "@/lib/authRouting";
+import { useAuthService } from "@/hooks/useAuthService";
 
 const passwordStrength = (pwd: string) => {
   if (!pwd) return 0;
@@ -45,6 +46,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, role, status, signOut } = useAuth();
+  const { finalizeAuthAndResolveRole } = useAuthService();
   const oauthFinalizeAttempted = useRef(false);
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -68,17 +70,18 @@ export default function Auth() {
         return;
       }
 
-      const nextPath = resolvePostAuthRoute(data.role, data.redirect_to);
+      const finalized = await finalizeAuthAndResolveRole({ intendedPath: data.redirect_to });
+      const nextPath = resolvePostAuthRoute(finalized.role ?? data.role, finalized.intendedPath);
       window.history.replaceState({}, document.title, "/auth");
       navigate(nextPath, { replace: true });
-    } catch (error: any) {
-      toast.error(error?.message || "OAuth sign-in could not be completed.");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "OAuth sign-in could not be completed.");
       oauthFinalizeAttempted.current = false;
     } finally {
       setOauthCallbackPending(false);
       setOauthLoading(false);
     }
-  }, [navigate, signOut, user]);
+  }, [finalizeAuthAndResolveRole, navigate, signOut, user]);
 
   // Real-time validation with debouncing
   const validateField = useCallback((fieldName: string, value: string) => {
@@ -221,18 +224,11 @@ export default function Auth() {
 
         if (setSessionError) throw setSessionError;
 
-        await supabase.auth.refreshSession();
-        const { data: updatedSession } = await supabase.auth.getSession();
-        const sessionRole = updatedSession.session?.user?.app_metadata?.role;
-        navigate(
-          resolvePostAuthRoute(
-            sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin"
-              ? sessionRole
-              : null,
-            (location.state as { from?: string } | null)?.from
-          )
-        );
+        const finalized = await finalizeAuthAndResolveRole({
+          intendedPath: (location.state as { from?: string } | null)?.from,
+        });
 
+        navigate(resolvePostAuthRoute(finalized.role, finalized.intendedPath));
         toast.success("Welcome back!");
       } else {
         const newErrors: Record<string, string> = {};
@@ -295,7 +291,7 @@ export default function Auth() {
         if (error) throw error;
 
         if (signUpData.user && signUpData.session?.access_token) {
-          const { error: roleAssignError } = await supabase.functions.invoke("upsert-user-role", {
+          const { data: roleData, error: roleAssignError } = await supabase.functions.invoke<{ role?: string }>("upsert-user-role", {
             body: {
               user_id: signUpData.user.id,
               role: selectedRole,
@@ -309,12 +305,17 @@ export default function Auth() {
           if (roleAssignError) {
             throw new Error(roleAssignError.message || "Failed to complete role onboarding.");
           }
+
+          const finalized = await finalizeAuthAndResolveRole();
+          if (!finalized.role && roleData?.role !== selectedRole) {
+            throw new Error("Unable to resolve account role after sign up.");
+          }
         }
 
         toast.success("Account created successfully!");
       }
-    } catch (error: any) {
-      toast.error(error.message || "An error occurred");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "An error occurred");
     } finally {
       setLoading(false);
     }
@@ -345,8 +346,8 @@ export default function Auth() {
 
       if (error) throw error;
       if (data?.url) window.location.href = data.url;
-    } catch (error: any) {
-      toast.error(error.message || "Google sign-in failed");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Google sign-in failed");
       setOauthLoading(false);
     }
   };

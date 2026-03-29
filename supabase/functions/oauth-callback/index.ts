@@ -89,8 +89,14 @@ serve(async (req: Request) => {
       role: result.role,
     };
 
+    const nextUserMetadata = {
+      ...(user.user_metadata ?? {}),
+      role: result.role,
+    };
+
     const { error: updateError } = await adminClient.auth.admin.updateUserById(user.id, {
       app_metadata: nextAppMetadata,
+      user_metadata: nextUserMetadata,
     });
 
     if (updateError) {

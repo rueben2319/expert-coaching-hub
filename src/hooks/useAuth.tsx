@@ -2,9 +2,8 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
-import { AuthSignOutOptions, useAuthService } from "@/hooks/useAuthService";
+import { AuthSignOutOptions, resolveRoleWithClaimsAndDb, useAuthService, UserRole } from "@/hooks/useAuthService";
 
-export type UserRole = "client" | "coach" | "admin";
 export type AuthStatus =
   | "idle"
   | "bootstrapping"
@@ -26,39 +25,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const isUserRole = (value: unknown): value is UserRole =>
-  value === "client" || value === "coach" || value === "admin";
-
-const readRoleFromAccessToken = (session: Session | null): UserRole | null => {
-  const accessToken = session?.access_token;
-  if (!accessToken) return null;
-
-  try {
-    const payload = accessToken.split(".")[1];
-    if (!payload) return null;
-
-    const normalizedBase64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    if (typeof window === "undefined") return null;
-    const decodedPayload = window.atob(normalizedBase64);
-    const parsed = JSON.parse(decodedPayload) as { role?: unknown };
-
-    return isUserRole(parsed.role) ? parsed.role : null;
-  } catch {
-    return null;
-  }
-};
-
-const getRoleFromSession = (session: Session | null): UserRole | null => {
-  const roleFromSignedClaim = readRoleFromAccessToken(session);
-  const role = roleFromSignedClaim ?? (session?.user?.app_metadata?.role as string | undefined) ?? null;
-
-  if (isUserRole(role)) {
-    return role;
-  }
-
-  return null;
-};
 
 const getStatusFromSession = (session: Session | null, nextRole: UserRole | null): AuthStatus => {
   if (!session?.user) {
@@ -122,14 +88,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyAuthSession = useCallback(
-    async (nextSession: Session | null, updateToken: number) => {
+    async (nextSession: Session | null, updateToken: number, trigger: "bootstrap" | "auth_state_change" = "auth_state_change") => {
       if (updateToken < latestUpdateToken.current) {
         return;
       }
 
       latestUpdateToken.current = updateToken;
       const nextUser = nextSession?.user ?? null;
-      const nextRole = getRoleFromSession(nextSession);
+      const nextRole = nextUser
+        ? await resolveRoleWithClaimsAndDb(nextSession, {
+            source: "useAuth",
+            trigger,
+          })
+        : null;
+
+      if (nextUser && !nextRole) {
+        logger.warn("auth.role_mismatch.client_vs_db", {
+          user_id: nextUser.id,
+          claim_role: nextSession?.user?.app_metadata?.role ?? null,
+          db_role: null,
+          resolved_role: nextRole,
+          trigger,
+        });
+      }
 
       setSession(nextSession);
       setUser(nextUser);
@@ -153,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!isMounted) return;
 
         const updateToken = latestUpdateToken.current + 1;
-        await applyAuthSession(currentSession ?? null, updateToken);
+        await applyAuthSession(currentSession ?? null, updateToken, "auth_state_change");
       }
     );
 
@@ -170,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const updateToken = latestUpdateToken.current + 1;
-        await applyAuthSession(data.session ?? null, updateToken);
+        await applyAuthSession(data.session ?? null, updateToken, "bootstrap");
       } catch (error) {
         logger.error("Unhandled bootstrap error:", error);
         if (isMounted) {
@@ -203,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const updateToken = latestUpdateToken.current + 1;
-      await applyAuthSession(data.session ?? null, updateToken);
+      await applyAuthSession(data.session ?? null, updateToken, "auth_state_change");
     } catch (error) {
       logger.error("Error refreshing user:", error);
     }
