@@ -4,27 +4,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
 import { AuthSignOutOptions, useAuthService } from "@/hooks/useAuthService";
 
-type UserRole = "client" | "coach" | "admin";
+export type UserRole = "client" | "coach" | "admin";
+export type AuthStatus =
+  | "idle"
+  | "bootstrapping"
+  | "authenticated"
+  | "unauthenticated"
+  | "role_missing"
+  | "error";
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   role: UserRole | null;
   loading: boolean;
+  status: AuthStatus;
   signOut: (options?: AuthSignOutOptions) => Promise<void>;
   refreshRole: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>({
-  user: null,
-  session: null,
-  role: null,
-  loading: true,
-  signOut: async () => {},
-  refreshRole: async () => {},
-  refreshUser: async () => {},
-});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const isUserRole = (value: unknown): value is UserRole =>
   value === "client" || value === "coach" || value === "admin";
@@ -59,23 +59,36 @@ const getRoleFromSession = (session: Session | null): UserRole | null => {
   return null;
 };
 
+const getStatusFromSession = (session: Session | null, nextRole: UserRole | null): AuthStatus => {
+  if (!session?.user) {
+    return "unauthenticated";
+  }
+
+  if (!nextRole) {
+    return "role_missing";
+  }
+
+  return "authenticated";
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
-  const [loading, setLoading] = useState(true);
-  const initializationAttempted = useRef(false);
-  const authListenerReady = useRef(false);
+  const [status, setStatus] = useState<AuthStatus>("idle");
+  const latestUpdateToken = useRef(0);
 
   const { signOut } = useAuthService({
     onLocalAuthStateCleared: () => {
+      latestUpdateToken.current += 1;
       setUser(null);
       setSession(null);
       setRole(null);
+      setStatus("unauthenticated");
     },
   });
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchUserProfile = useCallback(async (userId: string, updateToken: number) => {
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -88,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (data) {
+      if (data && updateToken === latestUpdateToken.current) {
         setUser((currentUser) => {
           if (!currentUser) return currentUser;
 
@@ -105,146 +118,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       logger.error("Exception while fetching profile data:", err);
     }
-  };
+  }, []);
 
   const applyAuthSession = useCallback(
-    async (nextSession: Session | null) => {
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      setRole(getRoleFromSession(nextSession));
+    async (nextSession: Session | null, updateToken: number) => {
+      if (updateToken < latestUpdateToken.current) {
+        return;
+      }
 
-      if (nextSession?.user) {
-        try {
-          await fetchUserProfile(nextSession.user.id);
-          logger.log('Profile fetched successfully');
-        } catch (err) {
-          logger.error('Error fetching user profile in listener:', err);
-        }
+      latestUpdateToken.current = updateToken;
+      const nextUser = nextSession?.user ?? null;
+      const nextRole = getRoleFromSession(nextSession);
+
+      setSession(nextSession);
+      setUser(nextUser);
+      setRole(nextRole);
+      setStatus(getStatusFromSession(nextSession, nextRole));
+
+      if (nextUser) {
+        await fetchUserProfile(nextUser.id, updateToken);
       }
     },
-    []
+    [fetchUserProfile]
   );
 
-  const refreshRole = useCallback(async () => {
-    const { data, error } = await supabase.auth.refreshSession();
-    if (error) {
-      logger.error("Failed to refresh signed claims:", error);
-      setRole(null);
-      return;
-    }
-    await applyAuthSession(data.session ?? null);
-  }, [applyAuthSession]);
-
   useEffect(() => {
-    if (initializationAttempted.current) {
-      logger.log('Auth initialization already attempted, skipping...');
-      return;
-    }
-
-    initializationAttempted.current = true;
     let isMounted = true;
 
-    logger.log('Setting up auth state listener...');
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        logger.log('Auth state changed:', event);
-        authListenerReady.current = true;
+    setStatus("bootstrapping");
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, currentSession) => {
         if (!isMounted) return;
 
-        let sessionToApply = currentSession ?? null;
-        if (event === "USER_UPDATED") {
-          const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
-          if (refreshError) {
-            logger.error("Failed to refresh claims after USER_UPDATED event:", refreshError);
-          } else {
-            sessionToApply = refreshedData.session ?? sessionToApply;
-          }
-        }
-        await applyAuthSession(sessionToApply);
-
-        logger.log('Auth listener fired, clearing loading state');
-        setLoading(false);
+        const updateToken = latestUpdateToken.current + 1;
+        await applyAuthSession(currentSession ?? null, updateToken);
       }
     );
 
     const initializeAuth = async () => {
-      logger.log('Starting auth initialization...');
-
-      const maxWaitTimeout = setTimeout(() => {
-        if (isMounted && loading) {
-          logger.info('Max wait timeout reached, clearing loading state');
-          setLoading(false);
-        }
-      }, 12000);
-
       try {
-        const getSessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('getSession timeout')), 5000);
-        });
+        const { data, error } = await supabase.auth.getSession();
 
-        logger.log('Attempting to get session...');
-        const result = await Promise.race([getSessionPromise, timeoutPromise]);
+        if (!isMounted) return;
 
-        clearTimeout(maxWaitTimeout);
-
-        if (!isMounted) {
-          logger.log('Component unmounted during session fetch');
+        if (error) {
+          logger.error("Error during getSession bootstrap:", error);
+          setStatus("error");
           return;
         }
 
-        const currentSession = result?.data?.session || null;
-        logger.log('Session retrieved successfully:', currentSession ? `User: ${currentSession.user.email}` : 'No session');
-
-        if (!authListenerReady.current) {
-          await applyAuthSession(currentSession);
+        const updateToken = latestUpdateToken.current + 1;
+        await applyAuthSession(data.session ?? null, updateToken);
+      } catch (error) {
+        logger.error("Unhandled bootstrap error:", error);
+        if (isMounted) {
+          setStatus("error");
         }
-
-        if (isMounted && !authListenerReady.current) {
-          logger.log('Initialization complete via getSession, clearing loading state');
-          setLoading(false);
-        }
-      } catch (error: any) {
-        clearTimeout(maxWaitTimeout);
-        if (error?.message === 'getSession timeout') {
-          logger.log('getSession timed out, relying on auth listener');
-        } else {
-          logger.error('Error during getSession:', error);
-        }
-
-        logger.log('Relying on auth listener to set state');
       }
     };
 
-    initializeAuth();
+    void initializeAuth();
 
     return () => {
-      logger.log('Cleaning up auth provider');
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [applyAuthSession, loading]);
+  }, [applyAuthSession]);
 
-  const refreshUser = useCallback(async () => {
-    try {
-      const [{ data }, { data: sessionData }] = await Promise.all([
-        supabase.auth.getUser(),
-        supabase.auth.getSession(),
-      ]);
-
-      if (data.user) {
-        setUser(data.user);
-        setRole(getRoleFromSession(sessionData.session ?? null));
-        await fetchUserProfile(data.user.id);
-      }
-    } catch (error) {
-      logger.error('Error refreshing user:', error);
+  const refreshRole = useCallback(async () => {
+    const { error } = await supabase.auth.refreshSession();
+    if (error) {
+      logger.error("Failed to refresh signed claims:", error);
     }
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        logger.error("Error refreshing user session:", error);
+        return;
+      }
+
+      const updateToken = latestUpdateToken.current + 1;
+      await applyAuthSession(data.session ?? null, updateToken);
+    } catch (error) {
+      logger.error("Error refreshing user:", error);
+    }
+  }, [applyAuthSession]);
+
+  const loading = status === "idle" || status === "bootstrapping";
+
   return (
-    <AuthContext.Provider value={{ user, session, role, loading, signOut, refreshRole, refreshUser }}>
+    <AuthContext.Provider value={{ user, session, role, loading, status, signOut, refreshRole, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -258,6 +225,7 @@ export function useAuth() {
       session: null,
       role: null,
       loading: true,
+      status: "idle" as AuthStatus,
       signOut: async () => {},
       refreshRole: async () => {},
       refreshUser: async () => {},
