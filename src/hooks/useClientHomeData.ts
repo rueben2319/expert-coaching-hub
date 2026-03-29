@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useEnrollmentProgress, type CourseModuleRef } from "@/hooks/useEnrollmentProgress";
 
 export type Enrollment = {
   id: string;
@@ -11,21 +12,12 @@ export type Enrollment = {
     title: string;
     description: string | null;
     status: string;
-    course_modules?: {
-      id: string;
-      lessons?: { id: string }[];
-    }[];
+    course_modules?: CourseModuleRef[];
   };
 };
 
 export type EnrichedEnrollment = Enrollment & {
   calculatedProgress: number;
-};
-
-export type LessonProgress = {
-  id: string;
-  lesson_id: string;
-  is_completed: boolean;
 };
 
 export function useClientHomeData(userId?: string) {
@@ -58,64 +50,20 @@ export function useClientHomeData(userId?: string) {
   });
 
   const {
-    data: lessonProgress,
+    lessonProgress,
+    calculateEnrollmentProgress,
     isLoading: lessonProgressLoading,
     error: lessonProgressError,
-  } = useQuery<LessonProgress[]>({
-    queryKey: ["client-dashboard-lesson-progress", userId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("lesson_progress")
-        .select("id, lesson_id, is_completed")
-        .eq("user_id", userId!);
-
-      if (error) throw error;
-      return data as LessonProgress[];
-    },
-    enabled: !!userId,
-  });
-
-  const lessonProgressById = useMemo(() => {
-    const map = new Map<string, boolean>();
-    lessonProgress?.forEach((progress) => {
-      map.set(progress.lesson_id, progress.is_completed);
-    });
-    return map;
-  }, [lessonProgress]);
+  } = useEnrollmentProgress(userId);
 
   const enrichedEnrollments = useMemo((): EnrichedEnrollment[] => {
-    if (!enrollments || !lessonProgress) return [];
+    if (!enrollments) return [];
 
-    return enrollments.map((enrollment) => {
-      const modules = enrollment.courses?.course_modules || [];
-
-      if (modules.length === 0) {
-        return {
-          ...enrollment,
-          calculatedProgress: 0,
-        };
-      }
-
-      const moduleProgresses = modules.map((module) => {
-        const lessonCount = module.lessons?.length || 0;
-
-        if (lessonCount === 0) return 0;
-
-        const completedLessons =
-          module.lessons?.filter((lesson) => lessonProgressById.get(lesson.id)).length || 0;
-
-        return (completedLessons / lessonCount) * 100;
-      });
-
-      const averageProgress =
-        moduleProgresses.reduce((sum, progress) => sum + progress, 0) / modules.length;
-
-      return {
-        ...enrollment,
-        calculatedProgress: Math.round(averageProgress),
-      };
-    });
-  }, [enrollments, lessonProgress, lessonProgressById]);
+    return enrollments.map((enrollment) => ({
+      ...enrollment,
+      calculatedProgress: calculateEnrollmentProgress(enrollment),
+    }));
+  }, [enrollments, calculateEnrollmentProgress]);
 
   const upNext = useMemo((): EnrichedEnrollment | undefined => {
     return enrichedEnrollments
