@@ -59,7 +59,7 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
 
   // Track interaction time
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
 
     if (hasInteracted && !isCompleted && !document.hidden) {
       if (!interactionStartTime.current) {
@@ -133,7 +133,7 @@ export function InteractiveContent({ content, contentId, onComplete }: Interacti
 
   // Periodic progress saving (every 10 seconds while interacting)
   useEffect(() => {
-    let saveInterval: NodeJS.Timeout;
+    let saveInterval: ReturnType<typeof setInterval>;
 
     if (hasInteracted && !isCompleted && user) {
       saveInterval = setInterval(async () => {

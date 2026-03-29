@@ -79,7 +79,7 @@ export default function ClientMeetingRoom() {
   
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   // Auto-scroll to latest message
