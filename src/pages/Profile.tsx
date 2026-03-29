@@ -12,7 +12,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { User, Lock, Trash2, Save, Camera, BookOpen, Plus, Users, BarChart3, Calendar, Video, Wallet, CreditCard, Shield, Upload, Loader2 as LoaderIcon } from "lucide-react";
 import { getProfileSidebarSections } from "@/config/navigation";
-import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -47,7 +46,6 @@ type PasswordFormData = z.infer<typeof passwordSchema>;
 export default function Profile() {
   const { user, role, signOut, refreshUser } = useAuth();
   const { packages, packagesLoading, purchaseCredits } = useCredits();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -114,7 +112,7 @@ export default function Profile() {
         if (emailError) throw emailError;
       }
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Profile updated",
         description: "Your profile has been updated successfully.",
@@ -147,17 +145,14 @@ export default function Profile() {
         p_reason: "password_changed",
       });
       if (rotationError) throw rotationError;
-
-      const { error: globalSignOutError } = await supabase.auth.signOut({ scope: "global" });
-      if (globalSignOutError) throw globalSignOutError;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Password changed",
         description: "Password updated. Please sign in again on this and other devices.",
       });
       passwordForm.reset();
-      navigate("/auth", { replace: true });
+      await signOut({ scope: "global", redirectTo: "/auth", replace: true });
     },
     onError: (error: any) => {
       toast({
@@ -176,13 +171,12 @@ export default function Profile() {
       const { error } = await supabase.auth.admin.deleteUser(user?.id || "");
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Account deleted",
         description: "Your account has been deleted successfully.",
       });
-      signOut();
-      navigate("/");
+      await signOut({ redirectTo: "/", replace: true });
     },
     onError: (error: any) => {
       toast({
