@@ -68,8 +68,13 @@ serve(async (req: Request) => {
       console.warn('Failed to write role change audit:', e);
     }
 
-    // Optionally update auth metadata
-    await supabase.auth.admin.updateUserById(user_id, { user_metadata: { role } }).catch(() => {});
+    // Keep signed auth claims aligned for downstream session/JWT role checks
+    await supabase.auth.admin
+      .updateUserById(user_id, {
+        user_metadata: { role },
+        app_metadata: { role },
+      })
+      .catch(() => {});
 
     return new Response(JSON.stringify({ success: true, data }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
