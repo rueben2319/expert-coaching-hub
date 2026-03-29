@@ -44,6 +44,13 @@ export default function Auth() {
   const { user, role, refreshRole, signOut } = useAuth();
   const hasInitialized = useRef(false);
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const getSessionRoleFromClaim = useCallback(async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const sessionRole = sessionData.session?.user?.app_metadata?.role;
+    return sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin"
+      ? sessionRole
+      : null;
+  }, []);
 
   // Real-time validation with debouncing
   const validateField = useCallback((fieldName: string, value: string) => {
@@ -165,10 +172,7 @@ export default function Auth() {
         // Check if component is still mounted
         if (!isMounted) return;
 
-        const { data: sessionData } = await supabase.auth.getSession();
-        const sessionRole =
-          sessionData.session?.user?.app_metadata?.role ??
-          sessionData.session?.user?.user_metadata?.role;
+        const sessionRole = await getSessionRoleFromClaim();
 
         if (!isMounted) return;
 
@@ -177,10 +181,7 @@ export default function Auth() {
           return;
         }
 
-        // No role found after refresh -> only show role dialog for OAuth flows (flag + provider detection)
-        const oauthFlag = (() => {
-          try { return localStorage.getItem('oauth_provider'); } catch (e) { return null; }
-        })();
+        // No role found after refresh -> only show role dialog for OAuth flows
 
         const { data: { session } } = await supabase.auth.getSession();
         const sessionProvider = (session as any)?.provider || null;
@@ -198,11 +199,10 @@ export default function Auth() {
           (hasProviderToken && !!identityProvider)
         );
 
-        const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
+        const shouldShowRoleDialog = isFromOAuth || isOAuthUserDetected;
 
         if (shouldShowRoleDialog) {
           setShowRoleDialog(true);
-          try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
         } else {
           // default for users with no role is client
           if (isMounted) {
@@ -220,7 +220,7 @@ export default function Auth() {
     return () => {
       isMounted = false;
     };
-  }, [user, navigate, refreshRole]);  // refreshRole is stable (memoized with useCallback) so safe to include
+  }, [user, navigate, refreshRole, getSessionRoleFromClaim, isFromOAuth]);  // refreshRole is stable (memoized with useCallback) so safe to include
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -355,10 +355,6 @@ export default function Auth() {
 
   const startOAuthWithRole = async () => {
     try {
-      // Store provider flag to detect OAuth callback flow
-      try { 
-        localStorage.setItem('oauth_provider', 'google'); 
-      } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
       setOauthLoading(true);
       
@@ -396,7 +392,6 @@ export default function Auth() {
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
       setIsFromOAuth(false);
-      try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
     }
   };
 
@@ -422,7 +417,8 @@ export default function Auth() {
       await refreshRole();
       setShowRoleDialog(false);
       toast.success("Role selected successfully");
-      navigate(`/${pendingRole}`);
+      const refreshedRole = await getSessionRoleFromClaim();
+      navigate(`/${refreshedRole ?? pendingRole}`);
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Failed to set role");

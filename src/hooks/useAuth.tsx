@@ -26,13 +26,33 @@ const AuthContext = createContext<AuthContextType | undefined>({
   refreshUser: async () => {},
 });
 
-const getRoleFromSession = (session: Session | null): UserRole | null => {
-  const role =
-    (session?.user?.app_metadata?.role as string | undefined) ??
-    (session?.user?.user_metadata?.role as string | undefined) ??
-    null;
+const isUserRole = (value: unknown): value is UserRole =>
+  value === "client" || value === "coach" || value === "admin";
 
-  if (role === "client" || role === "coach" || role === "admin") {
+const readRoleFromAccessToken = (session: Session | null): UserRole | null => {
+  const accessToken = session?.access_token;
+  if (!accessToken) return null;
+
+  try {
+    const payload = accessToken.split(".")[1];
+    if (!payload) return null;
+
+    const normalizedBase64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    if (typeof window === "undefined") return null;
+    const decodedPayload = window.atob(normalizedBase64);
+    const parsed = JSON.parse(decodedPayload) as { role?: unknown };
+
+    return isUserRole(parsed.role) ? parsed.role : null;
+  } catch {
+    return null;
+  }
+};
+
+const getRoleFromSession = (session: Session | null): UserRole | null => {
+  const roleFromSignedClaim = readRoleFromAccessToken(session);
+  const role = roleFromSignedClaim ?? (session?.user?.app_metadata?.role as string | undefined) ?? null;
+
+  if (isUserRole(role)) {
     return role;
   }
 
@@ -80,15 +100,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const applyAuthSession = useCallback(
+    async (nextSession: Session | null) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      setRole(getRoleFromSession(nextSession));
+
+      if (nextSession?.user) {
+        try {
+          await fetchUserProfile(nextSession.user.id);
+          logger.log('Profile fetched successfully');
+        } catch (err) {
+          logger.error('Error fetching user profile in listener:', err);
+        }
+      }
+    },
+    []
+  );
+
   const refreshRole = useCallback(async () => {
-    const { data, error } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.refreshSession();
     if (error) {
-      logger.error("Failed to refresh auth session:", error);
+      logger.error("Failed to refresh signed claims:", error);
       setRole(null);
       return;
     }
-    setRole(getRoleFromSession(data.session ?? null));
-  }, []);
+    await applyAuthSession(data.session ?? null);
+  }, [applyAuthSession]);
 
   useEffect(() => {
     if (initializationAttempted.current) {
@@ -107,18 +145,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!isMounted) return;
 
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        setRole(getRoleFromSession(currentSession ?? null));
-
-        if (currentSession?.user) {
-          try {
-            await fetchUserProfile(currentSession.user.id);
-            logger.log('Profile fetched successfully');
-          } catch (err) {
-            logger.error('Error fetching user profile in listener:', err);
+        let sessionToApply = currentSession ?? null;
+        if (event === "USER_UPDATED") {
+          const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            logger.error("Failed to refresh claims after USER_UPDATED event:", refreshError);
+          } else {
+            sessionToApply = refreshedData.session ?? sessionToApply;
           }
         }
+        await applyAuthSession(sessionToApply);
 
         logger.log('Auth listener fired, clearing loading state');
         setLoading(false);
@@ -155,15 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logger.log('Session retrieved successfully:', currentSession ? `User: ${currentSession.user.email}` : 'No session');
 
         if (!authListenerReady.current) {
-          setSession(currentSession);
-          setUser(currentSession?.user ?? null);
-          setRole(getRoleFromSession(currentSession));
-
-          if (currentSession?.user) {
-            await fetchUserProfile(currentSession.user.id).catch(err => {
-              logger.error('Error fetching user profile:', err);
-            });
-          }
+          await applyAuthSession(currentSession);
         }
 
         if (isMounted && !authListenerReady.current) {
@@ -189,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [applyAuthSession, loading]);
 
   const signOut = async () => {
     try {
