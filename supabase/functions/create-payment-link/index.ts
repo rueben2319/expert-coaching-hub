@@ -2,7 +2,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
-import { requestToPay } from "../_shared/onekhusa.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -36,6 +35,9 @@ interface OneKhusaResponse {
     checkout_url?: string;
     data?: { tx_ref?: string; status?: string; amount?: number; currency?: string };
   };
+  timedAccountNumber?: string;
+  expiryDate?: string;
+  expiryInMinutes?: number;
 }
 
 function redact(value: unknown): unknown {
@@ -114,7 +116,13 @@ serve(async (req: Request) => {
 
     console.log("User authenticated:", user.id);
 
-    // Fetch user role server-side to enforce permissions
+    // Fetch user profile and role server-side to enforce permissions
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", user.id)
+      .single();
+    
     const { data: roleRow, error: roleErr } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
     const userRole = roleRow?.role || null;
     console.log("User role:", userRole);
@@ -164,6 +172,7 @@ serve(async (req: Request) => {
 
     const tx_ref = crypto.randomUUID();
     let amount = body.amount ?? 0;
+    const currency = body.currency || defaultCurrency;
     const orderId: string | null = null;
     let subscriptionId: string | null = null;
     let description = "";
