@@ -255,6 +255,20 @@ export default function Auth() {
 
         if (setSessionError) throw setSessionError;
 
+        // Refresh session to get updated role claims
+        await supabase.auth.refreshSession();
+        
+        // Get the updated session with role claims
+        const { data: updatedSession } = await supabase.auth.getSession();
+        const sessionRole = updatedSession.session?.user?.app_metadata?.role;
+        
+        // Navigate immediately based on role
+        if (sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin") {
+          navigate(`/${sessionRole}`);
+        } else {
+          navigate('/client');
+        }
+
         toast.success("Welcome back!");
       } else {
         const newErrors: Record<string, string> = {};
