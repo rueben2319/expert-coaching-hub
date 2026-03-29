@@ -184,7 +184,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
   // Track watch time - only counts when video is actively playing
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     if (isPlaying && !isCompleted) {
       // Start tracking from current moment
@@ -236,7 +236,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
   // Periodic progress saving (every 10 seconds while playing)
   useEffect(() => {
-    let saveInterval: NodeJS.Timeout;
+    let saveInterval: ReturnType<typeof setInterval>;
 
     if (isPlaying && !isCompleted && user) {
       saveInterval = setInterval(() => {
@@ -254,7 +254,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   // Fallback heartbeat tracking for embedded videos (YouTube/Vimeo)
   // This ensures tracking continues even if postMessage events don't fire
   useEffect(() => {
-    let heartbeatInterval: NodeJS.Timeout;
+    let heartbeatInterval: ReturnType<typeof setInterval>;
 
     if (!isDirectVideo && hasStarted && !isCompleted) {
       heartbeatInterval = setInterval(() => {

@@ -43,7 +43,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const { user, role, refreshRole, signOut } = useAuth();
   const hasInitialized = useRef(false);
-  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Real-time validation with debouncing
   const validateField = useCallback((fieldName: string, value: string) => {
