@@ -165,17 +165,15 @@ export default function Auth() {
         // Check if component is still mounted
         if (!isMounted) return;
 
-        // Re-check role directly from DB to avoid stale closure values
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .single();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const sessionRole =
+          sessionData.session?.user?.app_metadata?.role ??
+          sessionData.session?.user?.user_metadata?.role;
 
         if (!isMounted) return;
 
-        if (roleData && roleData.role) {
-          navigate(`/${roleData.role}`);
+        if (sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin") {
+          navigate(`/${sessionRole}`);
           return;
         }
 
@@ -203,32 +201,8 @@ export default function Auth() {
         const shouldShowRoleDialog = oauthFlag === 'google' || isOAuthUserDetected;
 
         if (shouldShowRoleDialog) {
-          // If we have a preselected role saved from before redirect, assign it automatically
-          let desiredRole: string | null = null;
-          try { desiredRole = localStorage.getItem('oauth_role'); } catch (e) { desiredRole = null; }
-
-          if (desiredRole === 'client' || desiredRole === 'coach') {
-            try {
-              // upsert user role via secure RPC (self-only)
-              const { data: rpcData, error: rpcError } = await supabase
-                .rpc('upsert_own_role', { p_role: desiredRole });
-              if (rpcError || (rpcData && typeof rpcData === 'object' && 'success' in rpcData && rpcData.success === false)) {
-                const errorMsg = rpcError?.message || (rpcData && typeof rpcData === 'object' && 'error' in rpcData && typeof rpcData.error === 'string' ? rpcData.error : 'Failed to set role');
-                throw new Error(errorMsg);
-              }
-
-              await refreshRole();
-              try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
-              navigate(`/${desiredRole}`);
-            } catch (e) {
-              console.error('Failed to auto-assign OAuth role:', e);
-              // fallback to showing the dialog
-              setShowRoleDialog(true);
-            }
-          } else {
-            setShowRoleDialog(true);
-            try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
-          }
+          setShowRoleDialog(true);
+          try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
         } else {
           // default for users with no role is client
           if (isMounted) {
@@ -339,14 +313,11 @@ export default function Auth() {
     }
   };
 
-  const startOAuthWithRole = async (roleChoice?: "client" | "coach") => {
+  const startOAuthWithRole = async () => {
     try {
-      // Store provider flag; role is optional (only for new signups)
+      // Store provider flag to detect OAuth callback flow
       try { 
         localStorage.setItem('oauth_provider', 'google'); 
-        if (roleChoice) {
-          localStorage.setItem('oauth_role', roleChoice); 
-        }
       } catch (e) { /* ignore */ }
       setIsFromOAuth(true);
       setOauthLoading(true);
@@ -385,7 +356,7 @@ export default function Auth() {
       toast.error(error.message || "Google sign-in failed");
       setOauthLoading(false);
       setIsFromOAuth(false);
-      try { localStorage.removeItem('oauth_provider'); localStorage.removeItem('oauth_role'); } catch (e) { /* ignore */ }
+      try { localStorage.removeItem('oauth_provider'); } catch (e) { /* ignore */ }
     }
   };
 
@@ -407,6 +378,7 @@ export default function Auth() {
         throw new Error(errorMsg);
       }
 
+      await supabase.auth.refreshSession();
       await refreshRole();
       setShowRoleDialog(false);
       toast.success("Role selected successfully");
