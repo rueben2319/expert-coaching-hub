@@ -2,6 +2,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+// @ts-ignore: Deno imports work at runtime
+import { z } from "https://esm.sh/zod@3.23.8";
 
 // Minimal Deno type declaration for environment access
 declare const Deno: {
@@ -15,6 +17,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const RequestSchema = z.object({
+  withdrawalId: z.string().uuid(),
+});
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -36,23 +42,82 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { withdrawalId } = await req.json();
-
-    if (!withdrawalId) {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
-        JSON.stringify({ error: "Withdrawal ID is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Get the withdrawal
-    const { data: withdrawal, error } = await supabase
+    const token = authHeader.replace("Bearer ", "").trim();
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const { data: roleRow } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const isAdmin = roleRow?.role === "admin";
+
+    const requestBody = await req.json();
+    const parseResult = RequestSchema.safeParse(requestBody);
+    if (!parseResult.success) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid request body",
+          details: parseResult.error.flatten(),
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const { withdrawalId } = parseResult.data;
+
+    const withdrawalQuery = supabase
       .from("withdrawal_requests")
       .select("*")
-      .eq("id", withdrawalId)
-      .single();
+      .eq("id", withdrawalId);
 
-    if (error || !withdrawal) {
+    if (!isAdmin) {
+      withdrawalQuery.eq("coach_id", user.id);
+    }
+
+    const { data: withdrawal, error } = await withdrawalQuery.maybeSingle();
+
+    if (error) {
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch withdrawal" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!withdrawal) {
+      const { data: exists, error: existsError } = await supabase
+        .from("withdrawal_requests")
+        .select("id")
+        .eq("id", withdrawalId)
+        .maybeSingle();
+
+      if (existsError) {
+        return new Response(
+          JSON.stringify({ error: "Failed to fetch withdrawal" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      if (exists) {
+        return new Response(
+          JSON.stringify({ error: "Forbidden" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       return new Response(
         JSON.stringify({ error: "Withdrawal not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
