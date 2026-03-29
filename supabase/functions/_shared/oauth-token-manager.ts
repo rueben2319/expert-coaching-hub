@@ -18,6 +18,13 @@ export interface TokenInfo {
   scope?: string;
 }
 
+export interface RefreshTokenResult {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  scope?: string;
+}
+
 export interface TokenValidationResult {
   isValid: boolean;
   token: string;
@@ -129,6 +136,14 @@ export class OAuthTokenManager {
    * Refreshes Google OAuth access token using refresh token
    */
   static async refreshAccessToken(refreshToken: string): Promise<string> {
+    const result = await this.refreshAccessTokenDetailed(refreshToken);
+    return result.accessToken;
+  }
+
+  /**
+   * Refreshes Google OAuth access token and returns full refresh payload metadata.
+   */
+  static async refreshAccessTokenDetailed(refreshToken: string): Promise<RefreshTokenResult> {
     const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
     const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
     
@@ -161,7 +176,12 @@ export class OAuthTokenManager {
       throw new Error('No access token in refresh response');
     }
 
-    return tokenData.access_token;
+    return {
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresIn: tokenData.expires_in,
+      scope: tokenData.scope,
+    };
   }
 
   /**

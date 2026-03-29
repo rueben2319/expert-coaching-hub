@@ -17,6 +17,8 @@ export interface TokenSyncResult {
   error?: string;
 }
 
+let refreshInFlight: Promise<TokenSyncResult> | null = null;
+
 /**
  * Check if tokens need to be refreshed based on backend token status.
  */
@@ -38,10 +40,9 @@ export async function checkTokenRefreshNeeded(): Promise<boolean> {
     }
 
     const statusData = await statusResponse.json();
-    const expiresInMinutes = statusData?.tokenStatus?.expiresInMinutes;
-
-    if (typeof expiresInMinutes === 'number' && expiresInMinutes <= 10) {
-      logger.log('Token expires soon according to backend status, refresh recommended');
+    const shouldRefreshNow = statusData?.refreshPolicy?.shouldRefreshNow;
+    if (shouldRefreshNow === true) {
+      logger.log('Backend requested token refresh');
       return true;
     }
 
@@ -204,6 +205,12 @@ export async function manualTokenSync(): Promise<TokenSyncResult> {
  * Force an immediate token refresh and sync
  */
 export async function forceTokenRefresh(): Promise<TokenSyncResult> {
+  if (refreshInFlight) {
+    logger.log('Token refresh already in flight, joining existing request');
+    return refreshInFlight;
+  }
+
+  refreshInFlight = (async (): Promise<TokenSyncResult> => {
   try {
     logger.log('Forcing token refresh...');
 
@@ -222,6 +229,7 @@ export async function forceTokenRefresh(): Promise<TokenSyncResult> {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
+        'x-refresh-request-id': `${Date.now()}-${crypto.randomUUID()}`,
       },
     });
 
@@ -250,7 +258,12 @@ export async function forceTokenRefresh(): Promise<TokenSyncResult> {
       tokenRefreshed: false,
       error: error.message,
     };
+  } finally {
+    refreshInFlight = null;
   }
+})();
+
+  return refreshInFlight;
 }
 
 /**

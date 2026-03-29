@@ -18,6 +18,25 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'OPTIONS, GET',
 };
 
+const MIN_REFRESH_INTERVAL_SECONDS = 60;
+const REFRESH_THRESHOLD_MIN = 6;
+const REFRESH_THRESHOLD_MAX = 12;
+
+const stableHash = (value: string): number => {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return Math.abs(hash >>> 0);
+};
+
+const jitteredThresholdMinutesForUser = (userId: string): number => {
+  const spread = REFRESH_THRESHOLD_MAX - REFRESH_THRESHOLD_MIN;
+  if (spread <= 0) return REFRESH_THRESHOLD_MIN;
+  return REFRESH_THRESHOLD_MIN + (stableHash(userId) % (spread + 1));
+};
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -66,7 +85,7 @@ serve(async (req: Request) => {
       isValid: dbStatus.hasTokens && !dbStatus.isExpired,
       expiresInMinutes: dbStatus.expiresAt
         ? Math.max(Math.floor((dbStatus.expiresAt.getTime() - Date.now()) / 60000), 0)
-        : 0,
+              : 0,
     };
 
     // If session has provider token, validate and backfill encrypted storage when needed.
@@ -132,10 +151,28 @@ serve(async (req: Request) => {
       }
     }
 
+    const thresholdMinutes = jitteredThresholdMinutesForUser(user.id);
+    const nowMs = Date.now();
+    const elapsedSinceLastRefreshSeconds = tokenStatus.lastRefresh
+      ? Math.floor((nowMs - tokenStatus.lastRefresh.getTime()) / 1000)
+      : Number.MAX_SAFE_INTEGER;
+    const minIntervalSatisfied = elapsedSinceLastRefreshSeconds >= MIN_REFRESH_INTERVAL_SECONDS;
+    const shouldRefresh = tokenStatus.hasTokens
+      && tokenStatus.isValid
+      && tokenStatus.expiresInMinutes <= thresholdMinutes
+      && minIntervalSatisfied;
+
     return new Response(
       JSON.stringify({
         success: true,
         tokenStatus,
+        refreshPolicy: {
+          authority: 'backend',
+          shouldRefreshNow: shouldRefresh,
+          thresholdMinutes,
+          minRefreshIntervalSeconds: MIN_REFRESH_INTERVAL_SECONDS,
+          elapsedSinceLastRefreshSeconds,
+        },
         user_id: user.id,
         timestamp: new Date().toISOString(),
       }),
