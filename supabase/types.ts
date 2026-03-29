@@ -174,7 +174,7 @@ export type Database = {
           payment_method?: string | null
           renewal_date?: string | null
           start_date?: string
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           tier_id: string
           transaction_id?: string | null
           updated_at?: string
@@ -190,7 +190,7 @@ export type Database = {
           payment_method?: string | null
           renewal_date?: string | null
           start_date?: string
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           tier_id?: string
           transaction_id?: string | null
           updated_at?: string
@@ -222,7 +222,7 @@ export type Database = {
           interaction_data?: Json | null
           is_completed?: boolean
           updated_at?: string
-          user_id: string
+          user_id?: string
         }
         Update: {
           content_id?: string
@@ -239,13 +239,6 @@ export type Database = {
             columns: ["content_id"]
             isOneToOne: false
             referencedRelation: "lesson_content"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "content_interactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
         ]
@@ -270,13 +263,13 @@ export type Database = {
           id?: string
           issued_at?: string | null
           template_version?: string | null
-          user_id: string
+          user_id?: string
           verification_status?: string | null
         }
         Update: {
           certificate_id?: string
           certificate_url?: string | null
-          course_id?: string
+          course_id: string
           expires_at?: string | null
           id?: string
           issued_at?: string | null
@@ -290,13 +283,6 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "course_certificates_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
         ]
@@ -354,7 +340,6 @@ export type Database = {
           embedding: string | null
           id: string
           metadata: Json | null
-          updated_at: string | null
         }
         Insert: {
           content_text: string
@@ -363,7 +348,6 @@ export type Database = {
           embedding?: string | null
           id?: string
           metadata?: Json | null
-          updated_at?: string | null
         }
         Update: {
           content_text?: string
@@ -372,7 +356,6 @@ export type Database = {
           embedding?: string | null
           id?: string
           metadata?: Json | null
-          updated_at?: string | null
         }
         Relationships: [
           {
@@ -606,10 +589,10 @@ export type Database = {
           description: string | null
           id: string
           is_free: boolean | null
-          level: Database["public"]["Enums"]["course_level"] | null
+          level: string | null
           price_credits: number | null
           review_count: number | null
-          status: Database["public"]["Enums"]["course_status"]
+          status: string
           tag: string | null
           thumbnail_url: string | null
           title: string
@@ -623,10 +606,10 @@ export type Database = {
           description?: string | null
           id?: string
           is_free?: boolean | null
-          level?: Database["public"]["Enums"]["course_level"] | null
+          level?: string | null
           price_credits?: number | null
           review_count?: number | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           tag?: string | null
           thumbnail_url?: string | null
           title: string
@@ -640,10 +623,10 @@ export type Database = {
           description?: string | null
           id?: string
           is_free?: boolean | null
-          level?: Database["public"]["Enums"]["course_level"] | null
+          level?: string | null
           price_credits?: number | null
           review_count?: number | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           tag?: string | null
           thumbnail_url?: string | null
           title?: string
@@ -676,7 +659,7 @@ export type Database = {
           reference_id?: string | null
           reference_type?: string | null
           transaction_type: string
-          user_id: string
+          user_id?: string
         }
         Update: {
           amount?: number
@@ -691,15 +674,7 @@ export type Database = {
           transaction_type?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "credit_transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "auth.users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       credit_wallets: {
         Row: {
@@ -714,7 +689,7 @@ export type Database = {
           created_at?: string
           id?: string
           updated_at?: string
-          user_id: string
+          user_id?: string
         }
         Update: {
           balance?: number
@@ -723,15 +698,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "credit_wallets_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "auth.users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       invoices: {
         Row: {
@@ -758,9 +725,9 @@ export type Database = {
           invoice_number?: string
           order_id?: string | null
           payment_method?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           subscription_id?: string | null
-          user_id: string
+          user_id?: string
         }
         Update: {
           amount?: number
@@ -772,19 +739,11 @@ export type Database = {
           invoice_number?: string
           order_id?: string | null
           payment_method?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           subscription_id?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "invoices_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "auth.users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       lesson_completion_attempts: {
         Row: {
@@ -813,14 +772,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lesson_completion_attempts_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "lesson_completion_attempts_lesson_id_fkey"
+            columns: ["lesson_id"]
             isOneToOne: false
-            referencedRelation: "auth.users"
+            referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "lesson_completion_attempts_lesson_id_fkey"
+            foreignKeyName: "fk_lesson_completion_lesson"
             columns: ["lesson_id"]
             isOneToOne: false
             referencedRelation: "lessons"
@@ -1030,8 +989,8 @@ export type Database = {
           id?: string
           metadata?: Json | null
           order_index?: number
-          question: string
-          set_id: string
+          question?: string
+          set_id?: string
           tags?: string[] | null
           updated_at?: string
         }
@@ -1090,7 +1049,7 @@ export type Database = {
           prompt_context?: Json | null
           raw_output?: Json | null
           skill_focus?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           target_audience?: string | null
           updated_at?: string
         }
@@ -1106,7 +1065,7 @@ export type Database = {
           prompt_context?: Json | null
           raw_output?: Json | null
           skill_focus?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           target_audience?: string | null
           updated_at?: string
         }
@@ -1293,7 +1252,7 @@ export type Database = {
           gateway_response?: Json | null
           id?: string
           order_id?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           subscription_id?: string | null
           transaction_mode?: string
           transaction_ref: string
@@ -1309,7 +1268,7 @@ export type Database = {
           gateway_response?: Json | null
           id?: string
           order_id?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           subscription_id?: string | null
           transaction_mode?: string
           transaction_ref?: string
@@ -1357,7 +1316,7 @@ export type Database = {
           id?: string
           payload?: Json | null
           processed_at?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           tx_ref: string
         }
         Update: {
@@ -1366,7 +1325,7 @@ export type Database = {
           id?: string
           payload?: Json | null
           processed_at?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           tx_ref?: string
         }
         Relationships: []
@@ -1400,7 +1359,7 @@ export type Database = {
           payout_ref?: string | null
           payout_trans_id?: string | null
           processed_at?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           transaction_ref?: string | null
           updated_at?: string
         }
@@ -1416,7 +1375,7 @@ export type Database = {
           payout_ref?: string | null
           payout_trans_id?: string | null
           processed_at?: string | null
-          status?: Database["public"]["Enums"]["course_status"]
+          status?: string
           transaction_ref?: string | null
           updated_at?: string
         }
@@ -1515,7 +1474,7 @@ export type Database = {
           id?: string
           meet_link?: string | null
           start_time: string
-          status?: Database["public"]["Enums"]["course_status"] | null
+          status?: string | null
           summary: string
           updated_at?: string | null
           user_id: string
@@ -1530,7 +1489,7 @@ export type Database = {
           id?: string
           meet_link?: string | null
           start_time?: string
-          status?: Database["public"]["Enums"]["course_status"] | null
+          status?: string | null
           summary?: string
           updated_at?: string | null
           user_id?: string
