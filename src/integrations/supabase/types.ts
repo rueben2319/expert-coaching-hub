@@ -978,6 +978,36 @@ export type Database = {
           },
         ]
       }
+      login_attempts: {
+        Row: {
+          created_at: string
+          email: string
+          failure_reason: string | null
+          id: string
+          ip: unknown
+          success: boolean
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          failure_reason?: string | null
+          id?: string
+          ip?: unknown
+          success: boolean
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          failure_reason?: string | null
+          id?: string
+          ip?: unknown
+          success?: boolean
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       meeting_analytics: {
         Row: {
           created_at: string | null
@@ -1100,6 +1130,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      oauth_tokens: {
+        Row: {
+          access_token_encrypted: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          last_refresh_request_id: string | null
+          provider: string
+          refresh_count: number
+          refresh_token_encrypted: string | null
+          refresh_token_fingerprint: string | null
+          refresh_token_rotated_at: string | null
+          scope: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_encrypted?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_refresh_request_id?: string | null
+          provider: string
+          refresh_count?: number
+          refresh_token_encrypted?: string | null
+          refresh_token_fingerprint?: string | null
+          refresh_token_rotated_at?: string | null
+          scope?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_encrypted?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_refresh_request_id?: string | null
+          provider?: string
+          refresh_count?: number
+          refresh_token_encrypted?: string | null
+          refresh_token_fingerprint?: string | null
+          refresh_token_rotated_at?: string | null
+          scope?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       practice_exercise_items: {
         Row: {
@@ -1527,6 +1605,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_session_versions: {
+        Row: {
+          rotated_at: string
+          rotated_reason: string | null
+          user_id: string
+          version: number
+        }
+        Insert: {
+          rotated_at?: string
+          rotated_reason?: string | null
+          user_id: string
+          version?: number
+        }
+        Update: {
+          rotated_at?: string
+          rotated_reason?: string | null
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       webhook_processing_log: {
         Row: {
           created_at: string
@@ -1750,6 +1849,15 @@ export type Database = {
       }
     }
     Functions: {
+      admin_process_withdrawal: {
+        Args: {
+          p_action: string
+          p_admin_id: string
+          p_admin_notes?: string
+          p_withdrawal_id: string
+        }
+        Returns: Json
+      }
       begin_transaction: { Args: never; Returns: string }
       calculate_course_progress: {
         Args: { _course_id: string; _user_id: string }
@@ -1771,6 +1879,23 @@ export type Database = {
       cleanup_expired_recommendations: { Args: never; Returns: undefined }
       cleanup_orphaned_files: { Args: never; Returns: undefined }
       commit_transaction: { Args: never; Returns: string }
+      enroll_with_credits_atomic: {
+        Args: { p_course_id: string; p_user_id: string }
+        Returns: Json
+      }
+      finalize_oauth_callback: {
+        Args: {
+          p_avatar_url?: string
+          p_email: string
+          p_full_name?: string
+          p_user_id: string
+        }
+        Returns: {
+          onboarding_state: string
+          redirect_to: string
+          role: Database["public"]["Enums"]["app_role"]
+        }[]
+      }
       fn_practice_item_coach_access: {
         Args: {
           item: Database["public"]["Tables"]["practice_exercise_items"]["Row"]
@@ -1801,6 +1926,15 @@ export type Database = {
         Args: { p_min_age_days?: number; p_user_id: string }
         Returns: number
       }
+      get_auth_user_security_by_email: {
+        Args: { p_email: string }
+        Returns: {
+          bcrypt_cost: number
+          email: string
+          email_verified: boolean
+          user_id: string
+        }[]
+      }
       get_available_withdrawable_credits: {
         Args: { credit_aging_days_param: number; user_id_param: string }
         Returns: number
@@ -1829,6 +1963,10 @@ export type Database = {
         Returns: boolean
       }
       increment_file_download: { Args: { file_id: string }; Returns: undefined }
+      is_login_locked: {
+        Args: { p_email: string; p_ip: unknown }
+        Returns: boolean
+      }
       is_subscription_expiring_soon: {
         Args: { _days_ahead?: number; _subscription_id: string }
         Returns: boolean
@@ -1861,6 +1999,16 @@ export type Database = {
           withdrawal_id: string
         }
         Returns: Json
+      }
+      record_login_attempt: {
+        Args: {
+          p_email: string
+          p_failure_reason?: string
+          p_ip?: unknown
+          p_success: boolean
+          p_user_id?: string
+        }
+        Returns: undefined
       }
       refund_failed_withdrawal: {
         Args: {
