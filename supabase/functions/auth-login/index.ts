@@ -20,6 +20,9 @@ type LoginBody = {
   password?: string;
 };
 
+const AUTH_FAILURE_STATUS = 401;
+const AUTH_FAILURE_BODY = { error: "Invalid login credentials" };
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -102,8 +105,8 @@ serve(async (req: Request) => {
         p_failure_reason: "hash_policy_below_min_cost",
       });
 
-      return new Response(JSON.stringify({ error: "Account password policy must be upgraded. Please reset your password." }), {
-        status: 403,
+      return new Response(JSON.stringify(AUTH_FAILURE_BODY), {
+        status: AUTH_FAILURE_STATUS,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -117,8 +120,8 @@ serve(async (req: Request) => {
         p_failure_reason: "email_unverified",
       });
 
-      return new Response(JSON.stringify({ error: "Please verify your email before signing in." }), {
-        status: 403,
+      return new Response(JSON.stringify(AUTH_FAILURE_BODY), {
+        status: AUTH_FAILURE_STATUS,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -137,8 +140,8 @@ serve(async (req: Request) => {
         p_failure_reason: "invalid_credentials",
       });
 
-      return new Response(JSON.stringify({ error: "Invalid login credentials" }), {
-        status: 401,
+      return new Response(JSON.stringify(AUTH_FAILURE_BODY), {
+        status: AUTH_FAILURE_STATUS,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
