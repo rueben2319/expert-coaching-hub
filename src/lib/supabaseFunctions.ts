@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/lib/logger';
 
 // Supabase anon key for function calls - using environment variable
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -50,13 +51,13 @@ export async function cancelGoogleMeet(params: CancelGoogleMeetParams): Promise<
     });
 
     if (error) {
-      console.error('Edge function error:', error);
+      logger.error('Edge function error:', error);
       throw new Error(`Function call failed: ${error.message}`);
     }
 
     return data as CancelGoogleMeetResponse;
   } catch (error) {
-    console.error('Error canceling Google Meet:', error);
+    logger.error('Error canceling Google Meet:', error);
     throw error;
   }
 }
@@ -77,11 +78,11 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
     }
 
     if (!session?.access_token) {
-      console.log('No session found, current session state:', session);
+      logger.warn('No session found, current session state:', session);
       throw new Error('No valid session found. Please sign in again.');
     }
 
-    console.log('Session token present:', !!session.access_token);
+    logger.log('Session token present:', !!session.access_token);
 
     // Use direct fetch instead of supabase.functions.invoke
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -89,8 +90,8 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
       throw new Error('VITE_SUPABASE_URL environment variable is not set');
     }
     const functionUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
-    console.log(`Calling function '${functionName}' with params:`, JSON.stringify(params, null, 2));
-    console.log(`Function URL: ${functionUrl}`);
+    logger.log(`Calling function '${functionName}' with params:`, JSON.stringify(params, null, 2));
+    logger.log(`Function URL: ${functionUrl}`);
 
     const response = await fetch(functionUrl, {
       method: 'POST',
@@ -102,7 +103,7 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
       body: JSON.stringify(params),
     });
 
-    console.log('Request headers:', {
+    logger.log('Request headers:', {
       'Authorization': `Bearer ${session.access_token ? 'present' : 'missing'}`,
       'Content-Type': 'application/json',
       'apikey': SUPABASE_ANON_KEY ? 'present' : 'missing',
@@ -110,14 +111,14 @@ export async function callSupabaseFunction<TParams = any, TResponse = any>(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Function call failed with status ${response.status}:`, errorText);
+      logger.error(`Function call failed with status ${response.status}:`, errorText);
       throw new Error(`Function call failed: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     return data as TResponse;
   } catch (error) {
-    console.error(`Error calling function '${functionName}':`, error);
+    logger.error(`Error calling function '${functionName}':`, error);
     throw error;
   }
 }
@@ -131,10 +132,10 @@ export const useCancelGoogleMeetMutation = () => {
   return {
     mutationFn: cancelGoogleMeet,
     onError: (error: Error) => {
-      console.error('Failed to cancel Google Meet:', error.message);
+      logger.error('Failed to cancel Google Meet:', error.message);
     },
     onSuccess: (data: CancelGoogleMeetResponse) => {
-      console.log('Google Meet cancelled successfully:', data);
+      logger.log('Google Meet cancelled successfully:', data);
     },
   };
 };
@@ -145,13 +146,13 @@ export const handleCancelMeeting = async (meetingId: string, calendarEventId: st
     const result = await cancelGoogleMeet({ meetingId, calendarEventId });
     
     if (result.success) {
-      console.log('Meeting cancelled successfully');
+      logger.log('Meeting cancelled successfully');
       return result;
     } else {
       throw new Error(result.message || 'Failed to cancel meeting');
     }
   } catch (error) {
-    console.error('Error in handleCancelMeeting:', error);
+    logger.error('Error in handleCancelMeeting:', error);
     throw error;
   }
 };
