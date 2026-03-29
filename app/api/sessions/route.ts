@@ -1,21 +1,25 @@
-import { auth } from "@/auth";
+import { requireAuthenticatedUser } from "@/app/api/_lib/guards";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authResult = await requireAuthenticatedUser();
+  if ("errorResponse" in authResult) return authResult.errorResponse;
 
   const sessions = await prisma.meeting.findMany({
     where: {
-      attendees: {
-        some: {
-          userId: session.user.id,
+      OR: [
+        {
+          userId: authResult.id,
         },
-      },
+        {
+          attendees: {
+            some: {
+              userId: authResult.id,
+            },
+          },
+        },
+      ],
     },
     select: {
       id: true,
@@ -24,6 +28,7 @@ export async function GET() {
       endTime: true,
       status: true,
       meetLink: true,
+      userId: true,
       course: {
         select: {
           id: true,
