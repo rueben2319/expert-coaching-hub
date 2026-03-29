@@ -10,6 +10,7 @@ const corsHeaders = {
 interface RoleRequest {
   user_id: string;
   role: 'client' | 'coach' | 'admin';
+  reason?: string;
 }
 
 serve(async (req: Request) => {
@@ -26,28 +27,48 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    if (!authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const jwt = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userErr } = await supabase.auth.getUser(jwt);
     if (userErr || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Ensure caller is admin
+    // Load caller role for authorization decisions
     const { data: roleRow, error: roleErr } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle();
-    const callerRole = roleRow?.role || null;
-    if (callerRole !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (roleErr) {
+      return new Response(JSON.stringify({ error: 'Failed to resolve caller role' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    const callerRole = roleRow?.role || null;
 
     // Parse body
     const body: RoleRequest = await req.json();
-    const { user_id, role } = body;
+    const { user_id, role, reason } = body;
     if (!user_id || !role) {
       return new Response(JSON.stringify({ error: 'Missing user_id or role' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (!['client', 'coach', 'admin'].includes(role)) {
       return new Response(JSON.stringify({ error: 'Invalid role' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Authorization model:
+    // - Admins can assign roles for any user (including admin)
+    // - Non-admin users can only set their own role to client/coach (never admin)
+    const isSelfUpdate = user_id === user.id;
+    const isAdminCaller = callerRole === 'admin';
+    if (!isAdminCaller) {
+      if (!isSelfUpdate) {
+        return new Response(JSON.stringify({ error: 'Forbidden: only admins can change another user role' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (role === 'admin') {
+        return new Response(JSON.stringify({ error: 'Forbidden: cannot self-assign admin role' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // Upsert role (user can only have one role, so we update on user_id conflict)
@@ -66,6 +87,23 @@ serve(async (req: Request) => {
       await supabase.from('user_role_changes').insert({ user_id, role, changed_by: user.id });
     } catch (e) {
       console.warn('Failed to write role change audit:', e);
+    }
+
+    // Security audit event
+    try {
+      await supabase.from('security_audit_log').insert({
+        event_type: isAdminCaller ? 'admin_role_upsert' : 'self_role_upsert',
+        user_id: user.id,
+        target_user_id: user_id,
+        details: {
+          assigned_role: role,
+          caller_role: callerRole,
+          is_self_update: isSelfUpdate,
+          reason: reason ?? null,
+        },
+      });
+    } catch (e) {
+      console.warn('Failed to write security audit log:', e);
     }
 
     // Keep signed auth claims aligned for downstream session/JWT role checks

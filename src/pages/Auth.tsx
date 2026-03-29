@@ -317,7 +317,7 @@ export default function Auth() {
           return;
         }
 
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
           options: {
@@ -329,6 +329,24 @@ export default function Auth() {
         });
 
         if (error) throw error;
+
+        if (signUpData.user && signUpData.session?.access_token) {
+          const { error: roleAssignError } = await supabase.functions.invoke("upsert-user-role", {
+            body: {
+              user_id: signUpData.user.id,
+              role: selectedRole,
+              reason: "signup_onboarding",
+            },
+            headers: {
+              Authorization: `Bearer ${signUpData.session.access_token}`,
+            },
+          });
+
+          if (roleAssignError) {
+            throw new Error(roleAssignError.message || "Failed to complete role onboarding.");
+          }
+        }
+
         toast.success("Account created successfully!");
       }
     } catch (error: any) {
