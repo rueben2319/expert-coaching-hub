@@ -1,4 +1,4 @@
-import { auth } from "@/auth";
+import { requireAuthenticatedUser, requireOwnership } from "@/app/api/_lib/guards";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -8,21 +8,12 @@ type RouteContext = {
   };
 };
 
-async function requireSessionUserId() {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    return { errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  }
-
-  return { userId: session.user.id };
-}
-
-async function authorizeMeetingAccess(sessionId: string, userId: string) {
+async function authorizeSessionAccess(sessionId: string, userId: string) {
   const meeting = await prisma.meeting.findUnique({
     where: { id: sessionId },
     select: {
       id: true,
+      userId: true,
       attendees: {
         select: {
           userId: true,
@@ -35,9 +26,10 @@ async function authorizeMeetingAccess(sessionId: string, userId: string) {
     return { errorResponse: NextResponse.json({ error: "Session not found" }, { status: 404 }) };
   }
 
-  const canAccess = meeting.attendees.some((attendee) => attendee.userId === userId);
+  const ownsMeeting = meeting.userId === userId;
+  const isAttendee = meeting.attendees.some((attendee) => attendee.userId === userId);
 
-  if (!canAccess) {
+  if (!ownsMeeting && !isAttendee) {
     return {
       errorResponse: NextResponse.json(
         { error: "Forbidden: session does not belong to the authenticated user" },
@@ -46,14 +38,14 @@ async function authorizeMeetingAccess(sessionId: string, userId: string) {
     };
   }
 
-  return { meetingId: meeting.id };
+  return { meetingId: meeting.id, meetingOwnerId: meeting.userId };
 }
 
 export async function GET(_request: Request, { params }: RouteContext) {
-  const authResult = await requireSessionUserId();
+  const authResult = await requireAuthenticatedUser();
   if ("errorResponse" in authResult) return authResult.errorResponse;
 
-  const accessResult = await authorizeMeetingAccess(params.sessionId, authResult.userId);
+  const accessResult = await authorizeSessionAccess(params.sessionId, authResult.id);
   if ("errorResponse" in accessResult) return accessResult.errorResponse;
 
   const session = await prisma.meeting.findUnique({
@@ -65,6 +57,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       endTime: true,
       status: true,
       meetLink: true,
+      userId: true,
       course: {
         select: {
           id: true,
@@ -78,11 +71,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteContext) {
-  const authResult = await requireSessionUserId();
+  const authResult = await requireAuthenticatedUser();
   if ("errorResponse" in authResult) return authResult.errorResponse;
 
-  const accessResult = await authorizeMeetingAccess(params.sessionId, authResult.userId);
+  const accessResult = await authorizeSessionAccess(params.sessionId, authResult.id);
   if ("errorResponse" in accessResult) return accessResult.errorResponse;
+
+  const ownershipResult = requireOwnership(
+    authResult.id,
+    accessResult.meetingOwnerId,
+    "Forbidden: only the meeting owner can delete this session",
+  );
+  if ("errorResponse" in ownershipResult) return ownershipResult.errorResponse;
 
   await prisma.meeting.delete({
     where: { id: accessResult.meetingId },
