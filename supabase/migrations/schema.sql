@@ -174,6 +174,9 @@ CREATE TABLE IF NOT EXISTS public.oauth_tokens (
     expires_at TIMESTAMPTZ,
     scope TEXT,
     refresh_count INTEGER DEFAULT 0,
+    last_refresh_request_id TEXT,
+    refresh_token_rotated_at TIMESTAMPTZ,
+    refresh_token_fingerprint TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -472,6 +475,7 @@ CREATE INDEX IF NOT EXISTS idx_course_files_lesson_id ON public.course_files(les
 CREATE INDEX IF NOT EXISTS idx_course_files_module_id ON public.course_files(module_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON public.oauth_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires_at ON public.oauth_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_oauth_tokens_last_refresh_request_id ON public.oauth_tokens(user_id, provider, last_refresh_request_id);
 
 -- Vector indexes for similarity search
 CREATE INDEX IF NOT EXISTS idx_course_content_embeddings_embedding ON public.course_content_embeddings USING ivfflat (embedding vector_cosine_ops);

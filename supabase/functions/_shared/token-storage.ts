@@ -36,6 +36,9 @@ interface TokenRecord {
   created_at?: string | null;
   updated_at?: string | null;
   refresh_count?: number | null;
+  last_refresh_request_id?: string | null;
+  refresh_token_rotated_at?: string | null;
+  refresh_token_fingerprint?: string | null;
 }
 
 interface DbTokenRow {
@@ -49,6 +52,15 @@ interface DbTokenRow {
   created_at?: string | null;
   updated_at?: string | null;
   refresh_count?: number | null;
+  last_refresh_request_id?: string | null;
+  refresh_token_rotated_at?: string | null;
+  refresh_token_fingerprint?: string | null;
+}
+
+export interface TokenRotationMetadata {
+  refreshRequestId?: string;
+  refreshTokenRotatedAt?: string;
+  refreshTokenFingerprint?: string;
 }
 
 const resolveStrategy = (explicit?: TokenStorageStrategy): TokenStorageStrategy => {
@@ -399,7 +411,8 @@ export class DatabaseTokenStorage {
     accessToken: string,
     refreshToken?: string,
     expiresIn?: number,
-    scope?: string
+    scope?: string,
+    rotationMetadata?: TokenRotationMetadata
   ): Promise<TokenStorageResult> {
     try {
       const expiresAt = expiresIn
@@ -417,6 +430,9 @@ export class DatabaseTokenStorage {
           refresh_token_encrypted: encryptedRefreshToken,
           expires_at: expiresAt,
           scope,
+          last_refresh_request_id: rotationMetadata?.refreshRequestId ?? null,
+          refresh_token_rotated_at: rotationMetadata?.refreshTokenRotatedAt ?? null,
+          refresh_token_fingerprint: rotationMetadata?.refreshTokenFingerprint ?? null,
           updated_at: new Date().toISOString(),
         });
 
@@ -469,6 +485,9 @@ export class DatabaseTokenStorage {
         created_at: row.created_at,
         updated_at: row.updated_at,
         refresh_count: row.refresh_count,
+        last_refresh_request_id: row.last_refresh_request_id,
+        refresh_token_rotated_at: row.refresh_token_rotated_at,
+        refresh_token_fingerprint: row.refresh_token_fingerprint,
       };
     } catch (error: any) {
       console.error('Database token retrieval error:', error);
@@ -540,6 +559,30 @@ export class DatabaseTokenStorage {
       })
       .eq('user_id', userId)
       .eq('provider', provider);
+  }
+
+  static async markRefreshReplay(
+    supabase: SupabaseClient,
+    userId: string,
+    provider: string,
+    requestId: string
+  ): Promise<void> {
+    await (supabase.from('oauth_tokens') as any)
+      .update({
+        last_refresh_request_id: requestId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('provider', provider);
+  }
+
+  static async buildTokenFingerprint(secret: string): Promise<string> {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(secret)
+    );
+    const bytes = new Uint8Array(digest);
+    return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   static async deleteTokenRecord(
