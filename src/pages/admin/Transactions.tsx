@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -6,10 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { adminSidebarSections } from "@/config/navigation";
-import { Download, Search, Filter } from "lucide-react";
-import { toast } from "sonner";
+import { Download, Search } from "lucide-react";
+import { useDebouncedValue } from "@/hooks/useDebounce";
+import { exportTransactionsCsv } from "@/lib/admin/exportTransactionsCsv";
+import { transactionColumns, type AdminTransaction } from "@/pages/admin/transactions/columns";
 
 export default function AdminTransactions() {
   const [search, setSearch] = useState("");
@@ -17,17 +19,25 @@ export default function AdminTransactions() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [page, setPage] = useState(0);
   const pageSize = 20;
+  const debouncedSearch = useDebouncedValue(search, 400);
+
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, statusFilter, typeFilter]);
 
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["admin-transactions", page, search, statusFilter, typeFilter],
+    queryKey: ["admin-transactions", page, debouncedSearch, statusFilter, typeFilter],
     queryFn: async () => {
       const offset = page * pageSize;
       let query = supabase
         .from("transactions")
-        .select(`
+        .select(
+          `
           *,
           profiles:user_id (full_name, email)
-        `, { count: 'exact' })
+        `,
+          { count: "exact" },
+        )
         .order("created_at", { ascending: false })
         .range(offset, offset + pageSize - 1);
 
@@ -39,21 +49,15 @@ export default function AdminTransactions() {
         query = query.eq("transaction_mode", typeFilter);
       }
 
-      if (search.trim()) {
-        const trimmedSearch = search.trim();
-        
-        // Limit search length to prevent DoS attacks
+      if (debouncedSearch.trim()) {
+        const trimmedSearch = debouncedSearch.trim();
+
         if (trimmedSearch.length > 100) {
           throw new Error("Search query too long (max 100 characters)");
         }
-        
-        // Sanitize special LIKE characters (% and _) to prevent injection
-        // Escape backslashes first, then escape % and _
-        const sanitizedSearch = trimmedSearch
-          .replace(/\\/g, '\\\\')  // Escape backslashes first
-          .replace(/%/g, '\\%')     // Escape %
-          .replace(/_/g, '\\_');    // Escape _
-        
+
+        const sanitizedSearch = trimmedSearch.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+
         const searchPattern = `%${sanitizedSearch}%`;
         query = query.or(`transaction_ref.ilike.${searchPattern},order_id.ilike.${searchPattern}`);
       }
@@ -61,51 +65,9 @@ export default function AdminTransactions() {
       const { data, error, count } = await query;
       if (error) throw error;
 
-      return { data: data || [], total: count || 0 };
+      return { data: (data || []) as AdminTransaction[], total: count || 0 };
     },
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-MW', {
-      style: 'currency',
-      currency: 'MWK',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      success: "default",
-      pending: "secondary",
-      failed: "destructive",
-      cancelled: "outline",
-    };
-    return <Badge variant={variants[status] || "outline"}>{status}</Badge>;
-  };
-
-  const exportToCSV = () => {
-    if (!transactions?.data) return;
-    
-    const headers = ["Date", "Transaction Ref", "User", "Type", "Amount", "Status"];
-    const rows = transactions.data.map((t: any) => [
-      new Date(t.created_at).toLocaleDateString(),
-      t.transaction_ref,
-      t.profiles?.email || "N/A",
-      t.transaction_mode,
-      t.amount,
-      t.status,
-    ]);
-
-    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `transactions-${new Date().toISOString()}.csv`;
-    a.click();
-    toast.success("Transactions exported to CSV");
-  };
 
   return (
     <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
@@ -116,7 +78,6 @@ export default function AdminTransactions() {
         <p className="text-muted-foreground">Monitor all platform transactions</p>
       </div>
 
-      {/* Filters */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
@@ -155,7 +116,7 @@ export default function AdminTransactions() {
                 <SelectItem value="credit_purchase">Credit Purchase</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={exportToCSV} variant="outline">
+            <Button onClick={() => exportTransactionsCsv(transactions?.data || [])} variant="outline">
               <Download className="w-4 h-4 mr-2" />
               Export CSV
             </Button>
@@ -163,7 +124,6 @@ export default function AdminTransactions() {
         </CardContent>
       </Card>
 
-      {/* Transactions Table */}
       <Card>
         <CardHeader>
           <CardTitle>Transactions</CardTitle>
@@ -172,47 +132,58 @@ export default function AdminTransactions() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full table-auto border-collapse">
-              <thead>
-                <tr className="text-left text-sm text-muted-foreground border-b">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Transaction Ref</th>
-                  <th className="py-3 px-4">User</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Amount</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="hidden md:block rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {transactionColumns.map((column) => (
+                    <TableHead key={column.key}>{column.header}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={6} className="py-6 px-4 text-center">Loading...</td>
-                  </tr>
+                  <TableRow>
+                    <TableCell colSpan={transactionColumns.length} className="text-center py-8">
+                      Loading...
+                    </TableCell>
+                  </TableRow>
                 ) : transactions && transactions.data.length > 0 ? (
-                  transactions.data.map((txn: any) => (
-                    <tr key={txn.id} className="hover:bg-muted/50 border-b">
-                      <td className="py-3 px-4 text-sm">
-                        {new Date(txn.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-sm font-mono">{txn.transaction_ref}</td>
-                      <td className="py-3 px-4 text-sm">{txn.profiles?.email || "N/A"}</td>
-                      <td className="py-3 px-4 text-sm">{txn.transaction_mode}</td>
-                      <td className="py-3 px-4 text-sm font-semibold">
-                        {formatCurrency(Number(txn.amount))}
-                      </td>
-                      <td className="py-3 px-4">{getStatusBadge(txn.status)}</td>
-                    </tr>
+                  transactions.data.map((transaction) => (
+                    <TableRow key={transaction.id}>
+                      {transactionColumns.map((column) => (
+                        <TableCell key={column.key}>{column.render(transaction)}</TableCell>
+                      ))}
+                    </TableRow>
                   ))
                 ) : (
-                  <tr>
-                    <td colSpan={6} className="py-6 px-4 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={transactionColumns.length} className="text-center py-8 text-muted-foreground">
                       No transactions found
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="grid gap-4 md:hidden">
+            {isLoading ? (
+              <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">Loading...</div>
+            ) : transactions && transactions.data.length > 0 ? (
+              transactions.data.map((transaction) => (
+                <div key={transaction.id} className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                  {transactionColumns.map((column) => (
+                    <div key={column.key} className="flex items-start justify-between gap-3">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">{column.header}</span>
+                      <div className="text-sm text-right">{column.render(transaction)}</div>
+                    </div>
+                  ))}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">No transactions found</div>
+            )}
           </div>
 
           <div className="mt-4 flex items-center justify-between">
