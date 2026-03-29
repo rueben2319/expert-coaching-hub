@@ -19,6 +19,21 @@ type FinalizeResponse = {
   role: "client" | "coach" | "admin";
   onboarding_state: "ready" | "role_bootstrapped" | "needs_role_selection";
   redirect_to: string;
+  finalized_for_session: boolean;
+};
+
+const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
+  const [, payload] = token.split(".");
+  if (!payload) return null;
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const decoded = atob(padded);
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 };
 
 serve(async (req: Request) => {
@@ -55,6 +70,21 @@ serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const bearerToken = authHeader.replace(/^Bearer\s+/i, "");
+    const jwtPayload = decodeJwtPayload(bearerToken);
+    const sessionIdFromJwt =
+      (typeof jwtPayload?.session_id === "string" && jwtPayload.session_id) ||
+      (typeof jwtPayload?.sid === "string" && jwtPayload.sid) ||
+      null;
+
+    const body = await req.json().catch(() => ({}));
+    const callbackNonce = typeof body?.callback_nonce === "string" ? body.callback_nonce.trim() : null;
+    if (!callbackNonce) {
+      return new Response(JSON.stringify({ error: "Missing callback nonce" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { data: userData, error: userError } = await userClient.auth.getUser();
     if (userError || !userData.user) {
@@ -84,9 +114,19 @@ serve(async (req: Request) => {
       throw new Error("OAuth finalization returned an incomplete response.");
     }
 
+    const priorAppMetadata = user.app_metadata ?? {};
+    const priorUserMetadata = user.user_metadata ?? {};
+    const previousSessionId =
+      typeof priorAppMetadata.oauth_callback_session_id === "string"
+        ? priorAppMetadata.oauth_callback_session_id
+        : null;
+    const finalizedForSameSession = Boolean(sessionIdFromJwt && previousSessionId === sessionIdFromJwt);
+
     const nextAppMetadata = {
       ...(user.app_metadata ?? {}),
       role: result.role,
+      oauth_callback_session_id: sessionIdFromJwt ?? previousSessionId,
+      oauth_callback_nonce: callbackNonce,
     };
 
     const nextUserMetadata = {
@@ -94,16 +134,27 @@ serve(async (req: Request) => {
       role: result.role,
     };
 
-    const { error: updateError } = await adminClient.auth.admin.updateUserById(user.id, {
-      app_metadata: nextAppMetadata,
-      user_metadata: nextUserMetadata,
-    });
+    if (
+      !finalizedForSameSession ||
+      priorAppMetadata.role !== result.role ||
+      priorUserMetadata.role !== result.role
+    ) {
+      const { error: updateError } = await adminClient.auth.admin.updateUserById(user.id, {
+        app_metadata: nextAppMetadata,
+        user_metadata: nextUserMetadata,
+      });
 
-    if (updateError) {
-      throw updateError;
+      if (updateError) {
+        throw updateError;
+      }
     }
 
-    return new Response(JSON.stringify(result), {
+    return new Response(
+      JSON.stringify({
+        ...result,
+        finalized_for_session: finalizedForSameSession,
+      }),
+      {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -14,7 +14,7 @@ import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { resolvePostAuthRoute } from "@/lib/authRouting";
 import { useAuthService } from "@/hooks/useAuthService";
-
+import { createOAuthCallbackState } from "@/lib/oauthCallback";
 const passwordStrength = (pwd: string) => {
   if (!pwd) return 0;
   let score = 0;
@@ -25,12 +25,6 @@ const passwordStrength = (pwd: string) => {
   return Math.min(100, score);
 };
 
-type OAuthFinalizeResponse = {
-  role: "client" | "coach" | "admin";
-  onboarding_state: "ready" | "needs_role_selection";
-  redirect_to: string;
-};
-
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
@@ -39,7 +33,6 @@ export default function Auth() {
   const [selectedRole, setSelectedRole] = useState<"client" | "coach">("client");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
-  const [oauthCallbackPending, setOauthCallbackPending] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -47,41 +40,7 @@ export default function Auth() {
   const location = useLocation();
   const { user, role, status, signOut } = useAuth();
   const { finalizeAuthAndResolveRole } = useAuthService();
-  const oauthFinalizeAttempted = useRef(false);
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleOAuthCallbackFinalize = useCallback(async () => {
-    if (!user || oauthFinalizeAttempted.current) return;
-
-    oauthFinalizeAttempted.current = true;
-
-    try {
-      const { data, error } = await supabase.functions.invoke<OAuthFinalizeResponse>("oauth-callback", {
-        body: {},
-      });
-
-      if (error || !data) {
-        throw new Error(error?.message || "Unable to finalize OAuth callback.");
-      }
-
-      if (data.onboarding_state === "needs_role_selection") {
-        toast.error("Account onboarding is incomplete. Please contact support.");
-        await signOut();
-        return;
-      }
-
-      const finalized = await finalizeAuthAndResolveRole({ intendedPath: data.redirect_to });
-      const nextPath = resolvePostAuthRoute(finalized.role ?? data.role, finalized.intendedPath);
-      window.history.replaceState({}, document.title, "/auth");
-      navigate(nextPath, { replace: true });
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "OAuth sign-in could not be completed.");
-      oauthFinalizeAttempted.current = false;
-    } finally {
-      setOauthCallbackPending(false);
-      setOauthLoading(false);
-    }
-  }, [finalizeAuthAndResolveRole, navigate, signOut, user]);
 
   // Real-time validation with debouncing
   const validateField = useCallback((fieldName: string, value: string) => {
@@ -155,38 +114,19 @@ export default function Auth() {
   }, []);
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const hashParams = new URLSearchParams(window.location.hash.replace('#', '?'));
-    const hasOAuthParams = urlParams.has('code') || hashParams.has('access_token') || hashParams.has('error');
-
-    if (hasOAuthParams) {
-      setOauthLoading(true);
-      setOauthCallbackPending(true);
-    } else {
-      setOauthLoading(false);
-      setOauthCallbackPending(false);
-    }
-  }, []);
-
-  useEffect(() => {
     if (location.pathname === "/auth/onboarding") {
       setIsLogin(false);
     }
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!oauthCallbackPending || !user) return;
-    void handleOAuthCallbackFinalize();
-  }, [oauthCallbackPending, user, handleOAuthCallbackFinalize]);
-
-  useEffect(() => {
-    if (!user || !role || oauthCallbackPending || status !== "authenticated") {
+    if (!user || !role || status !== "authenticated") {
       return;
     }
 
     const intendedPath = (location.state as { from?: string } | null)?.from;
     navigate(resolvePostAuthRoute(role, intendedPath), { replace: true });
-  }, [location.state, navigate, oauthCallbackPending, role, status, user]);
+  }, [location.state, navigate, role, status, user]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -324,8 +264,9 @@ export default function Auth() {
   const handleGoogleAuth = async () => {
     try {
       setOauthLoading(true);
-
-      const redirectUrl = `${window.location.origin}/auth`;
+      const intendedPath = (location.state as { from?: string } | null)?.from ?? null;
+      const callbackNonce = createOAuthCallbackState(intendedPath);
+      const redirectUrl = `${window.location.origin}/auth/callback?nonce=${encodeURIComponent(callbackNonce)}`;
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
