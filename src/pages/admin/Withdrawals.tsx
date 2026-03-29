@@ -1,94 +1,50 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { callSupabaseFunction } from "@/lib/supabaseFunctions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { CheckCircle, XCircle, Clock, AlertCircle, Loader2, AlertTriangle, Filter } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
 import { adminSidebarSections } from "@/config/navigation";
-import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { WithdrawalModerationDialog } from "@/components/admin/WithdrawalModerationDialog";
+import { AdminWithdrawalRequest, useAdminWithdrawals } from "@/hooks/useAdminWithdrawals";
 
 export default function AdminWithdrawals() {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [selectedWithdrawal, setSelectedWithdrawal] = useState<any>(null);
+  const [selectedWithdrawal, setSelectedWithdrawal] = useState<AdminWithdrawalRequest | null>(null);
   const [action, setAction] = useState<"approve" | "reject" | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const { data: withdrawalRequests, isLoading } = useQuery({
-    queryKey: ["admin-withdrawal-requests"],
-    queryFn: async () => {
-      const { data: requests, error: requestsError } = await supabase
-        .from("withdrawal_requests")
-        .select("*")
-        .order("created_at", { ascending: false });
+  const { withdrawalRequests, isLoading, processWithdrawal, isProcessingAction } = useAdminWithdrawals();
 
-      if (requestsError) throw requestsError;
-
-      if (!requests || requests.length === 0) return [];
-
-      const coachIds = requests.map((r: any) => r.coach_id);
-      const { data: coaches, error: coachesError} = await supabase
-        .from("profiles")
-        .select("id, full_name, email")
-        .in("id", coachIds);
-
-      if (coachesError) throw coachesError;
-
-      const coachMap: Record<string, any> = {};
-      (coaches || []).forEach((coach: any) => {
-        coachMap[coach.id] = coach;
-      });
-
-      const enriched = requests.map((request: any) => ({
-        ...request,
-        coach: coachMap[request.coach_id] || null,
-      }));
-
-      return enriched;
-    },
-  });
-
-  const processWithdrawalMutation = useMutation({
-    mutationFn: async ({ withdrawal_id, action, admin_notes }: { withdrawal_id: string; action: string; admin_notes: string }) => {
-      return await callSupabaseFunction("process-withdrawal", {
-        withdrawal_id,
-        action,
-        admin_notes,
-      });
-    },
-    onSuccess: () => {
-      toast.success(`Withdrawal ${action === "approve" ? "approved" : "rejected"} successfully`);
-      queryClient.invalidateQueries({ queryKey: ["admin-withdrawal-requests"] });
-      setSelectedWithdrawal(null);
-      setAction(null);
-      setAdminNotes("");
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to process withdrawal");
-    },
-  });
-
-  const handleProcessWithdrawal = (withdrawal: any, actionType: "approve" | "reject") => {
+  const handleProcessWithdrawal = (withdrawal: AdminWithdrawalRequest, actionType: "approve" | "reject") => {
     setSelectedWithdrawal(withdrawal);
     setAction(actionType);
   };
 
-  const confirmProcessWithdrawal = () => {
+  const closeModerationDialog = () => {
+    setSelectedWithdrawal(null);
+    setAction(null);
+    setAdminNotes("");
+  };
+
+  const confirmProcessWithdrawal = async () => {
     if (!selectedWithdrawal || !action) return;
-    processWithdrawalMutation.mutate({
-      withdrawal_id: selectedWithdrawal.id,
-      action,
-      admin_notes: adminNotes,
-    });
+
+    try {
+      const wasSubmitted = await processWithdrawal({
+        withdrawal_id: selectedWithdrawal.id,
+        action,
+        admin_notes: adminNotes,
+      });
+
+      if (wasSubmitted) {
+        closeModerationDialog();
+      }
+    } catch {
+      // Error toast is handled by the hook mutation callbacks.
+    }
   };
 
   const formatMWK = (amount: number): string => {
@@ -155,11 +111,11 @@ export default function AdminWithdrawals() {
         </div>
 
         {/* Critical Alerts for Failed Withdrawals */}
-        {withdrawalRequests && withdrawalRequests.filter((r: any) => r.status === "failed" && r.rejection_reason?.includes("Reference:")).length > 0 && (
+        {withdrawalRequests && withdrawalRequests.filter((r) => r.status === "failed" && r.rejection_reason?.includes("Reference:")).length > 0 && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              <strong>Critical:</strong> {withdrawalRequests.filter((r: any) => r.status === "failed" && r.rejection_reason?.includes("Reference:")).length} withdrawal(s) require manual intervention. Check failed withdrawals below.
+              <strong>Critical:</strong> {withdrawalRequests.filter((r) => r.status === "failed" && r.rejection_reason?.includes("Reference:")).length} withdrawal(s) require manual intervention. Check failed withdrawals below.
             </AlertDescription>
           </Alert>
         )}
@@ -167,8 +123,8 @@ export default function AdminWithdrawals() {
         {withdrawalRequests && withdrawalRequests.length > 0 ? (
           <div className="grid gap-4">
             {withdrawalRequests
-              .filter((request: any) => statusFilter === "all" || request.status === statusFilter)
-              .map((request: any) => (
+              .filter((request) => statusFilter === "all" || request.status === statusFilter)
+              .map((request) => (
               <Card key={request.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex justify-between items-start">
@@ -318,75 +274,19 @@ export default function AdminWithdrawals() {
         )}
       </div>
 
-      {/* Process Withdrawal Dialog */}
-      <Dialog open={!!selectedWithdrawal} onOpenChange={() => { setSelectedWithdrawal(null); setAction(null); setAdminNotes(""); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {action === "approve" ? "Approve Withdrawal" : "Reject Withdrawal"}
-            </DialogTitle>
-            <DialogDescription>
-              {action === "approve" 
-                ? "This will process the withdrawal and deduct credits from the coach's wallet."
-                : "This will reject the withdrawal request. The coach will be notified."}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedWithdrawal && (
-            <div className="space-y-4">
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm font-medium">Coach:</span>
-                  <span className="text-sm">{selectedWithdrawal.coach?.full_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm font-medium">Amount:</span>
-                  <span className="text-sm font-semibold">
-                    {selectedWithdrawal.credits_amount} credits → {formatMWK(selectedWithdrawal.amount_mwk)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm font-medium">Phone:</span>
-                  <span className="text-sm">{selectedWithdrawal.phone_number}</span>
-                </div>
-              </div>
+      <WithdrawalModerationDialog
+        open={!!selectedWithdrawal}
+        action={action}
+        withdrawal={selectedWithdrawal}
+        adminNotes={adminNotes}
+        onAdminNotesChange={setAdminNotes}
+        onOpenChange={(open) => {
+          if (!open) closeModerationDialog();
+        }}
+        onConfirm={confirmProcessWithdrawal}
+        isProcessing={isProcessingAction}
+      />
 
-              <div>
-                <label className="text-sm font-medium mb-2 block">Admin Notes (Optional)</label>
-                <Textarea
-                  placeholder="Add any notes about this withdrawal..."
-                  value={adminNotes}
-                  onChange={(e) => setAdminNotes(e.target.value)}
-                  rows={3}
-                />
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => { setSelectedWithdrawal(null); setAction(null); setAdminNotes(""); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={confirmProcessWithdrawal}
-              disabled={processWithdrawalMutation.isPending}
-              variant={action === "approve" ? "default" : "destructive"}
-            >
-              {processWithdrawalMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                `Confirm ${action === "approve" ? "Approval" : "Rejection"}`
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </DashboardLayout>
   );
 }
