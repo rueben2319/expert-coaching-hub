@@ -10,13 +10,13 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
  * If backend cookie sessions are not available yet, set VITE_SUPABASE_USE_BROWSER_STORAGE=true
  * as a temporary fallback.
  */
-const USE_BROWSER_STORAGE = import.meta.env.VITE_SUPABASE_USE_BROWSER_STORAGE === 'true';
+const USE_BROWSER_STORAGE = false;
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   throw new Error('Missing required Supabase environment variables. Please check your .env file.');
 }
 
-if (USE_BROWSER_STORAGE && typeof window !== 'undefined') {
+if (import.meta.env.VITE_SUPABASE_USE_BROWSER_STORAGE === 'true' && typeof window !== 'undefined') {
   const cspMeta = document.querySelector<HTMLMetaElement>('meta[http-equiv="Content-Security-Policy"]')?.content ?? '';
   const hasStrictCspSignals = cspMeta.includes('script-src') && cspMeta.includes("object-src 'none'");
 

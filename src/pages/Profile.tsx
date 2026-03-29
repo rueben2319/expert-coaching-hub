@@ -137,13 +137,27 @@ export default function Profile() {
         password: data.newPassword,
       });
       if (error) throw error;
+
+      if (!user?.id) {
+        throw new Error("No authenticated user available for session rotation.");
+      }
+
+      const { error: rotationError } = await supabase.rpc("rotate_user_session_version", {
+        p_user_id: user.id,
+        p_reason: "password_changed",
+      });
+      if (rotationError) throw rotationError;
+
+      const { error: globalSignOutError } = await supabase.auth.signOut({ scope: "global" });
+      if (globalSignOutError) throw globalSignOutError;
     },
     onSuccess: () => {
       toast({
         title: "Password changed",
-        description: "Your password has been changed successfully.",
+        description: "Password updated. Please sign in again on this and other devices.",
       });
       passwordForm.reset();
+      navigate("/auth", { replace: true });
     },
     onError: (error: any) => {
       toast({
