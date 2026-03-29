@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Users, BookOpen, Mail, Loader2 } from "lucide-react";
 import expertsLogo from "@/assets/experts-logo.png";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { resolvePostAuthRoute } from "@/lib/authRouting";
 
 const passwordStrength = (pwd: string) => {
   if (!pwd) return 0;
@@ -42,8 +43,8 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
-  const { user, role, refreshRole, signOut } = useAuth();
-  const hasInitialized = useRef(false);
+  const location = useLocation();
+  const { user, role, status, signOut } = useAuth();
   const oauthFinalizeAttempted = useRef(false);
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -67,10 +68,7 @@ export default function Auth() {
         return;
       }
 
-      await supabase.auth.refreshSession();
-      await refreshRole();
-
-      const nextPath = data.redirect_to || `/${data.role}`;
+      const nextPath = resolvePostAuthRoute(data.role, data.redirect_to);
       window.history.replaceState({}, document.title, "/auth");
       navigate(nextPath, { replace: true });
     } catch (error: any) {
@@ -80,7 +78,7 @@ export default function Auth() {
       setOauthCallbackPending(false);
       setOauthLoading(false);
     }
-  }, [navigate, refreshRole, signOut, user]);
+  }, [navigate, signOut, user]);
 
   // Real-time validation with debouncing
   const validateField = useCallback((fieldName: string, value: string) => {
@@ -173,51 +171,13 @@ export default function Auth() {
   }, [oauthCallbackPending, user, handleOAuthCallbackFinalize]);
 
   useEffect(() => {
-    if (!user) {
-      hasInitialized.current = false;
-      oauthFinalizeAttempted.current = false;
+    if (!user || !role || oauthCallbackPending || status !== "authenticated") {
       return;
     }
 
-    if (oauthCallbackPending) return;
-
-    if (hasInitialized.current) return;
-    hasInitialized.current = true;
-
-    if (window.location.pathname !== '/auth') {
-      return;
-    }
-
-    if (role) {
-      return;
-    }
-
-    let isMounted = true;
-
-    (async () => {
-      try {
-        await refreshRole();
-        if (!isMounted) return;
-
-        const { data: sessionData } = await supabase.auth.getSession();
-        const sessionRole = sessionData.session?.user?.app_metadata?.role;
-        if (sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin") {
-          navigate(`/${sessionRole}`);
-          return;
-        }
-
-        navigate('/client');
-      } catch {
-        if (isMounted) {
-          navigate('/client');
-        }
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user, role, navigate, refreshRole, oauthCallbackPending]);
+    const intendedPath = (location.state as { from?: string } | null)?.from;
+    navigate(resolvePostAuthRoute(role, intendedPath), { replace: true });
+  }, [location.state, navigate, oauthCallbackPending, role, status, user]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -255,19 +215,17 @@ export default function Auth() {
 
         if (setSessionError) throw setSessionError;
 
-        // Refresh session to get updated role claims
         await supabase.auth.refreshSession();
-        
-        // Get the updated session with role claims
         const { data: updatedSession } = await supabase.auth.getSession();
         const sessionRole = updatedSession.session?.user?.app_metadata?.role;
-        
-        // Navigate immediately based on role
-        if (sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin") {
-          navigate(`/${sessionRole}`);
-        } else {
-          navigate('/client');
-        }
+        navigate(
+          resolvePostAuthRoute(
+            sessionRole === "client" || sessionRole === "coach" || sessionRole === "admin"
+              ? sessionRole
+              : null,
+            (location.state as { from?: string } | null)?.from
+          )
+        );
 
         toast.success("Welcome back!");
       } else {
@@ -404,7 +362,7 @@ export default function Auth() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={() => navigate(`/${role}`)} className="w-full">Go to Dashboard</Button>
+            <Button onClick={() => navigate(resolvePostAuthRoute(role))} className="w-full">Go to Dashboard</Button>
             <Button
               onClick={async () => {
                 await signOut();
