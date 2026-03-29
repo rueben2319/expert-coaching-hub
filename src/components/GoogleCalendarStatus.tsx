@@ -99,7 +99,7 @@ export const GoogleCalendarStatus = ({
 
   // Listen for auth state changes (when user returns from OAuth)
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {

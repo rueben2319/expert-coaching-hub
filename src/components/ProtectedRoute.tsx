@@ -16,8 +16,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   const [roleCheckDelay, setRoleCheckDelay] = useState(true);
   
   // Use refs to track timers and prevent race conditions
-  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const roleCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const roleCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set timeout for loading state
   useEffect(() => {

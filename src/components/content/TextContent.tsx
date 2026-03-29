@@ -76,7 +76,7 @@ export function TextContent({ content, contentId, onComplete }: TextContentProps
 
   // Track time spent on content with proper visibility handling
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const startTimer = () => {
       if (interval) return; // Already running

@@ -48,7 +48,7 @@ export function AutoSaveProvider({
     saveCount: 0,
   });
 
-  const saveTimeoutRef = useRef<NodeJS.Timeout>();
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const retryCountRef = useRef(0);
   const isDirtyRef = useRef(false);
 
