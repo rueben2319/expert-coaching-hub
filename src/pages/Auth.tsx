@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -534,6 +534,13 @@ export default function Auth() {
             <Button type="submit" className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity" disabled={loading} aria-busy={loading} aria-live="polite">
               {loading ? <>Loading...</> : (isLogin ? "Sign In" : "Sign Up")}
             </Button>
+            {isLogin ? (
+              <p className="text-center text-sm">
+                <Link to="/forgot-password" className="text-primary hover:underline">
+                  Forgot your password?
+                </Link>
+              </p>
+            ) : null}
           </form>
           <div className="relative my-6">
             <Separator className="my-6" />
