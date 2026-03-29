@@ -166,6 +166,12 @@ export default function Auth() {
   }, []);
 
   useEffect(() => {
+    if (location.pathname === "/auth/onboarding") {
+      setIsLogin(false);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
     if (!oauthCallbackPending || !user) return;
     void handleOAuthCallbackFinalize();
   }, [oauthCallbackPending, user, handleOAuthCallbackFinalize]);
