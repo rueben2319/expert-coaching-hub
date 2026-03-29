@@ -231,49 +231,34 @@ export default function Auth() {
       if (isLogin) {
         const normalizedEmail = email.trim().toLowerCase();
 
-        const { data: lockoutData, error: lockoutError } = await supabase.rpc("is_login_locked", {
-          p_email: normalizedEmail,
-        });
-
-        if (lockoutError) {
-          throw lockoutError;
-        }
-
-        if (lockoutData) {
-          throw new Error("Account temporarily locked. Try again in 15 minutes.");
-        }
-
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
+        const { data, error } = await supabase.functions.invoke("auth-login", {
+          body: {
+            email: normalizedEmail,
+            password,
+          },
         });
 
         if (error) {
-          await supabase.rpc("record_login_attempt", {
-            p_email: normalizedEmail,
-            p_success: false,
-            p_failure_reason: "invalid_credentials",
-          });
-          throw error;
+          const message =
+            typeof data?.error === "string"
+              ? data.error
+              : error.message || "Unable to sign in. Please try again.";
+          throw new Error(message);
         }
 
-        const emailVerified = Boolean(data.user?.email_confirmed_at);
-        if (!emailVerified) {
-          await supabase.rpc("record_login_attempt", {
-            p_email: normalizedEmail,
-            p_success: false,
-            p_user_id: data.user?.id ?? null,
-            p_failure_reason: "email_unverified",
-          });
-          await supabase.auth.signOut();
-          throw new Error("Please verify your email before signing in.");
+        const session = data?.session;
+        if (!session?.access_token || !session?.refresh_token) {
+          throw new Error("Authentication endpoint did not return a valid session.");
         }
 
-        await supabase.rpc("record_login_attempt", {
-          p_email: normalizedEmail,
-          p_success: true,
-          p_user_id: data.user?.id ?? null,
+        const { error: setSessionError } = await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
         });
+
+        if (setSessionError) {
+          throw setSessionError;
+        }
 
         toast.success("Welcome back!");
       } else {
