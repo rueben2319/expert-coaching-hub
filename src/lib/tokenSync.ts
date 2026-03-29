@@ -17,27 +17,33 @@ export interface TokenSyncResult {
   error?: string;
 }
 
+let refreshInFlight: Promise<TokenSyncResult> | null = null;
+
 /**
- * Check if tokens need to be refreshed based on user metadata
+ * Check if tokens need to be refreshed based on backend token status.
  */
 export async function checkTokenRefreshNeeded(): Promise<boolean> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
 
-    const metadata = user.user_metadata;
-    if (!metadata) return false;
+    const statusResponse = await fetch(`${SUPABASE_URL}/functions/v1/get-token-status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-    // Check if token expires soon (within 10 minutes)
-    if (metadata.google_token_expires_at) {
-      const expiresAt = new Date(metadata.google_token_expires_at);
-      const now = new Date();
-      const tenMinutes = 10 * 60 * 1000;
-      
-      if (expiresAt.getTime() - now.getTime() < tenMinutes) {
-        logger.log('Token expires soon, refresh recommended');
-        return true;
-      }
+    if (!statusResponse.ok) {
+      return false;
+    }
+
+    const statusData = await statusResponse.json();
+    const shouldRefreshNow = statusData?.refreshPolicy?.shouldRefreshNow;
+    if (shouldRefreshNow === true) {
+      logger.log('Backend requested token refresh');
+      return true;
     }
 
     return false;
@@ -199,6 +205,12 @@ export async function manualTokenSync(): Promise<TokenSyncResult> {
  * Force an immediate token refresh and sync
  */
 export async function forceTokenRefresh(): Promise<TokenSyncResult> {
+  if (refreshInFlight) {
+    logger.log('Token refresh already in flight, joining existing request');
+    return refreshInFlight;
+  }
+
+  refreshInFlight = (async (): Promise<TokenSyncResult> => {
   try {
     logger.log('Forcing token refresh...');
 
@@ -217,6 +229,7 @@ export async function forceTokenRefresh(): Promise<TokenSyncResult> {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
+        'x-refresh-request-id': `${Date.now()}-${crypto.randomUUID()}`,
       },
     });
 
@@ -245,7 +258,12 @@ export async function forceTokenRefresh(): Promise<TokenSyncResult> {
       tokenRefreshed: false,
       error: error.message,
     };
+  } finally {
+    refreshInFlight = null;
   }
+})();
+
+  return refreshInFlight;
 }
 
 /**

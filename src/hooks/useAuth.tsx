@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { notifyAuthStateChange } from "@/lib/tokenSync";
 import { logger } from "@/lib/logger";
 
 type UserRole = "client" | "coach" | "admin";
@@ -27,52 +26,47 @@ const AuthContext = createContext<AuthContextType | undefined>({
   refreshUser: async () => {},
 });
 
+const isUserRole = (value: unknown): value is UserRole =>
+  value === "client" || value === "coach" || value === "admin";
+
+const readRoleFromAccessToken = (session: Session | null): UserRole | null => {
+  const accessToken = session?.access_token;
+  if (!accessToken) return null;
+
+  try {
+    const payload = accessToken.split(".")[1];
+    if (!payload) return null;
+
+    const normalizedBase64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    if (typeof window === "undefined") return null;
+    const decodedPayload = window.atob(normalizedBase64);
+    const parsed = JSON.parse(decodedPayload) as { role?: unknown };
+
+    return isUserRole(parsed.role) ? parsed.role : null;
+  } catch {
+    return null;
+  }
+};
+
+const getRoleFromSession = (session: Session | null): UserRole | null => {
+  const roleFromSignedClaim = readRoleFromAccessToken(session);
+  const role = roleFromSignedClaim ?? (session?.user?.app_metadata?.role as string | undefined) ?? null;
+
+  if (isUserRole(role)) {
+    return role;
+  }
+
+  return null;
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [role, setRole] = useState<UserRole | null>(() => {
-    try {
-      const stored = localStorage.getItem('app_role');
-      return stored === 'client' || stored === 'coach' || stored === 'admin' ? stored as UserRole : null;
-    } catch {
-      return null;
-    }
-  });
+  const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const initializationAttempted = useRef(false);
   const authListenerReady = useRef(false);
-
-  const fetchUserRole = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) {
-        logger.error("Failed to fetch user role:", { error, code: error.code, message: error.message });
-        setRole(null);
-        try { localStorage.removeItem('app_role'); } catch {}
-        return;
-      }
-
-      if (data) {
-        logger.log("Successfully fetched role:", data.role);
-        setRole(data.role as UserRole);
-        try { localStorage.setItem('app_role', data.role as string); } catch {}
-      } else {
-        logger.warn("No role found for user:", userId);
-        setRole(null);
-        try { localStorage.removeItem('app_role'); } catch {}
-      }
-    } catch (err) {
-      logger.error("Exception while fetching role:", err);
-      setRole(null);
-      try { localStorage.removeItem('app_role'); } catch {}
-    }
-  };
 
   const fetchUserProfile = async (userId: string) => {
     try {
@@ -106,66 +100,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const applyAuthSession = useCallback(
+    async (nextSession: Session | null) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      setRole(getRoleFromSession(nextSession));
+
+      if (nextSession?.user) {
+        try {
+          await fetchUserProfile(nextSession.user.id);
+          logger.log('Profile fetched successfully');
+        } catch (err) {
+          logger.error('Error fetching user profile in listener:', err);
+        }
+      }
+    },
+    []
+  );
+
+  const refreshRole = useCallback(async () => {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) {
+      logger.error("Failed to refresh signed claims:", error);
+      setRole(null);
+      return;
+    }
+    await applyAuthSession(data.session ?? null);
+  }, [applyAuthSession]);
+
   useEffect(() => {
-    // Prevent double initialization in React strict mode
     if (initializationAttempted.current) {
       logger.log('Auth initialization already attempted, skipping...');
       return;
     }
-    
+
     initializationAttempted.current = true;
     let isMounted = true;
 
-    // Set up listener for auth state changes FIRST - this is our primary source of truth
     logger.log('Setting up auth state listener...');
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event, currentSession) => {
         logger.log('Auth state changed:', event);
         authListenerReady.current = true;
-        
+
         if (!isMounted) return;
-        
-        setSession(session);
-        setUser(session?.user ?? null);
 
-        if (session?.user) {
-          // Fetch role and profile with timeout to prevent hanging
-          try {
-            const fetchPromise = Promise.all([
-              fetchUserRole(session.user.id),
-              fetchUserProfile(session.user.id)
-            ]);
-            
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Role fetch timeout')), 12000)
-            );
-            
-            await Promise.race([fetchPromise, timeoutPromise]);
-            logger.log('Role and profile fetched successfully');
-          } catch (err: any) {
-            if (err?.message === 'Role fetch timeout') {
-              logger.info('Role fetch timed out; will rely on next auth event');
-            } else {
-              logger.error('Error fetching user data in listener:', err);
-            }
-            // Do not forcibly clear role on transient timeout; allow next auth events to resolve
+        let sessionToApply = currentSession ?? null;
+        if (event === "USER_UPDATED") {
+          const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            logger.error("Failed to refresh claims after USER_UPDATED event:", refreshError);
+          } else {
+            sessionToApply = refreshedData.session ?? sessionToApply;
           }
-        } else {
-          setRole(null);
-          try { localStorage.removeItem('app_role'); } catch {}
         }
+        await applyAuthSession(sessionToApply);
 
-        // Clear loading state after role fetch attempt (success or failure)
         logger.log('Auth listener fired, clearing loading state');
         setLoading(false);
       }
     );
 
-    // Initialize auth state
     const initializeAuth = async () => {
       logger.log('Starting auth initialization...');
-      
-      // Set a maximum wait time - if nothing happens in 12 seconds, clear loading anyway
+
       const maxWaitTimeout = setTimeout(() => {
         if (isMounted && loading) {
           logger.info('Max wait timeout reached, clearing loading state');
@@ -174,7 +172,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, 12000);
 
       try {
-        // Try to get session with a short timeout
         const getSessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('getSession timeout')), 5000);
@@ -182,36 +179,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         logger.log('Attempting to get session...');
         const result = await Promise.race([getSessionPromise, timeoutPromise]);
-        
+
         clearTimeout(maxWaitTimeout);
-        
+
         if (!isMounted) {
           logger.log('Component unmounted during session fetch');
           return;
         }
 
-        const session = result?.data?.session || null;
-        logger.log('Session retrieved successfully:', session ? `User: ${session.user.email}` : 'No session');
-        
-        // Only update state if the auth listener hasn't already done so
+        const currentSession = result?.data?.session || null;
+        logger.log('Session retrieved successfully:', currentSession ? `User: ${currentSession.user.email}` : 'No session');
+
         if (!authListenerReady.current) {
-          setSession(session);
-          setUser(session?.user ?? null);
-          
-          if (session?.user) {
-            logger.log('Fetching role and profile for user:', session.user.id);
-            await Promise.all([
-              fetchUserRole(session.user.id),
-              fetchUserProfile(session.user.id)
-            ]).catch(err => {
-              logger.error('Error fetching user data:', err);
-            });
-          } else {
-            setRole(null);
-          }
+          await applyAuthSession(currentSession);
         }
 
-        // Clear loading state
         if (isMounted && !authListenerReady.current) {
           logger.log('Initialization complete via getSession, clearing loading state');
           setLoading(false);
@@ -224,13 +206,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           logger.error('Error during getSession:', error);
         }
 
-        // Don't clear loading here - let the auth listener or max timeout handle it
-        // The listener will fire eventually and set the correct state
         logger.log('Relying on auth listener to set state');
       }
     };
 
-    // Start initialization but don't block on it
     initializeAuth();
 
     return () => {
@@ -238,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [applyAuthSession, loading]);
 
   const signOut = async () => {
     try {
@@ -246,34 +225,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setSession(null);
       setRole(null);
-      try { localStorage.removeItem('app_role'); } catch {}
       navigate("/");
     } catch (error) {
       logger.error('Error signing out:', error);
-      // Force clear state even if signOut fails
       setUser(null);
       setSession(null);
       setRole(null);
-      try { localStorage.removeItem('app_role'); } catch {}
       navigate("/");
     }
   };
 
-  const refreshRole = useCallback(async () => {
-    if (user?.id) {
-      await fetchUserRole(user.id);
-    }
-  }, [user?.id]);
-
   const refreshUser = useCallback(async () => {
     try {
-      const { data } = await supabase.auth.getUser();
+      const [{ data }, { data: sessionData }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.auth.getSession(),
+      ]);
+
       if (data.user) {
         setUser(data.user);
-        await Promise.all([
-          fetchUserRole(data.user.id),
-          fetchUserProfile(data.user.id)
-        ]);
+        setRole(getRoleFromSession(sessionData.session ?? null));
+        await fetchUserProfile(data.user.id);
       }
     } catch (error) {
       logger.error('Error refreshing user:', error);

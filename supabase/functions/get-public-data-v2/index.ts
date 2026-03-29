@@ -104,27 +104,39 @@ serve(async (req: Request) => {
       throw coursesError
     }
 
-    // Fetch enrollment counts for each course
-    const coursesWithStats = await Promise.all(
-      (courses || []).map(async (course: any) => {
-        const { data: enrollments, error: enrollError } = await supabase
-          .from('course_enrollments')
-          .select('id')
-          .eq('course_id', course.id)
+    // Fetch enrollment counts for all course IDs in one query, then map in memory
+    const courseIds = (courses || []).map((course: any) => course.id)
+    const enrollmentCountByCourseId = new Map<string, number>()
 
-        // Handle profiles - it could be an array or object depending on the query
-        const profile = Array.isArray(course.profiles) 
-          ? course.profiles[0] 
-          : course.profiles;
+    if (courseIds.length > 0) {
+      const { data: enrollments, error: enrollmentsError } = await supabase
+        .from('course_enrollments')
+        .select('course_id')
+        .in('course_id', courseIds)
 
-        return {
-          ...course,
-          student_count: enrollError ? 0 : enrollments?.length || 0,
-          coach_name: profile?.full_name || 'Expert Coach',
-          coach_avatar: profile?.avatar_url || null
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError)
+      } else {
+        for (const enrollment of enrollments || []) {
+          const currentCount = enrollmentCountByCourseId.get(enrollment.course_id) || 0
+          enrollmentCountByCourseId.set(enrollment.course_id, currentCount + 1)
         }
-      })
-    )
+      }
+    }
+
+    const coursesWithStats = (courses || []).map((course: any) => {
+      // Handle profiles - it could be an array or object depending on the query
+      const profile = Array.isArray(course.profiles)
+        ? course.profiles[0]
+        : course.profiles;
+
+      return {
+        ...course,
+        student_count: enrollmentCountByCourseId.get(course.id) || 0,
+        coach_name: profile?.full_name || 'Expert Coach',
+        coach_avatar: profile?.avatar_url || null
+      }
+    })
 
     // Fetch top coaches (those with published courses)
     const { data: coaches, error: coachesError } = await supabase

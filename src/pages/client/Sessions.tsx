@@ -15,16 +15,14 @@ import {
   Calendar,
   Clock,
   Video,
-  Users,
   Search,
   ExternalLink,
   MessageCircle,
   Eye,
   AlertCircle,
-  User,
   Check
 } from 'lucide-react';
-import { format, formatDistanceToNow, isAfter, isBefore, addHours, addMinutes } from 'date-fns';
+import { format, formatDistanceToNow, addMinutes } from 'date-fns';
 
 interface Meeting {
   id: string;
@@ -62,87 +60,20 @@ export default function ClientSessions() {
     queryFn: async () => {
       if (!user?.email) throw new Error('User email not available');
 
-      console.log('=== CLIENT SESSIONS DEBUG ===');
-      console.log('Current user:', { id: user.id, email: user.email });
-      console.log('Fetching meetings for client:', user.email);
-
-      // First get all meetings, then filter client-side
-      // This is more reliable than complex JSONB queries
-      const { data, error } = await supabase
-        .from('meetings')
-        .select(`
-          *,
-          user_id
-        `)
-        .order('start_time', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching meetings:', error);
-        throw error;
-      }
-
-      console.log(`=== DATABASE QUERY RESULTS ===`);
-      console.log(`Total meetings in database: ${data?.length || 0}`);
-      
-      if (data && data.length > 0) {
-        console.log('All meetings in database:');
-        data.forEach((meeting, index) => {
-          console.log(`${index + 1}. ID: ${meeting.id}, Summary: "${meeting.summary}", Attendees:`, meeting.attendees, `User ID: ${meeting.user_id}`);
-        });
-      }
-
-      // Filter meetings where user is an attendee
-      const userMeetings = (data || []).filter(meeting => {
-        const attendees = Array.isArray(meeting.attendees) ? meeting.attendees : [];
-        const isAttendee = attendees.includes(user.email);
-        console.log(`=== FILTERING MEETING ${meeting.id} ===`);
-        console.log(`Summary: "${meeting.summary}"`);
-        console.log(`Attendees array:`, attendees);
-        console.log(`User email: "${user.email}"`);
-        console.log(`Is attendee: ${isAttendee}`);
-        return isAttendee;
-      });
-
-      console.log(`=== FINAL RESULTS ===`);
-      console.log(`Filtered to ${userMeetings.length} meetings for this client`);
-      if (userMeetings.length > 0) {
-        userMeetings.forEach((meeting, index) => {
-          const attendeesArray = Array.isArray(meeting.attendees) ? meeting.attendees : [];
-          console.log(`${index + 1}. "${meeting.summary}" - ${attendeesArray.length} attendees`);
-        });
-      }
-
-      return userMeetings as Meeting[];
-    },
-    enabled: !!user?.email,
-  });
-
-  // TEMPORARY: Check all meetings in database (remove after debugging)
-  const { data: allMeetings } = useQuery({
-    queryKey: ['all-meetings-debug'],
-    queryFn: async () => {
+      // Fetch only meetings where this user is listed as attendee
       const { data, error } = await supabase
         .from('meetings')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .filter('attendees', 'cs', JSON.stringify([user.email]))
+        .order('start_time', { ascending: true });
 
       if (error) {
-        console.error('Error fetching all meetings:', error);
-        return [];
+        throw error;
       }
 
-      console.log('=== ALL MEETINGS IN DATABASE (LAST 10) ===');
-      data.forEach((meeting, index) => {
-        console.log(`${index + 1}. ${meeting.summary} - Created: ${meeting.created_at}`);
-        console.log(`   Attendees:`, meeting.attendees);
-        console.log(`   Status: ${meeting.status}, User ID: ${meeting.user_id}`);
-        console.log(`   Calendar Event ID: ${meeting.calendar_event_id}`);
-        console.log(`   Meet Link: ${meeting.meet_link}`);
-      });
-
-      return data;
+      return (data || []) as Meeting[];
     },
+    enabled: !!user?.email,
   });
 
   // Get coach info for meetings
@@ -158,7 +89,6 @@ export default function ClientSessions() {
         .in('id', coachIds);
 
       if (error) {
-        console.error('Error fetching coach emails:', error);
         return {};
       }
 
@@ -167,7 +97,6 @@ export default function ClientSessions() {
         return acc;
       }, {});
 
-      console.log('Coach emails:', emailMap);
       return emailMap;
     },
     enabled: !!meetings?.length,
@@ -186,7 +115,6 @@ export default function ClientSessions() {
         .eq('event_type', 'invitation_accepted');
 
       if (error) {
-        console.error('Error fetching meeting acceptances:', error);
         return {};
       }
 
@@ -236,21 +164,6 @@ export default function ClientSessions() {
     return { status: 'completed', color: 'secondary', label: 'Completed' };
   };
 
-  // Check if coach is attending the meeting
-  const isCoachAttending = (meeting: Meeting) => {
-    const coachEmail = coachEmails?.[meeting.user_id];
-    if (!coachEmail) {
-      console.log(`No coach email found for meeting ${meeting.id}, user_id: ${meeting.user_id}`);
-      return false;
-    }
-    
-    const attendees = Array.isArray(meeting.attendees) ? meeting.attendees : [];
-    const isAttending = attendees.includes(coachEmail);
-    
-    console.log(`Meeting ${meeting.id}: Coach email ${coachEmail}, attendees: ${attendees.join(', ')}, is attending: ${isAttending}`);
-    return isAttending;
-  };
-
   // Check if meeting can be joined (within 15 minutes of start time)
   const canJoinMeeting = (meeting: Meeting) => {
     const now = new Date();
@@ -295,6 +208,132 @@ export default function ClientSessions() {
     const status = getMeetingStatus(m);
     return status.status === 'completed' || status.status === 'cancelled';
   });
+
+  const getDurationMinutes = (meeting: Meeting) =>
+    Math.round((new Date(meeting.end_time).getTime() - new Date(meeting.start_time).getTime()) / (1000 * 60));
+
+  const renderMeetingActions = (meeting: Meeting, isUpcoming: boolean) => {
+    const canJoin = canJoinMeeting(meeting);
+
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {isUpcoming && !acceptedMeetings?.[meeting.id] && (
+          <Button onClick={() => acceptInvitation(meeting)} className="gap-2 bg-green-600 hover:bg-green-700">
+            <Check className="h-4 w-4" />
+            Accept Invitation
+          </Button>
+        )}
+
+        {isUpcoming && acceptedMeetings?.[meeting.id] && (
+          <div className="flex items-center gap-2 text-green-600">
+            <Check className="h-4 w-4" />
+            <span className="text-sm font-medium">Accepted</span>
+          </div>
+        )}
+
+        {isUpcoming && meeting.meet_link && canJoin && (
+          <Button onClick={() => joinMeeting(meeting)} className="gap-2">
+            <Video className="h-4 w-4" />
+            Join Meeting
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        )}
+
+        <Button
+          variant="outline"
+          onClick={() => navigate(`/client/sessions/${meeting.id}`)}
+          className="gap-2"
+        >
+          {isUpcoming ? <MessageCircle className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          View Details
+        </Button>
+
+        {isUpcoming && !canJoin && meeting.meet_link && (
+          <p className="text-sm text-muted-foreground">Join available 15 minutes before start time</p>
+        )}
+      </div>
+    );
+  };
+
+  const renderMobileCards = (items: Meeting[], isUpcoming: boolean) => (
+    <div className="grid gap-4 md:hidden">
+      {items.map((meeting) => {
+        const statusInfo = getMeetingStatus(meeting);
+        return (
+          <Card key={meeting.id} className={!isUpcoming ? 'opacity-80 hover:opacity-100 transition-opacity' : 'hover:shadow-md transition-shadow'}>
+            <CardHeader className="pb-3">
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <CardTitle className="text-base leading-snug">{meeting.summary}</CardTitle>
+                  <Badge variant={statusInfo.color as any}>{statusInfo.label}</Badge>
+                </div>
+                {meeting.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-2">{meeting.description}</p>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span>{format(new Date(meeting.start_time), 'MMM d, yyyy • h:mm a')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span>
+                    {isUpcoming
+                      ? `${format(new Date(meeting.start_time), 'h:mm a')} - ${format(new Date(meeting.end_time), 'h:mm a')}`
+                      : formatDistanceToNow(new Date(meeting.start_time), { addSuffix: true })}
+                    {' • '}
+                    {getDurationMinutes(meeting)} minutes
+                  </span>
+                </div>
+              </div>
+              {renderMeetingActions(meeting, isUpcoming)}
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+
+  const renderDesktopList = (items: Meeting[], isUpcoming: boolean) => (
+    <Card className="hidden md:block">
+      <CardContent className="p-0">
+        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)_auto] gap-4 border-b px-6 py-3 text-sm font-medium text-muted-foreground">
+          <span>Session</span>
+          <span>Schedule</span>
+          <span className="text-right">Actions</span>
+        </div>
+        {items.map((meeting) => {
+          const statusInfo = getMeetingStatus(meeting);
+          return (
+            <div key={meeting.id} className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)_auto] gap-4 border-b px-6 py-4 last:border-b-0">
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate font-medium">{meeting.summary}</p>
+                  <Badge variant={statusInfo.color as any}>{statusInfo.label}</Badge>
+                </div>
+                {meeting.description && (
+                  <p className="line-clamp-1 text-sm text-muted-foreground">{meeting.description}</p>
+                )}
+              </div>
+              <div className="text-sm">
+                <p className="font-medium">{format(new Date(meeting.start_time), 'MMM d, yyyy')}</p>
+                <p className="text-muted-foreground">
+                  {isUpcoming
+                    ? `${format(new Date(meeting.start_time), 'h:mm a')} - ${format(new Date(meeting.end_time), 'h:mm a')}`
+                    : formatDistanceToNow(new Date(meeting.start_time), { addSuffix: true })}
+                </p>
+                <p className="text-muted-foreground">{getDurationMinutes(meeting)} minutes</p>
+              </div>
+              <div className="flex justify-end">{renderMeetingActions(meeting, isUpcoming)}</div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
 
   if (isLoading) {
     return (
@@ -378,184 +417,15 @@ export default function ClientSessions() {
       {upcomingMeetings.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Upcoming Sessions</h2>
-          <div className="grid gap-4">
-            {upcomingMeetings.map((meeting) => {
-              const statusInfo = getMeetingStatus(meeting);
-              const canJoin = canJoinMeeting(meeting);
-              
-              return (
-                <Card key={meeting.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <CardTitle className="text-lg">{meeting.summary}</CardTitle>
-                        {meeting.description && (
-                          <p className="text-sm text-muted-foreground">{meeting.description}</p>
-                        )}
-                      </div>
-                      <Badge variant={statusInfo.color as any}>
-                        {statusInfo.label}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      {/* Date & Time */}
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm">
-                          <div className="font-medium">
-                            {format(new Date(meeting.start_time), 'MMM d, yyyy')}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {format(new Date(meeting.start_time), 'h:mm a')} - {format(new Date(meeting.end_time), 'h:mm a')}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Duration */}
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm">
-                          <div className="font-medium">Duration</div>
-                          <div className="text-muted-foreground">
-                            {Math.round((new Date(meeting.end_time).getTime() - new Date(meeting.start_time).getTime()) / (1000 * 60))} minutes
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2">
-                      {/* Accept Invitation Button - only show if not accepted yet */}
-                      {!acceptedMeetings?.[meeting.id] && (
-                        <Button onClick={() => acceptInvitation(meeting)} className="gap-2 bg-green-600 hover:bg-green-700">
-                          <Check className="h-4 w-4" />
-                          Accept Invitation
-                        </Button>
-                      )}
-
-                      {/* Show accepted badge if invitation was accepted */}
-                      {acceptedMeetings?.[meeting.id] && (
-                        <div className="flex items-center gap-2 text-green-600">
-                          <Check className="h-4 w-4" />
-                          <span className="text-sm font-medium">Accepted</span>
-                        </div>
-                      )}
-
-                      {meeting.meet_link && canJoin && (
-                        <Button onClick={() => joinMeeting(meeting)} className="gap-2">
-                          <Video className="h-4 w-4" />
-                          Join Meeting
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      )}
-                      
-                      <Button
-                        variant="outline"
-                        onClick={() => navigate(`/client/sessions/${meeting.id}`)}
-                        className="gap-2"
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                        View Details
-                      </Button>
-
-                      {!canJoin && meeting.meet_link && (
-                        <p className="text-sm text-muted-foreground ml-auto">
-                          Join available 15 minutes before start time
-                        </p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          {renderMobileCards(upcomingMeetings, true)}
+          {renderDesktopList(upcomingMeetings, true)}
         </div>
       )}
       {pastMeetings.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Past Sessions</h2>
-          <div className="grid gap-4">
-            {pastMeetings.map((meeting) => {
-              const statusInfo = getMeetingStatus(meeting);
-              
-              return (
-                <Card key={meeting.id} className="opacity-75 hover:opacity-100 transition-opacity">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <CardTitle className="text-lg">{meeting.summary}</CardTitle>
-                        {meeting.description && (
-                          <p className="text-sm text-muted-foreground">{meeting.description}</p>
-                        )}
-                      </div>
-                      <Badge variant={statusInfo.color as any}>
-                        {statusInfo.label}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      {/* Date & Time */}
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm">
-                          <div className="font-medium">
-                            {format(new Date(meeting.start_time), 'MMM d, yyyy')}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {formatDistanceToNow(new Date(meeting.start_time), { addSuffix: true })}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Duration */}
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm">
-                          <div className="font-medium">Duration</div>
-                          <div className="text-muted-foreground">
-                            {Math.round((new Date(meeting.end_time).getTime() - new Date(meeting.start_time).getTime()) / (1000 * 60))} minutes
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Attendees */}
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm">
-                          <div className="font-medium flex items-center gap-2">
-                            {meeting.attendees?.length || 0} participants
-                            {isCoachAttending(meeting) && (
-                              <div className="flex items-center gap-1 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
-                                <User className="h-3 w-3" />
-                                Coach attending
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => navigate(`/client/sessions/${meeting.id}`)}
-                        className="gap-2"
-                      >
-                        <Eye className="h-4 w-4" />
-                        View Details
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          {renderMobileCards(pastMeetings, false)}
+          {renderDesktopList(pastMeetings, false)}
         </div>
       )}
 

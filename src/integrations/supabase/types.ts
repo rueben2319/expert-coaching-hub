@@ -174,7 +174,7 @@ export type Database = {
           payment_method?: string | null
           renewal_date?: string | null
           start_date?: string
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           tier_id: string
           transaction_id?: string | null
           updated_at?: string
@@ -190,7 +190,7 @@ export type Database = {
           payment_method?: string | null
           renewal_date?: string | null
           start_date?: string
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           tier_id?: string
           transaction_id?: string | null
           updated_at?: string
@@ -241,6 +241,13 @@ export type Database = {
             referencedRelation: "lesson_content"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "content_interactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          },
         ]
       }
       course_certificates: {
@@ -283,6 +290,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_certificates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
         ]
@@ -339,6 +353,7 @@ export type Database = {
           created_at: string | null
           embedding: string | null
           id: string
+          metadata: Json | null
           updated_at: string | null
         }
         Insert: {
@@ -347,6 +362,7 @@ export type Database = {
           created_at?: string | null
           embedding?: string | null
           id?: string
+          metadata?: Json | null
           updated_at?: string | null
         }
         Update: {
@@ -355,13 +371,14 @@ export type Database = {
           created_at?: string | null
           embedding?: string | null
           id?: string
+          metadata?: Json | null
           updated_at?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "course_embeddings_course_id_fkey"
             columns: ["course_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
           },
@@ -410,13 +427,6 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "course_enrollments_credit_transaction_id_fkey"
-            columns: ["credit_transaction_id"]
-            isOneToOne: false
-            referencedRelation: "credit_transactions"
             referencedColumns: ["id"]
           },
         ]
@@ -482,10 +492,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "course_files_lesson_id_fkey"
-            columns: ["lesson_id"]
+            foreignKeyName: "course_files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
             isOneToOne: false
-            referencedRelation: "lessons"
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
           {
@@ -493,6 +503,13 @@ export type Database = {
             columns: ["module_id"]
             isOneToOne: false
             referencedRelation: "course_modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_files_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
         ]
@@ -512,7 +529,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          order_index: number
+          order_index?: number
           title: string
           updated_at?: string
         }
@@ -552,7 +569,7 @@ export type Database = {
           rating: number
           review_text?: string | null
           updated_at?: string | null
-          user_id: string
+          user_id?: string
         }
         Update: {
           course_id?: string
@@ -569,6 +586,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_reviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
         ]
@@ -627,45 +651,6 @@ export type Database = {
         }
         Relationships: []
       }
-      credit_packages: {
-        Row: {
-          bonus_credits: number | null
-          created_at: string
-          credits: number
-          description: string | null
-          id: string
-          is_active: boolean
-          name: string
-          price_mwk: number
-          sort_order: number | null
-          updated_at: string
-        }
-        Insert: {
-          bonus_credits?: number | null
-          created_at?: string
-          credits: number
-          description?: string | null
-          id?: string
-          is_active?: boolean
-          name: string
-          price_mwk: number
-          sort_order?: number | null
-          updated_at?: string
-        }
-        Update: {
-          bonus_credits?: number | null
-          created_at?: string
-          credits?: number
-          description?: string | null
-          id?: string
-          is_active?: boolean
-          name?: string
-          price_mwk?: number
-          sort_order?: number | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       credit_transactions: {
         Row: {
           amount: number
@@ -706,24 +691,28 @@ export type Database = {
           transaction_type?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "credit_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       credit_wallets: {
         Row: {
           balance: number
           created_at: string
           id: string
-          total_earned: number
-          total_spent: number
           updated_at: string
           user_id: string
         }
         Insert: {
-          balance?: number
+          balance: number
           created_at?: string
           id?: string
-          total_earned?: number
-          total_spent?: number
           updated_at?: string
           user_id: string
         }
@@ -731,17 +720,22 @@ export type Database = {
           balance?: number
           created_at?: string
           id?: string
-          total_earned?: number
-          total_spent?: number
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "credit_wallets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       invoices: {
         Row: {
           amount: number
-          client_subscription_id: string | null
           created_at: string
           currency: string
           description: string | null
@@ -750,32 +744,26 @@ export type Database = {
           invoice_number: string
           order_id: string | null
           payment_method: string | null
-          pdf_url: string | null
           status: string
           subscription_id: string | null
-          transaction_id: string | null
           user_id: string
         }
         Insert: {
           amount: number
-          client_subscription_id?: string | null
           created_at?: string
-          currency?: string
+          currency: string
           description?: string | null
           id?: string
           invoice_date?: string
-          invoice_number: string
+          invoice_number?: string
           order_id?: string | null
           payment_method?: string | null
-          pdf_url?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           subscription_id?: string | null
-          transaction_id?: string | null
           user_id: string
         }
         Update: {
           amount?: number
-          client_subscription_id?: string | null
           created_at?: string
           currency?: string
           description?: string | null
@@ -784,66 +772,51 @@ export type Database = {
           invoice_number?: string
           order_id?: string | null
           payment_method?: string | null
-          pdf_url?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           subscription_id?: string | null
-          transaction_id?: string | null
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "invoices_subscription_id_fkey"
-            columns: ["subscription_id"]
+            foreignKeyName: "invoices_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "coach_subscriptions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "invoices_transaction_id_fkey"
-            columns: ["transaction_id"]
-            isOneToOne: true
-            referencedRelation: "transactions"
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
         ]
       }
       lesson_completion_attempts: {
         Row: {
-          attempted_at: string
-          completed_count: number
-          details: Json | null
+          completed_at: string | null
+          created_at: string
           id: string
           lesson_id: string
-          required_count: number
-          success: boolean
+          updated_at: string
           user_id: string
         }
         Insert: {
-          attempted_at?: string
-          completed_count: number
-          details?: Json | null
-          id?: string
-          lesson_id: string
-          required_count: number
-          success: boolean
-          user_id: string
-        }
-        Update: {
-          attempted_at?: string
-          completed_count?: number
-          details?: Json | null
+          completed_at?: string | null
+          created_at?: string
           id?: string
           lesson_id?: string
-          required_count?: number
-          success?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          lesson_id?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "fk_lesson_completion_lesson"
-            columns: ["lesson_id"]
+            foreignKeyName: "lesson_completion_attempts_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "lessons"
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           },
           {
@@ -858,10 +831,10 @@ export type Database = {
       lesson_content: {
         Row: {
           content_data: Json
-          content_type: Database["public"]["Enums"]["content_type"]
+          content_type: string
           created_at: string
-          file_metadata: Json | null
           file_url: string | null
+          file_metadata: Json | null
           id: string
           is_required: boolean
           lesson_id: string
@@ -870,22 +843,22 @@ export type Database = {
         }
         Insert: {
           content_data: Json
-          content_type: Database["public"]["Enums"]["content_type"]
+          content_type: string
           created_at?: string
-          file_metadata?: Json | null
           file_url?: string | null
+          file_metadata?: Json | null
           id?: string
           is_required?: boolean
-          lesson_id: string
-          order_index: number
+          lesson_id?: string
+          order_index?: number
           updated_at?: string
         }
         Update: {
           content_data?: Json
-          content_type?: Database["public"]["Enums"]["content_type"]
+          content_type?: string
           created_at?: string
-          file_metadata?: Json | null
           file_url?: string | null
+          file_metadata?: Json | null
           id?: string
           is_required?: boolean
           lesson_id?: string
@@ -905,26 +878,38 @@ export type Database = {
       lesson_progress: {
         Row: {
           completed_at: string | null
+          content_completed: number
+          content_total: number
+          created_at: string
           id: string
-          is_completed: boolean
           lesson_id: string
-          started_at: string
+          progress_percentage: number
+          started_at: string | null
+          updated_at: string
           user_id: string
         }
         Insert: {
           completed_at?: string | null
+          content_completed?: number
+          content_total?: number
+          created_at?: string
           id?: string
-          is_completed?: boolean
-          lesson_id: string
-          started_at?: string
-          user_id: string
+          lesson_id?: string
+          progress_percentage?: number
+          started_at?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Update: {
           completed_at?: string | null
+          content_completed?: number
+          content_total?: number
+          created_at?: string
           id?: string
-          is_completed?: boolean
           lesson_id?: string
-          started_at?: string
+          progress_percentage?: number
+          started_at?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -954,7 +939,7 @@ export type Database = {
           estimated_duration?: number | null
           id?: string
           module_id: string
-          order_index: number
+          order_index?: number
           title: string
           updated_at?: string
         }
@@ -1045,91 +1030,42 @@ export type Database = {
       }
       meeting_chat: {
         Row: {
-          created_at: string | null
+          access_token_encrypted: string | null
+          created_at: string
+          expires_at: string | null
           id: string
-          meeting_id: string
-          message: string
+          provider: string
+          refresh_count: number
+          refresh_token_encrypted: string | null
+          scope: string | null
+          updated_at: string
           user_id: string
         }
         Insert: {
-          created_at?: string | null
+          access_token_encrypted?: string | null
+          created_at?: string
+          expires_at?: string | null
           id?: string
-          meeting_id: string
-          message: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          meeting_id?: string
-          message?: string
+          provider: string
+          refresh_count?: number
+          refresh_token_encrypted?: string | null
+          scope?: string | null
+          updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "meeting_chat_meeting_id_fkey"
-            columns: ["meeting_id"]
-            isOneToOne: false
-            referencedRelation: "meetings"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      meetings: {
-        Row: {
-          attendees: Json | null
-          calendar_event_id: string | null
-          course_id: string | null
-          created_at: string | null
-          description: string | null
-          end_time: string
-          id: string
-          meet_link: string | null
-          start_time: string
-          status: string | null
-          summary: string
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          attendees?: Json | null
-          calendar_event_id?: string | null
-          course_id?: string | null
-          created_at?: string | null
-          description?: string | null
-          end_time: string
-          id?: string
-          meet_link?: string | null
-          start_time: string
-          status?: string | null
-          summary: string
-          updated_at?: string | null
-          user_id: string
-        }
         Update: {
-          attendees?: Json | null
-          calendar_event_id?: string | null
-          course_id?: string | null
-          created_at?: string | null
-          description?: string | null
-          end_time?: string
+          access_token_encrypted?: string | null
+          created_at?: string
+          expires_at?: string | null
           id?: string
-          meet_link?: string | null
-          start_time?: string
-          status?: string | null
-          summary?: string
-          updated_at?: string | null
+          provider?: string
+          refresh_count?: number
+          refresh_token_encrypted?: string | null
+          scope?: string | null
+          updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "meetings_course_id_fkey"
-            columns: ["course_id"]
-            isOneToOne: false
-            referencedRelation: "courses"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       oauth_tokens: {
         Row: {
@@ -1186,8 +1122,8 @@ export type Database = {
           choices: Json | null
           created_at: string
           difficulty: string | null
-          exercise_type: string
           explanation: string | null
+          exercise_type: string
           id: string
           metadata: Json | null
           order_index: number
@@ -1202,8 +1138,8 @@ export type Database = {
           choices?: Json | null
           created_at?: string
           difficulty?: string | null
-          exercise_type: string
           explanation?: string | null
+          exercise_type: string
           id?: string
           metadata?: Json | null
           order_index?: number
@@ -1218,8 +1154,8 @@ export type Database = {
           choices?: Json | null
           created_at?: string
           difficulty?: string | null
-          exercise_type?: string
           explanation?: string | null
+          exercise_type?: string
           id?: string
           metadata?: Json | null
           order_index?: number
@@ -1236,24 +1172,17 @@ export type Database = {
             referencedRelation: "practice_exercise_sets"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "practice_exercise_items_set_id_fkey"
-            columns: ["set_id"]
-            isOneToOne: false
-            referencedRelation: "v_practice_exercise_coach_scope"
-            referencedColumns: ["set_id"]
-          },
         ]
       }
       practice_exercise_sets: {
         Row: {
           approved_at: string | null
-          content_id: string | null
           created_at: string
           difficulty: string | null
           generated_by: string | null
           id: string
           lesson_id: string | null
+          content_id: string | null
           model_used: string | null
           prompt_context: Json | null
           raw_output: Json | null
@@ -1264,33 +1193,33 @@ export type Database = {
         }
         Insert: {
           approved_at?: string | null
-          content_id?: string | null
           created_at?: string
           difficulty?: string | null
           generated_by?: string | null
           id?: string
           lesson_id?: string | null
+          content_id?: string | null
           model_used?: string | null
           prompt_context?: Json | null
           raw_output?: Json | null
           skill_focus?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           target_audience?: string | null
           updated_at?: string
         }
         Update: {
           approved_at?: string | null
-          content_id?: string | null
           created_at?: string
           difficulty?: string | null
           generated_by?: string | null
           id?: string
           lesson_id?: string | null
+          content_id?: string | null
           model_used?: string | null
           prompt_context?: Json | null
           raw_output?: Json | null
           skill_focus?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           target_audience?: string | null
           updated_at?: string
         }
@@ -1309,6 +1238,13 @@ export type Database = {
             referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "practice_exercise_sets_generated_by_fkey"
+            columns: ["generated_by"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          },
         ]
       }
       profiles: {
@@ -1325,7 +1261,7 @@ export type Database = {
           created_at?: string
           email: string
           full_name?: string | null
-          id: string
+          id?: string
           updated_at?: string
         }
         Update: {
@@ -1340,46 +1276,31 @@ export type Database = {
       }
       recommended_courses: {
         Row: {
-          created_at: string | null
-          expires_at: string | null
-          id: string
-          reason: string | null
           recommended_course_id: string
-          similarity_score: number | null
-          source_course_id: string | null
-          user_id: string
+          score: number
+          source_course_id: string
         }
         Insert: {
-          created_at?: string | null
-          expires_at?: string | null
-          id?: string
-          reason?: string | null
           recommended_course_id: string
-          similarity_score?: number | null
-          source_course_id?: string | null
-          user_id: string
+          score: number
+          source_course_id: string
         }
         Update: {
-          created_at?: string | null
-          expires_at?: string | null
-          id?: string
-          reason?: string | null
           recommended_course_id?: string
-          similarity_score?: number | null
-          source_course_id?: string | null
-          user_id?: string
+          score?: number
+          source_course_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "recommended_courses_recommended_course_id_fkey"
-            columns: ["recommended_course_id"]
+            foreignKeyName: "recommended_courses_source_course_id_fkey"
+            columns: ["source_course_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "recommended_courses_source_course_id_fkey"
-            columns: ["source_course_id"]
+            foreignKeyName: "recommended_courses_recommended_course_id_fkey"
+            columns: ["recommended_course_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -1392,7 +1313,6 @@ export type Database = {
           details: Json | null
           event_type: string
           id: string
-          ip_address: string | null
           target_user_id: string | null
           user_id: string | null
         }
@@ -1401,7 +1321,6 @@ export type Database = {
           details?: Json | null
           event_type: string
           id?: string
-          ip_address?: string | null
           target_user_id?: string | null
           user_id?: string | null
         }
@@ -1410,57 +1329,32 @@ export type Database = {
           details?: Json | null
           event_type?: string
           id?: string
-          ip_address?: string | null
           target_user_id?: string | null
           user_id?: string | null
         }
-        Relationships: []
-      }
-      subscription_audit_log: {
-        Row: {
-          change_reason: string | null
-          changed_by: string | null
-          created_at: string
-          id: string
-          metadata: Json | null
-          new_status: string
-          old_status: string | null
-          subscription_id: string
-          subscription_type: string
-        }
-        Insert: {
-          change_reason?: string | null
-          changed_by?: string | null
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          new_status: string
-          old_status?: string | null
-          subscription_id: string
-          subscription_type: string
-        }
-        Update: {
-          change_reason?: string | null
-          changed_by?: string | null
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          new_status?: string
-          old_status?: string | null
-          subscription_id?: string
-          subscription_type?: string
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "security_audit_log_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "security_audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tiers: {
         Row: {
           created_at: string
           description: string | null
-          features: Json
+          features: Json | null
           id: string
-          is_active: boolean
-          max_courses: number | null
-          max_students: number | null
           name: string
           price_monthly: number
           price_yearly: number
@@ -1469,11 +1363,8 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
-          features?: Json
+          features?: Json | null
           id?: string
-          is_active?: boolean
-          max_courses?: number | null
-          max_students?: number | null
           name: string
           price_monthly: number
           price_yearly: number
@@ -1482,11 +1373,8 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
-          features?: Json
+          features?: Json | null
           id?: string
-          is_active?: boolean
-          max_courses?: number | null
-          max_students?: number | null
           name?: string
           price_monthly?: number
           price_yearly?: number
@@ -1498,89 +1386,50 @@ export type Database = {
         Row: {
           amount: number
           created_at: string
-          credit_package_id: string | null
-          credits_amount: number | null
-          currency: string
+          currency: string | null
           gateway_response: Json | null
           id: string
           order_id: string | null
           status: string
           subscription_id: string | null
-          transaction_mode: string | null
+          transaction_mode: string
           transaction_ref: string
           updated_at: string
           user_id: string
+          credits_amount: number | null
+          credit_package_id: string | null
         }
         Insert: {
           amount: number
           created_at?: string
-          credit_package_id?: string | null
-          credits_amount?: number | null
-          currency?: string
+          currency?: string | null
           gateway_response?: Json | null
           id?: string
           order_id?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           subscription_id?: string | null
-          transaction_mode?: string | null
+          transaction_mode?: string
           transaction_ref: string
           updated_at?: string
-          user_id: string
+          user_id?: string
+          credits_amount?: number | null
+          credit_package_id?: string | null
         }
         Update: {
           amount?: number
           created_at?: string
-          credit_package_id?: string | null
-          credits_amount?: number | null
-          currency?: string
+          currency?: string | null
           gateway_response?: Json | null
           id?: string
           order_id?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           subscription_id?: string | null
-          transaction_mode?: string | null
+          transaction_mode?: string
           transaction_ref?: string
           updated_at?: string
           user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "transactions_credit_package_id_fkey"
-            columns: ["credit_package_id"]
-            isOneToOne: false
-            referencedRelation: "credit_packages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "transactions_subscription_id_fkey"
-            columns: ["subscription_id"]
-            isOneToOne: false
-            referencedRelation: "coach_subscriptions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_role_changes: {
-        Row: {
-          changed_by: string | null
-          created_at: string
-          id: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Insert: {
-          changed_by?: string | null
-          created_at?: string
-          id?: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Update: {
-          changed_by?: string | null
-          created_at?: string
-          id?: string
-          role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
+          credits_amount?: number | null
+          credit_package_id?: string | null
         }
         Relationships: []
       }
@@ -1588,19 +1437,19 @@ export type Database = {
         Row: {
           created_at: string
           id: string
-          role: Database["public"]["Enums"]["app_role"]
+          role: string
           user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
+          role: string
+          user_id?: string
         }
         Update: {
           created_at?: string
           id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          role?: string
           user_id?: string
         }
         Relationships: []
@@ -1628,136 +1477,197 @@ export type Database = {
       }
       webhook_processing_log: {
         Row: {
-          created_at: string
+          created_at: string | null
           error_message: string | null
           id: string
-          payload: Json
+          payload: Json | null
           processed_at: string | null
           status: string
           tx_ref: string
-          updated_at: string
         }
         Insert: {
-          created_at?: string
+          created_at?: string | null
           error_message?: string | null
           id?: string
-          payload: Json
+          payload?: Json | null
           processed_at?: string | null
-          status: string
+          status?: Database["public"]["Enums"]["course_status"]
           tx_ref: string
-          updated_at?: string
         }
         Update: {
-          created_at?: string
+          created_at?: string | null
           error_message?: string | null
           id?: string
-          payload?: Json
+          payload?: Json | null
           processed_at?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           tx_ref?: string
-          updated_at?: string
         }
         Relationships: []
       }
       withdrawal_requests: {
         Row: {
-          amount: number
+          admin_notes: string | null
+          amount_mwk: number
+          completed_at: string | null
           coach_id: string
           created_at: string
           credits_amount: number
-          fraud_reasons: Json | null
-          fraud_score: number | null
+          failure_reason: string | null
           id: string
-          ip_address: string | null
-          last_retry_at: string | null
-          notes: string | null
-          original_withdrawal_id: string | null
-          payment_details: Json
-          payment_method: string
+          payout_ref: string | null
+          payout_trans_id: string | null
           processed_at: string | null
-          processed_by: string | null
-          rejection_reason: string | null
-          retry_count: number | null
           status: string
           transaction_ref: string | null
           updated_at: string
-          user_agent: string | null
         }
         Insert: {
-          amount: number
+          admin_notes?: string | null
+          amount_mwk: number
+          completed_at?: string | null
           coach_id: string
           created_at?: string
           credits_amount: number
-          fraud_reasons?: Json | null
-          fraud_score?: number | null
+          failure_reason?: string | null
           id?: string
-          ip_address?: string | null
-          last_retry_at?: string | null
-          notes?: string | null
-          original_withdrawal_id?: string | null
-          payment_details: Json
-          payment_method?: string
+          payout_ref?: string | null
+          payout_trans_id?: string | null
           processed_at?: string | null
-          processed_by?: string | null
-          rejection_reason?: string | null
-          retry_count?: number | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           transaction_ref?: string | null
           updated_at?: string
-          user_agent?: string | null
         }
         Update: {
-          amount?: number
+          admin_notes?: string | null
+          amount_mwk?: number
+          completed_at?: string | null
           coach_id?: string
           created_at?: string
           credits_amount?: number
-          fraud_reasons?: Json | null
-          fraud_score?: number | null
+          failure_reason?: string | null
           id?: string
-          ip_address?: string | null
-          last_retry_at?: string | null
-          notes?: string | null
-          original_withdrawal_id?: string | null
-          payment_details?: Json
-          payment_method?: string
+          payout_ref?: string | null
+          payout_trans_id?: string | null
           processed_at?: string | null
-          processed_by?: string | null
-          rejection_reason?: string | null
-          retry_count?: number | null
-          status?: string
+          status?: Database["public"]["Enums"]["course_status"]
           transaction_ref?: string | null
           updated_at?: string
-          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      meeting_analytics: {
+        Row: {
+          created_at: string | null
+          event_data: Json | null
+          event_type: string
+          id: string
+          meeting_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          meeting_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          meeting_id?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "withdrawal_requests_original_withdrawal_id_fkey"
-            columns: ["original_withdrawal_id"]
+            foreignKeyName: "meeting_analytics_meeting_id_fkey"
+            columns: ["meeting_id"]
             isOneToOne: false
-            referencedRelation: "stuck_withdrawals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "withdrawal_requests_original_withdrawal_id_fkey"
-            columns: ["original_withdrawal_id"]
-            isOneToOne: false
-            referencedRelation: "withdrawal_requests"
+            referencedRelation: "meetings"
             referencedColumns: ["id"]
           },
         ]
       }
-    }
-    Views: {
-      certificate_verification: {
+      meeting_chat: {
         Row: {
-          certificate_id: string | null
-          coach_id: string | null
-          coach_name: string | null
-          course_title: string | null
-          expires_at: string | null
-          issued_at: string | null
-          student_name: string | null
-          verification_status: string | null
+          created_at: string | null
+          id: string
+          meeting_id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          meeting_id: string
+          message: string
+          user_id?: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          meeting_id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_chat_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meetings: {
+        Row: {
+          attendees: Json | null
+          calendar_event_id: string | null
+          course_id: string | null
+          created_at: string | null
+          description: string | null
+          end_time: string
+          id: string
+          meet_link: string | null
+          start_time: string
+          status: string | null
+          summary: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          attendees?: Json | null
+          calendar_event_id?: string | null
+          course_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          end_time: string
+          id?: string
+          meet_link?: string | null
+          start_time: string
+          status?: Database["public"]["Enums"]["course_status"] | null
+          summary: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          attendees?: Json | null
+          calendar_event_id?: string | null
+          course_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          end_time?: string
+          id?: string
+          meet_link?: string | null
+          start_time?: string
+          status?: Database["public"]["Enums"]["course_status"] | null
+          summary?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -1785,68 +1695,66 @@ export type Database = {
         }
         Relationships: []
       }
-      stuck_withdrawals: {
+      subscription_audit_log: {
         Row: {
-          amount: number | null
-          coach_id: string | null
           created_at: string | null
-          credits_amount: number | null
-          hours_processing: number | null
-          id: string | null
-          payment_method: string | null
-          rejection_reason: string | null
-          status: string | null
-          transaction_ref: string | null
+          id: string
+          metadata: Json | null
+          new_status: string | null
+          old_status: string | null
+          reason: string | null
+          subscription_id: string
+          subscription_type: string | null
         }
         Insert: {
-          amount?: number | null
-          coach_id?: string | null
           created_at?: string | null
-          credits_amount?: number | null
-          hours_processing?: never
-          id?: string | null
-          payment_method?: string | null
-          rejection_reason?: string | null
-          status?: string | null
-          transaction_ref?: string | null
+          id?: string
+          metadata?: Json | null
+          new_status?: string | null
+          old_status?: string | null
+          reason?: string | null
+          subscription_id: string
+          subscription_type?: string | null
         }
         Update: {
-          amount?: number | null
-          coach_id?: string | null
           created_at?: string | null
-          credits_amount?: number | null
-          hours_processing?: never
-          id?: string | null
-          payment_method?: string | null
-          rejection_reason?: string | null
-          status?: string | null
-          transaction_ref?: string | null
+          id?: string
+          metadata?: Json | null
+          new_status?: string | null
+          old_status?: string | null
+          reason?: string | null
+          subscription_id?: string
+          subscription_type?: string | null
         }
         Relationships: []
       }
-      v_practice_exercise_coach_scope: {
+      user_role_changes: {
         Row: {
-          coach_id: string | null
-          generated_by: string | null
-          set_id: string | null
+          changed_by: string
+          changed_at: string | null
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          changed_by: string
+          changed_at?: string | null
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          changed_by?: string
+          changed_at?: string | null
+          id?: string
+          role?: string
+          user_id?: string
         }
         Relationships: []
       }
-      withdrawal_analytics: {
-        Row: {
-          avg_fraud_score: number | null
-          coach_id: string | null
-          completed_count: number | null
-          failed_count: number | null
-          first_request_at: string | null
-          last_request_at: string | null
-          processing_count: number | null
-          total_credits_requested: number | null
-          total_credits_withdrawn: number | null
-          total_requests: number | null
-        }
-        Relationships: []
-      }
+    }
+    Views: {
+      [_ in never]: never
     }
     Functions: {
       admin_process_withdrawal: {
@@ -2072,14 +1980,13 @@ export type Database = {
     }
   }
 }
-
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | keyof (DefaultSchema["Tables"]) &
+        DefaultSchema["Views"]
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
@@ -2091,19 +1998,19 @@ export type Tables<
   schema: keyof DatabaseWithoutInternals
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"]) &
+        DefaultSchema["Views"]
     ? (DefaultSchema["Tables"] &
         DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
+      Row: infer R
+    }
+    ? R
+    : never
     : never
 
 export type TablesInsert<
@@ -2125,10 +2032,10 @@ export type TablesInsert<
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
     ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
+      Insert: infer I
+    }
+    ? I
+    : never
     : never
 
 export type TablesUpdate<
@@ -2150,10 +2057,10 @@ export type TablesUpdate<
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
     ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
+      Update: infer U
+    }
+    ? U
+    : never
     : never
 
 export type Enums<

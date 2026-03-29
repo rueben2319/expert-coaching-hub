@@ -1,6 +1,6 @@
 /**
  * Token Storage and Metadata Management
- * Handles persistent storage of OAuth tokens and user metadata
+ * Handles persistent storage of OAuth tokens and user metadata.
  */
 
 // @ts-ignore: Deno imports work at runtime
@@ -36,24 +36,49 @@ interface TokenRecord {
   created_at?: string | null;
   updated_at?: string | null;
   refresh_count?: number | null;
+  last_refresh_request_id?: string | null;
+  refresh_token_rotated_at?: string | null;
+  refresh_token_fingerprint?: string | null;
+}
+
+interface DbTokenRow {
+  id?: string;
+  user_id: string;
+  provider: string;
+  access_token_encrypted: string | null;
+  refresh_token_encrypted: string | null;
+  expires_at: string | null;
+  scope: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  refresh_count?: number | null;
+  last_refresh_request_id?: string | null;
+  refresh_token_rotated_at?: string | null;
+  refresh_token_fingerprint?: string | null;
+}
+
+export interface TokenRotationMetadata {
+  refreshRequestId?: string;
+  refreshTokenRotatedAt?: string;
+  refreshTokenFingerprint?: string;
 }
 
 const resolveStrategy = (explicit?: TokenStorageStrategy): TokenStorageStrategy => {
   if (explicit) return explicit;
   try {
     const fromEnv = typeof Deno !== "undefined" ? Deno.env.get("TOKEN_STORAGE_STRATEGY") : undefined;
-    return fromEnv?.toLowerCase() === "database" ? "database" : "metadata";
+    if (!fromEnv) {
+      return "database";
+    }
+    return fromEnv.toLowerCase() === "metadata" ? "metadata" : "database";
   } catch {
-    return "metadata";
+    return "database";
   }
 };
 
 export interface UserTokenMetadata {
-  google_access_token?: string;
-  google_refresh_token?: string;
-  google_token_expires_at?: string;
-  google_token_scope?: string;
   google_calendar_connected?: boolean;
+  google_token_expires_at?: string;
   last_token_refresh?: string;
   token_refresh_count?: number;
 }
@@ -65,7 +90,8 @@ export interface TokenStorageResult {
 
 export class TokenStorage {
   /**
-   * Stores Google OAuth tokens in user metadata
+   * Stores Google OAuth tokens.
+   * Defaults to encrypted database-backed storage.
    */
   static async storeTokens(
     supabase: SupabaseClient,
@@ -73,45 +99,36 @@ export class TokenStorage {
     accessToken: string,
     refreshToken?: string,
     expiresIn?: number,
-    scope?: string
+    scope?: string,
+    strategy?: TokenStorageStrategy,
+    provider: string = DEFAULT_PROVIDER
   ): Promise<TokenStorageResult> {
-    try {
-      const expiresAt = expiresIn 
-        ? new Date(Date.now() + (expiresIn * 1000)).toISOString()
-        : undefined;
+    const resolved = resolveStrategy(strategy);
 
-      const existing = await this.getStoredTokens(supabase, userId);
-      const metadata: UserTokenMetadata = {
-        ...(existing ?? {}),
-        google_access_token: accessToken,
-        google_refresh_token: refreshToken ?? existing?.google_refresh_token,
-        google_token_expires_at: expiresAt ?? existing?.google_token_expires_at,
-        google_token_scope: scope ?? existing?.google_token_scope,
-        google_calendar_connected: true,
-        last_token_refresh: new Date().toISOString(),
-      };
+    if (resolved === "database") {
+      const dbResult = await DatabaseTokenStorage.storeTokens(
+        supabase,
+        userId,
+        provider,
+        accessToken,
+        refreshToken,
+        expiresIn,
+        scope
+      );
 
-      // Update user metadata
-      const { error } = await supabase.auth.admin.updateUserById(userId, {
-        user_metadata: metadata,
-      });
-
-      if (error) {
-        throw error;
+      if (!dbResult.success) {
+        return dbResult;
       }
 
-      return { success: true };
-    } catch (error: any) {
-      console.error('Token storage error:', error);
-      return {
-        success: false,
-        error: error.message || 'Failed to store tokens',
-      };
+      return this.updateConnectionMetadata(supabase, userId, expiresIn);
     }
+
+    // Metadata fallback mode intentionally does NOT store raw tokens.
+    return this.updateConnectionMetadata(supabase, userId, expiresIn);
   }
 
   /**
-   * Retrieves Google OAuth tokens from user metadata
+   * Retrieves user token-related metadata only (no raw token values).
    */
   static async getStoredTokens(
     supabase: SupabaseClient,
@@ -119,20 +136,20 @@ export class TokenStorage {
   ): Promise<UserTokenMetadata | null> {
     try {
       const { data: user, error } = await supabase.auth.admin.getUserById(userId);
-      
+
       if (error || !user || !user.user) {
         throw new Error('User not found');
       }
 
       return (user.user as any).user_metadata as UserTokenMetadata;
     } catch (error: any) {
-      console.error('Token retrieval error:', error);
+      console.error('Token metadata retrieval error:', error);
       return null;
     }
   }
 
   /**
-   * Updates token refresh count and timestamp
+   * Updates token refresh count and timestamp in metadata.
    */
   static async updateRefreshMetadata(
     supabase: SupabaseClient,
@@ -143,7 +160,8 @@ export class TokenStorage {
       const refreshCount = (currentMetadata?.token_refresh_count || 0) + 1;
 
       const updatedMetadata: Partial<UserTokenMetadata> = {
-        ...currentMetadata,
+        ...(currentMetadata ?? {}),
+        google_calendar_connected: true,
         last_token_refresh: new Date().toISOString(),
         token_refresh_count: refreshCount,
       };
@@ -167,7 +185,7 @@ export class TokenStorage {
   }
 
   /**
-   * Checks if stored token is expired
+   * Checks if stored token metadata indicates expiry.
    */
   static isTokenExpired(metadata: UserTokenMetadata): boolean {
     if (!metadata.google_token_expires_at) {
@@ -176,27 +194,32 @@ export class TokenStorage {
 
     const expiresAt = new Date(metadata.google_token_expires_at);
     const now = new Date();
-    
+
     // Add 5-minute buffer to prevent edge cases
-    const bufferTime = 5 * 60 * 1000; // 5 minutes in milliseconds
-    
+    const bufferTime = 5 * 60 * 1000;
+
     return expiresAt.getTime() - bufferTime <= now.getTime();
   }
 
   /**
-   * Clears stored Google tokens (for logout/disconnect)
+   * Clears stored Google token references.
    */
   static async clearTokens(
     supabase: SupabaseClient,
-    userId: string
+    userId: string,
+    strategy?: TokenStorageStrategy,
+    provider: string = DEFAULT_PROVIDER
   ): Promise<TokenStorageResult> {
+    const resolved = resolveStrategy(strategy);
+
     try {
+      if (resolved === "database") {
+        await DatabaseTokenStorage.deleteTokenRecord(supabase, userId, provider);
+      }
+
       const clearedMetadata: Partial<UserTokenMetadata> = {
-        google_access_token: undefined,
-        google_refresh_token: undefined,
-        google_token_expires_at: undefined,
-        google_token_scope: undefined,
         google_calendar_connected: false,
+        google_token_expires_at: undefined,
       };
 
       const { error } = await supabase.auth.admin.updateUserById(userId, {
@@ -218,7 +241,7 @@ export class TokenStorage {
   }
 
   /**
-   * Gets comprehensive token status
+   * Gets comprehensive token status.
    */
   static async getTokenStatus(
     supabase: SupabaseClient,
@@ -231,6 +254,40 @@ export class TokenStorage {
       return DatabaseTokenStorage.getTokenStatusFromDB(supabase, userId, provider);
     }
     return this.getTokenStatusFromMetadata(supabase, userId);
+  }
+
+  private static async updateConnectionMetadata(
+    supabase: SupabaseClient,
+    userId: string,
+    expiresIn?: number
+  ): Promise<TokenStorageResult> {
+    try {
+      const currentMetadata = await this.getStoredTokens(supabase, userId);
+      const updatedMetadata: Partial<UserTokenMetadata> = {
+        ...(currentMetadata ?? {}),
+        google_calendar_connected: true,
+        google_token_expires_at: expiresIn
+          ? new Date(Date.now() + (expiresIn * 1000)).toISOString()
+          : currentMetadata?.google_token_expires_at,
+        last_token_refresh: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: updatedMetadata,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Metadata update error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to update token metadata',
+      };
+    }
   }
 
   private static async getTokenStatusFromMetadata(
@@ -256,59 +313,96 @@ export class TokenStorage {
       : undefined;
 
     return {
-      hasTokens: !!metadata.google_access_token,
+      hasTokens: !!metadata.google_calendar_connected,
       isExpired,
       expiresAt,
       refreshCount: metadata.token_refresh_count || 0,
       lastRefresh,
-      scope: metadata.google_token_scope,
     };
   }
 }
 
 /**
- * Alternative storage using a dedicated tokens table
- * Use this if user metadata approach has limitations
+ * Database-backed token storage.
+ * Tokens are encrypted before being written to the database.
  */
 export class DatabaseTokenStorage {
-  /**
-   * Creates the oauth_tokens table if it doesn't exist
-   */
-  static async createTokensTable(supabase: SupabaseClient): Promise<void> {
-    const createTableSQL = `
-      CREATE TABLE IF NOT EXISTS oauth_tokens (
-        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-        provider VARCHAR(50) NOT NULL,
-        access_token TEXT,
-        refresh_token TEXT,
-        expires_at TIMESTAMP WITH TIME ZONE,
-        scope TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        refresh_count INTEGER DEFAULT 0,
-        UNIQUE(user_id, provider)
-      );
+  private static cachedKeyPromise: Promise<CryptoKey> | null = null;
 
-      -- Enable RLS
-      ALTER TABLE oauth_tokens ENABLE ROW LEVEL SECURITY;
+  private static async getEncryptionKey(): Promise<CryptoKey> {
+    if (!this.cachedKeyPromise) {
+      this.cachedKeyPromise = (async () => {
+        const rawSecret = Deno.env.get('TOKEN_STORAGE_ENCRYPTION_KEY');
+        if (!rawSecret) {
+          throw new Error('TOKEN_STORAGE_ENCRYPTION_KEY is not configured');
+        }
 
-      -- Create RLS policies
-      CREATE POLICY "Users can manage their own tokens" ON oauth_tokens
-        FOR ALL USING (auth.uid() = user_id);
+        const keyMaterial = await crypto.subtle.digest(
+          'SHA-256',
+          new TextEncoder().encode(rawSecret)
+        );
 
-      -- Create indexes
-      CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_provider 
-        ON oauth_tokens(user_id, provider);
-      CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires_at 
-        ON oauth_tokens(expires_at);
-    `;
+        return crypto.subtle.importKey(
+          'raw',
+          keyMaterial,
+          { name: 'AES-GCM' },
+          false,
+          ['encrypt', 'decrypt']
+        );
+      })();
+    }
 
-    await supabase.rpc('exec_sql', { sql: createTableSQL });
+    return this.cachedKeyPromise;
+  }
+
+  private static bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  private static base64ToBytes(base64: string): Uint8Array {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  private static async encrypt(plainText: string): Promise<string> {
+    const key = await this.getEncryptionKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      new TextEncoder().encode(plainText)
+    );
+
+    return `${this.bytesToBase64(iv)}:${this.bytesToBase64(new Uint8Array(encrypted))}`;
+  }
+
+  private static async decrypt(cipherText: string): Promise<string> {
+    const key = await this.getEncryptionKey();
+    const [ivB64, payloadB64] = cipherText.split(':');
+
+    if (!ivB64 || !payloadB64) {
+      throw new Error('Invalid encrypted token format');
+    }
+
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: this.base64ToBytes(ivB64) },
+      key,
+      this.base64ToBytes(payloadB64)
+    );
+
+    return new TextDecoder().decode(decrypted);
   }
 
   /**
-   * Stores tokens in dedicated table
+   * Stores tokens in dedicated table.
    */
   static async storeTokens(
     supabase: SupabaseClient,
@@ -317,21 +411,28 @@ export class DatabaseTokenStorage {
     accessToken: string,
     refreshToken?: string,
     expiresIn?: number,
-    scope?: string
+    scope?: string,
+    rotationMetadata?: TokenRotationMetadata
   ): Promise<TokenStorageResult> {
     try {
-      const expiresAt = expiresIn 
+      const expiresAt = expiresIn
         ? new Date(Date.now() + (expiresIn * 1000)).toISOString()
         : null;
+
+      const encryptedAccessToken = await this.encrypt(accessToken);
+      const encryptedRefreshToken = refreshToken ? await this.encrypt(refreshToken) : null;
 
       const { error } = await (supabase.from('oauth_tokens') as any)
         .upsert({
           user_id: userId,
           provider,
-          access_token: accessToken,
-          refresh_token: refreshToken,
+          access_token_encrypted: encryptedAccessToken,
+          refresh_token_encrypted: encryptedRefreshToken,
           expires_at: expiresAt,
           scope,
+          last_refresh_request_id: rotationMetadata?.refreshRequestId ?? null,
+          refresh_token_rotated_at: rotationMetadata?.refreshTokenRotatedAt ?? null,
+          refresh_token_fingerprint: rotationMetadata?.refreshTokenFingerprint ?? null,
           updated_at: new Date().toISOString(),
         });
 
@@ -350,7 +451,7 @@ export class DatabaseTokenStorage {
   }
 
   /**
-   * Retrieves tokens from dedicated table
+   * Retrieves decrypted tokens from dedicated table.
    */
   static async getTokenRecord(
     supabase: SupabaseClient,
@@ -368,7 +469,26 @@ export class DatabaseTokenStorage {
         throw error;
       }
 
-      return (data as TokenRecord) ?? null;
+      const row = (data as DbTokenRow) ?? null;
+      if (!row) {
+        return null;
+      }
+
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        provider: row.provider,
+        access_token: row.access_token_encrypted ? await this.decrypt(row.access_token_encrypted) : null,
+        refresh_token: row.refresh_token_encrypted ? await this.decrypt(row.refresh_token_encrypted) : null,
+        expires_at: row.expires_at,
+        scope: row.scope,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        refresh_count: row.refresh_count,
+        last_refresh_request_id: row.last_refresh_request_id,
+        refresh_token_rotated_at: row.refresh_token_rotated_at,
+        refresh_token_fingerprint: row.refresh_token_fingerprint,
+      };
     } catch (error: any) {
       console.error('Database token retrieval error:', error);
       return null;
@@ -376,16 +496,24 @@ export class DatabaseTokenStorage {
   }
 
   /**
-   * Gets comprehensive token status using database-backed storage
+   * Gets comprehensive token status using database-backed storage.
    */
   static async getTokenStatusFromDB(
     supabase: SupabaseClient,
     userId: string,
     provider: string = DEFAULT_PROVIDER
   ): Promise<TokenStatusSummary> {
-    const record = await this.getTokenRecord(supabase, userId, provider);
+    const { data, error } = await (supabase.from('oauth_tokens') as any)
+      .select('expires_at, updated_at, refresh_count, scope, access_token_encrypted')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .single();
 
-    if (!record || !record.access_token) {
+    if (error && error.code !== 'PGRST116') {
+      console.error('Database token status retrieval error:', error);
+    }
+
+    if (!data || !data.access_token_encrypted) {
       return {
         hasTokens: false,
         isExpired: true,
@@ -393,37 +521,77 @@ export class DatabaseTokenStorage {
       };
     }
 
-    const expiresAt = record.expires_at ? new Date(record.expires_at) : undefined;
+    const expiresAt = data.expires_at ? new Date(data.expires_at) : undefined;
     const now = new Date();
     const isExpired = expiresAt ? expiresAt.getTime() <= now.getTime() : true;
-    const lastRefresh = record.updated_at ? new Date(record.updated_at) : undefined;
+    const lastRefresh = data.updated_at ? new Date(data.updated_at) : undefined;
 
     return {
-      hasTokens: !!record.access_token,
+      hasTokens: true,
       isExpired,
       expiresAt,
-      refreshCount: record.refresh_count ?? 0,
+      refreshCount: data.refresh_count ?? 0,
       lastRefresh,
-      scope: record.scope ?? undefined,
+      scope: data.scope ?? undefined,
     };
   }
 
   /**
-   * Updates refresh count for database-backed storage
+   * Updates refresh count for database-backed storage.
    */
   static async incrementRefreshCount(
     supabase: SupabaseClient,
     userId: string,
     provider: string
   ): Promise<void> {
-    const record = await this.getTokenRecord(supabase, userId, provider);
-    const newCount = (record?.refresh_count ?? 0) + 1;
+    const { data } = await (supabase.from('oauth_tokens') as any)
+      .select('refresh_count')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .single();
+
+    const newCount = (data?.refresh_count ?? 0) + 1;
 
     await (supabase.from('oauth_tokens') as any)
       .update({
         refresh_count: newCount,
         updated_at: new Date().toISOString(),
       })
+      .eq('user_id', userId)
+      .eq('provider', provider);
+  }
+
+  static async markRefreshReplay(
+    supabase: SupabaseClient,
+    userId: string,
+    provider: string,
+    requestId: string
+  ): Promise<void> {
+    await (supabase.from('oauth_tokens') as any)
+      .update({
+        last_refresh_request_id: requestId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('provider', provider);
+  }
+
+  static async buildTokenFingerprint(secret: string): Promise<string> {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(secret)
+    );
+    const bytes = new Uint8Array(digest);
+    return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  static async deleteTokenRecord(
+    supabase: SupabaseClient,
+    userId: string,
+    provider: string
+  ): Promise<void> {
+    await (supabase.from('oauth_tokens') as any)
+      .delete()
       .eq('user_id', userId)
       .eq('provider', provider);
   }

@@ -3,15 +3,31 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
+  };
+};
+
+const getAllowedOrigins = () => {
+  const configuredOrigins = Deno.env.get('PUBLIC_DATA_ALLOWED_ORIGINS');
+  if (!configuredOrigins) return ['*'];
+  return configuredOrigins.split(',').map((origin) => origin.trim()).filter(Boolean);
+};
+
+const buildCorsHeaders = (origin: string | null) => {
+  const allowedOrigins = getAllowedOrigins();
+  const allowAll = allowedOrigins.includes('*');
+  const allowOrigin = allowAll
+    ? '*'
+    : origin && allowedOrigins.includes(origin)
+      ? origin
+      : allowedOrigins[0] ?? '*';
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 };
 
@@ -62,6 +78,8 @@ interface ResponseData {
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = buildCorsHeaders(req.headers.get('origin'));
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -71,7 +89,13 @@ serve(async (req: Request) => {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+      }
     )
 
     // Fetch published courses
@@ -108,23 +132,35 @@ serve(async (req: Request) => {
 
     const profileMap = new Map((coachProfiles || []).map((p: any) => [p.id, p]))
 
-    // Fetch enrollment counts for each course
-    const coursesWithStats = await Promise.all(
-      courses.map(async (course: any) => {
-        const { data: enrollments, error: enrollError } = await supabase
-          .from('course_enrollments')
-          .select('id')
-          .eq('course_id', course.id)
+    // Fetch enrollment counts for all course IDs in one query, then map in memory
+    const courseIds = (courses || []).map((course: any) => course.id)
+    const enrollmentCountByCourseId = new Map<string, number>()
 
-        const profile = profileMap.get(course.coach_id)
-        return {
-          ...course,
-          student_count: enrollError ? 0 : enrollments?.length || 0,
-          coach_name: profile?.full_name || 'Expert Coach',
-          coach_avatar: profile?.avatar_url || null
+    if (courseIds.length > 0) {
+      const { data: enrollments, error: enrollmentsError } = await supabase
+        .from('course_enrollments')
+        .select('course_id')
+        .in('course_id', courseIds)
+
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError)
+      } else {
+        for (const enrollment of enrollments || []) {
+          const currentCount = enrollmentCountByCourseId.get(enrollment.course_id) || 0
+          enrollmentCountByCourseId.set(enrollment.course_id, currentCount + 1)
         }
-      })
-    )
+      }
+    }
+
+    const coursesWithStats = (courses || []).map((course: any) => {
+      const profile = profileMap.get(course.coach_id)
+      return {
+        ...course,
+        student_count: enrollmentCountByCourseId.get(course.id) || 0,
+        coach_name: profile?.full_name || 'Expert Coach',
+        coach_avatar: profile?.avatar_url || null
+      }
+    })
 
     // Fetch top coaches (those with published courses)
     // Get courses with coach_ids for counting

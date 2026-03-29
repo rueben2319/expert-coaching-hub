@@ -14,11 +14,17 @@ import {
   Info
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_URL, supabase } from '@/integrations/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
 import { syncTokens } from '@/lib/tokenSync';
 
-const SUPABASE_URL = "https://vbrxgaxjmpwusbbbzzgl.supabase.co";
+const getSupabaseFunctionsUrl = (path: string): string => {
+  if (!SUPABASE_URL) {
+    throw new Error('Missing required environment variable: VITE_SUPABASE_URL. Please update your .env file.');
+  }
+
+  return `${SUPABASE_URL}/functions/v1/${path}`;
+};
 
 interface TokenStatus {
   hasTokens: boolean;
@@ -63,7 +69,7 @@ export function TokenManagementDashboard({
         throw new Error('No session found');
       }
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/get-token-status`, {
+      const response = await fetch(getSupabaseFunctionsUrl('get-token-status'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -108,7 +114,7 @@ export function TokenManagementDashboard({
         throw new Error('No session found');
       }
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/refresh-google-token`, {
+      const response = await fetch(getSupabaseFunctionsUrl('refresh-google-token'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,

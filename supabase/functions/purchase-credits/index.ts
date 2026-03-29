@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { logRateLimitHit, logHighValueTransaction, createLogEntry } from "../_shared/monitoring.ts";
+import { requestToPay } from "../_shared/onekhusa.ts";
 
 // Minimal Deno type declaration for environment access
 declare const Deno: {
@@ -28,7 +29,7 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const paychanguSecretKey = Deno.env.get("PAYCHANGU_SECRET_KEY");
+    const onekhusaSecretKey = Deno.env.get("ONEKHUSA_SECRET_KEY");
     const appBaseUrl = Deno.env.get("APP_BASE_URL") || "http://localhost:8080";
 
     const isDebug = (Deno.env.get("APP_ENV") ?? "production") !== "production";
@@ -36,11 +37,11 @@ serve(async (req: Request) => {
       console.log("Environment variables:");
       console.log("- SUPABASE_URL:", supabaseUrl ? "SET" : "NOT SET");
       console.log("- SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "SET" : "NOT SET");
-      console.log("- PAYCHANGU_SECRET_KEY:", paychanguSecretKey ? "SET" : "NOT SET");
+      console.log("- ONEKHUSA_SECRET_KEY:", onekhusaSecretKey ? "SET" : "NOT SET");
       console.log("- APP_BASE_URL:", appBaseUrl);
     }
 
-    if (!supabaseUrl || !supabaseKey || !paychanguSecretKey) {
+    if (!supabaseUrl || !supabaseKey || !onekhusaSecretKey) {
       throw new Error("Missing required environment variables");
     }
 
@@ -181,16 +182,16 @@ serve(async (req: Request) => {
     // Log high-value transactions
     await logHighValueTransaction('purchase', user.id, totalCredits, amount);
 
-    // Call PayChangu API
+    // Call OneKhusa API
     if (isDebug) {
-      console.log("About to call PayChangu API for credit purchase");
+      console.log("About to call OneKhusa API for credit purchase");
       console.log("Payment payload (redacted):", JSON.stringify({
           amount: String(amount),
           currency: "MWK",
           email: "<redacted>",
           first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
           last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
-          callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
+          callback_url: `${supabaseUrl}/functions/v1/onekhusa-webhook`,
           return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
           tx_ref: tx_ref,
           customization: {
@@ -206,12 +207,12 @@ serve(async (req: Request) => {
         }, null, 2));
     }
 
-    const paychanguResponse = await fetch("https://api.paychangu.com/payment", {
+    const onekhusaResponse = await fetch("https://api.onekhusa.com/payment", {
       method: "POST",
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${paychanguSecretKey!}`,
+        "Authorization": `Bearer ${onekhusaSecretKey!}`,
       },
       body: JSON.stringify({
         amount: String(amount),
@@ -219,7 +220,7 @@ serve(async (req: Request) => {
         email: user.email,
         first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
         last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
-        callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
+        callback_url: `${supabaseUrl}/functions/v1/onekhusa-webhook`,
         return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
         tx_ref: tx_ref,
         customization: {
@@ -235,22 +236,22 @@ serve(async (req: Request) => {
       }),
     });
 
-    const paychanguData = await paychanguResponse.json();
+    const onekhusaData = await onekhusaResponse.json();
     if (isDebug) {
-      console.log("PayChangu response status:", paychanguResponse.status);
-      console.log("PayChangu response data:", JSON.stringify(paychanguData, null, 2));
+      console.log("OneKhusa response status:", onekhusaResponse.status);
+      console.log("OneKhusa response data:", JSON.stringify(onekhusaData, null, 2));
     }
 
-    if (!paychanguResponse.ok || paychanguData.status !== "success") {
+    if (!onekhusaResponse.ok || onekhusaData.status !== "success") {
       // Update transaction to failed
       await supabase
         .from("transactions")
-        .update({ status: "failed", gateway_response: paychanguData })
+        .update({ status: "failed", gateway_response: onekhusaData })
         .eq("id", transaction.id);
 
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
-        details: paychanguData,
+        details: onekhusaData,
       }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -259,7 +260,7 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
-        checkout_url: paychanguData.data.checkout_url,
+        checkout_url: onekhusaData.data.checkout_url,
         transaction_ref: tx_ref,
         credits_amount: totalCredits,
         package_name: creditPackage.name,

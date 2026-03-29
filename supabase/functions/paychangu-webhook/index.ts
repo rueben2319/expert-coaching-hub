@@ -1,7 +1,11 @@
-// @ts-ignore: Deno imports work at runtime
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-// @ts-ignore: Deno imports work at runtime
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
+/**
+ * Backward-compatibility wrapper.
+ *
+ * Legacy integrations may still target /functions/v1/paychangu-webhook.
+ * We intentionally reuse the OneKhusa webhook implementation to avoid
+ * maintaining duplicate webhook processors.
+ */
+import "../onekhusa-webhook/index.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
@@ -75,7 +79,7 @@ type WebhookPayload = {
     charge_id?: string; // ✅ Added charge_id
     reference?: string;
   };
-  // PayChangu sends tx_ref at root level
+  // OneKhusa sends tx_ref at root level
   tx_ref?: string;
   event_type?: string;
   first_name?: string;
@@ -138,7 +142,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 async function verifySignature(rawBody: string, signatureHeader: string | null): Promise<boolean> {
-  const secret = Deno.env.get("PAYCHANGU_WEBHOOK_SECRET");
+  const secret = Deno.env.get("ONEKHUSA_WEBHOOK_SECRET");
   if (!secret || !signatureHeader) return false;
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -155,7 +159,7 @@ async function verifySignature(rawBody: string, signatureHeader: string | null):
 }
 
 serve(async (req: Request) => {
-  console.log("=== PAYCHANGU WEBHOOK RECEIVED ===");
+  console.log("=== ONEKHUSA WEBHOOK RECEIVED ===");
   console.log("Method:", req.method);
   console.log("URL:", req.url);
   console.log("Headers:", Object.fromEntries(req.headers.entries()));
@@ -163,7 +167,7 @@ serve(async (req: Request) => {
 
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Handle GET requests for endpoint verification (PayChangu health checks)
+  // Handle GET requests for endpoint verification (OneKhusa health checks)
   if (req.method === "GET") {
     // Check if this is a redirect request with tx_ref (user being redirected after payment)
     const url = new URL(req.url);
@@ -219,11 +223,15 @@ serve(async (req: Request) => {
   console.log("Raw body length:", rawBody.length);
   console.log("Raw body preview:", rawBody.substring(0, 500) + (rawBody.length > 500 ? "..." : ""));
 
-  const signature = req.headers.get("Signature") || req.headers.get("signature");
+  const signature =
+    req.headers.get("X-OneKhusa-Webhook-Signature") ||
+    req.headers.get("x-onekhusa-webhook-signature") ||
+    req.headers.get("Signature") ||
+    req.headers.get("signature");
   console.log("Signature present:", !!signature);
 
   // Require secret and signature for all environments
-  if (!Deno.env.get("PAYCHANGU_WEBHOOK_SECRET") || !signature) {
+  if (!Deno.env.get("ONEKHUSA_WEBHOOK_SECRET") || !signature) {
     return new Response(JSON.stringify({ error: "Missing signature or secret" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -440,7 +448,7 @@ serve(async (req: Request) => {
           currency: tx.currency,
           invoice_number: invNum ?? `INV-${Date.now()}`,
           invoice_date: now.toISOString(),
-          payment_method: "paychangu",
+          payment_method: "onekhusa",
           description: "Credit purchase",
           status: "paid",
           subscription_id: null,
@@ -543,7 +551,7 @@ serve(async (req: Request) => {
             currency: tx.currency,
             invoice_number: invNum ?? `INV-${Date.now()}`,
             invoice_date: now.toISOString(),
-            payment_method: "paychangu",
+            payment_method: "onekhusa",
             description: "Coach subscription",
             status: "paid",
             subscription_id: tx.subscription_id,

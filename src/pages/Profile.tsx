@@ -25,6 +25,7 @@ import { Loader2, Sparkles, Check } from "lucide-react";
 import { CreditWallet } from "@/components/CreditWallet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { isAvatarUrlReachable, isValidAvatarPublicUrl, resolveAvatarUrl } from "@/lib/avatar";
 
 const profileSchema = z.object({
   full_name: z.string().trim().min(1, "Full name is required").max(100, "Name must be less than 100 characters"),
@@ -136,13 +137,27 @@ export default function Profile() {
         password: data.newPassword,
       });
       if (error) throw error;
+
+      if (!user?.id) {
+        throw new Error("No authenticated user available for session rotation.");
+      }
+
+      const { error: rotationError } = await supabase.rpc("rotate_user_session_version", {
+        p_user_id: user.id,
+        p_reason: "password_changed",
+      });
+      if (rotationError) throw rotationError;
+
+      const { error: globalSignOutError } = await supabase.auth.signOut({ scope: "global" });
+      if (globalSignOutError) throw globalSignOutError;
     },
     onSuccess: () => {
       toast({
         title: "Password changed",
-        description: "Your password has been changed successfully.",
+        description: "Password updated. Please sign in again on this and other devices.",
       });
       passwordForm.reset();
+      navigate("/auth", { replace: true });
     },
     onError: (error: any) => {
       toast({
@@ -187,12 +202,73 @@ export default function Profile() {
         email: user?.email || "",
       });
     }
-    if (profile?.avatar_url) {
-      setAvatarUrl(profile.avatar_url);
-    } else if (user?.user_metadata?.avatar_url) {
-      setAvatarUrl(user.user_metadata.avatar_url);
-    }
   }, [profile, user?.email, profileForm]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const syncAvatar = async () => {
+      if (!user?.id) {
+        if (isActive) {
+          setAvatarUrl(null);
+        }
+        return;
+      }
+
+      const persistedAvatar = profile?.avatar_url || user?.user_metadata?.avatar_url || null;
+      const resolvedAvatar = resolveAvatarUrl(persistedAvatar);
+      if (isActive) {
+        setAvatarUrl(resolvedAvatar || null);
+      }
+
+      if (!persistedAvatar) {
+        return;
+      }
+
+      const isReachable = await isAvatarUrlReachable(persistedAvatar);
+      if (isReachable !== false) {
+        return;
+      }
+
+      const { error: profileClearError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: null })
+        .eq("id", user.id);
+
+      if (profileClearError) {
+        console.error("Failed to clear stale avatar URL from profiles", profileClearError);
+        return;
+      }
+
+      const { error: authClearError } = await supabase.auth.updateUser({
+        data: {
+          ...user.user_metadata,
+          avatar_url: null,
+        },
+      });
+
+      if (authClearError) {
+        console.error("Failed to clear stale avatar URL from auth metadata", authClearError);
+      }
+
+      if (isActive) {
+        setAvatarUrl(null);
+      }
+      await refreshUser();
+      queryClient.invalidateQueries({ queryKey: ["profile", user.id] });
+
+      toast({
+        title: "Avatar refreshed",
+        description: "We removed a stale avatar URL and switched back to your initials.",
+      });
+    };
+
+    syncAvatar();
+
+    return () => {
+      isActive = false;
+    };
+  }, [profile?.avatar_url, queryClient, refreshUser, user?.id, user?.user_metadata, user?.user_metadata?.avatar_url]);
 
   const handleDeleteAccount = async () => {
     setIsDeleting(true);
@@ -236,9 +312,15 @@ export default function Profile() {
         throw uploadError;
       }
 
-      const { data: { publicUrl } } = supabase.storage
+      const {
+        data: { publicUrl },
+      } = supabase.storage
         .from("avatars")
         .getPublicUrl(fileName);
+
+      if (!isValidAvatarPublicUrl(publicUrl)) {
+        throw new Error("Unexpected avatar URL returned by storage provider.");
+      }
 
       const { error: profileUpdateError } = await supabase
         .from("profiles")
@@ -277,7 +359,7 @@ export default function Profile() {
     } finally {
       setAvatarUploading(false);
     }
-  }, [queryClient, user]);
+  }, [queryClient, refreshUser, user]);
 
   if (profileLoading) {
     return (
@@ -510,7 +592,7 @@ export default function Profile() {
                               </div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Check className="h-3 w-3 text-green-600" />
-                                <span>Secure payment via PayChangu</span>
+                                <span>Secure payment via OneKhusa</span>
                               </div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Check className="h-3 w-3 text-green-600" />
@@ -537,7 +619,7 @@ export default function Profile() {
                   </div>
                   <div>
                     <p className="font-medium text-foreground">Purchase Credits</p>
-                    <p>Choose a package and complete payment via PayChangu</p>
+                    <p>Choose a package and complete payment via OneKhusa</p>
                   </div>
                 </div>
                 <div className="flex gap-3">

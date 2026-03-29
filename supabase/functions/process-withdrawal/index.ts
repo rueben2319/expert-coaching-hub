@@ -70,63 +70,17 @@ serve(async (req) => {
       throw new Error("Admin notes must be a string with max 1000 characters");
     }
 
-    // Get withdrawal request
-    const { data: withdrawal, error: fetchError } = await supabaseClient
-      .from("withdrawal_requests")
-      .select("*")
-      .eq("id", withdrawal_id)
-      .single();
+    const { data: processResult, error: processError } = await supabaseClient.rpc("admin_process_withdrawal", {
+      p_withdrawal_id: withdrawal_id,
+      p_action: action,
+      p_admin_id: user.id,
+      p_admin_notes: admin_notes || null,
+    });
 
-    if (fetchError) throw fetchError;
-    if (!withdrawal) throw new Error("Withdrawal request not found");
-
-    if (withdrawal.status !== "pending") {
-      throw new Error("Only pending withdrawals can be processed");
-    }
-
-    let newStatus: string;
-    let processedBy = user.id;
-
-    if (action === "approve") {
-      // TODO: Integrate with actual payment gateway (PayChangu)
-      // For now, we'll mark as completed
-      newStatus = "completed";
-
-      // Process the withdrawal using the existing database function
-      const { error: processError } = await supabaseClient.rpc("process_withdrawal", {
-        coach_id: withdrawal.coach_id,
-        credits_amount: withdrawal.credits_amount,
-        amount_mwk: withdrawal.amount_mwk,
-        withdrawal_id: withdrawal_id,
-        payment_method: "mobile_money",
-      });
-
-      if (processError) throw processError;
-
-    } else if (action === "reject") {
-      newStatus = "failed";
-    } else {
-      throw new Error("Invalid action");
-    }
-
-    // Update withdrawal request
-    const { error: updateError } = await supabaseClient
-      .from("withdrawal_requests")
-      .update({
-        status: newStatus,
-        processed_at: new Date().toISOString(),
-        processed_by: processedBy,
-        admin_notes: admin_notes || null,
-      })
-      .eq("id", withdrawal_id);
-
-    if (updateError) throw updateError;
+    if (processError) throw processError;
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Withdrawal ${action === "approve" ? "approved" : "rejected"} successfully`,
-      }),
+      JSON.stringify(processResult),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,

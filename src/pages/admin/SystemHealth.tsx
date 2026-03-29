@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -20,7 +20,9 @@ import {
   XCircle,
   TrendingUp,
   TrendingDown,
-  BarChart3
+  BarChart3,
+  ShieldAlert,
+  ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -80,8 +82,20 @@ interface StatusDistribution {
   color: string;
 }
 
+type ConfidenceLevel = "high" | "medium" | "low";
+type DataSourceMode = "real_telemetry" | "fallback";
+
+interface HealthDataSourceStatus {
+  mode: DataSourceMode;
+  source: string;
+  details: string;
+  updatedAt: string;
+}
+
 interface HealthMetrics {
+  dataSourceStatus: HealthDataSourceStatus;
   edgeFunctions: {
+    confidence: ConfidenceLevel;
     totalCalls: number;
     successRate: number;
     avgResponseTime: number;
@@ -92,6 +106,7 @@ interface HealthMetrics {
     statusDistribution: StatusDistribution[];
   };
   database: {
+    confidence: ConfidenceLevel;
     totalQueries: number;
     errorCount: number;
     warningCount: number;
@@ -99,6 +114,7 @@ interface HealthMetrics {
     severityDistribution: StatusDistribution[];
   };
   auth: {
+    confidence: ConfidenceLevel;
     totalRequests: number;
     successRate: number;
     failedAttempts: number;
@@ -108,6 +124,13 @@ interface HealthMetrics {
   };
 }
 
+type EndpointHealthMetrics = {
+  updatedAt?: string;
+  edgeFunctions?: Partial<HealthMetrics["edgeFunctions"]>;
+  database?: Partial<HealthMetrics["database"]>;
+  auth?: Partial<HealthMetrics["auth"]>;
+};
+
 export default function SystemHealth() {
   const [timeRange, setTimeRange] = useState("1h");
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -115,11 +138,124 @@ export default function SystemHealth() {
   const { data: healthData, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["system-health", timeRange],
     queryFn: async (): Promise<HealthMetrics> => {
-      // Analytics tables (function_edge_logs, postgres_logs, auth_logs) are not accessible
-      // via the REST API. They require the Supabase analytics/observability endpoint.
-      // We'll fetch available data from regular tables to show system activity.
-      
-      // Fetch recent transactions as a proxy for system activity
+      const nowIso = new Date().toISOString();
+
+      // Prefer scheduled ETL table first for edge latency/error rates, auth outcomes,
+      // and DB severity counts.
+      const { data: etlRollup, error: etlError } = await supabase
+        .from("system_health_rollups")
+        .select("*")
+        .order("captured_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!etlError && etlRollup) {
+        const edgeTotal = Number((etlRollup as Record<string, unknown>).edge_total_calls ?? 0);
+        const edgeErrors = Number((etlRollup as Record<string, unknown>).edge_error_calls ?? 0);
+        const authTotal = Number((etlRollup as Record<string, unknown>).auth_total_requests ?? 0);
+        const authFailed = Number((etlRollup as Record<string, unknown>).auth_failed_requests ?? 0);
+        const dbWarnings = Number((etlRollup as Record<string, unknown>).db_warning_count ?? 0);
+        const dbErrors = Number((etlRollup as Record<string, unknown>).db_error_count ?? 0);
+        const dbTotal = Number((etlRollup as Record<string, unknown>).db_total_queries ?? 0);
+
+        return {
+          dataSourceStatus: {
+            mode: "real_telemetry",
+            source: "ETL table: system_health_rollups",
+            details: "Metrics loaded from scheduled ETL rollup data.",
+            updatedAt: String((etlRollup as Record<string, unknown>).captured_at ?? nowIso),
+          },
+          edgeFunctions: {
+            confidence: "high",
+            totalCalls: edgeTotal,
+            successRate: edgeTotal > 0 ? ((edgeTotal - edgeErrors) / edgeTotal) * 100 : 100,
+            avgResponseTime: Number((etlRollup as Record<string, unknown>).edge_avg_latency_ms ?? 0),
+            errors: edgeErrors,
+            recentLogs: [],
+            responseTimeTrend: ((etlRollup as Record<string, unknown>).edge_latency_trend as TimeSeriesData[] | null) ?? [],
+            requestsTrend: ((etlRollup as Record<string, unknown>).edge_request_trend as TimeSeriesData[] | null) ?? [],
+            statusDistribution: [
+              { name: "Success", value: Math.max(edgeTotal - edgeErrors, 0), color: "hsl(var(--chart-1))" },
+              { name: "Errors", value: edgeErrors, color: "hsl(var(--destructive))" }
+            ]
+          },
+          database: {
+            confidence: "high",
+            totalQueries: dbTotal,
+            errorCount: dbErrors,
+            warningCount: dbWarnings,
+            recentLogs: [],
+            severityDistribution: [
+              { name: "Normal", value: Math.max(dbTotal - dbWarnings - dbErrors, 0), color: "hsl(var(--chart-1))" },
+              { name: "Warnings", value: dbWarnings, color: "hsl(var(--chart-3))" },
+              { name: "Errors", value: dbErrors, color: "hsl(var(--destructive))" }
+            ]
+          },
+          auth: {
+            confidence: "high",
+            totalRequests: authTotal,
+            successRate: authTotal > 0 ? ((authTotal - authFailed) / authTotal) * 100 : 100,
+            failedAttempts: authFailed,
+            recentLogs: [],
+            requestsTrend: ((etlRollup as Record<string, unknown>).auth_request_trend as TimeSeriesData[] | null) ?? [],
+            statusDistribution: [
+              { name: "Success", value: Math.max(authTotal - authFailed, 0), color: "hsl(var(--chart-1))" },
+              { name: "Failed", value: authFailed, color: "hsl(var(--destructive))" }
+            ]
+          }
+        };
+      }
+
+      // Second preference: backend endpoint with curated telemetry.
+      const { data: endpointMetrics, error: endpointError } = await supabase.functions.invoke("system-health-metrics", {
+        body: { timeRange }
+      });
+
+      if (!endpointError && endpointMetrics) {
+        const typedMetrics = endpointMetrics as EndpointHealthMetrics;
+        const edge = typedMetrics.edgeFunctions ?? {};
+        const db = typedMetrics.database ?? {};
+        const auth = typedMetrics.auth ?? {};
+
+        return {
+          dataSourceStatus: {
+            mode: "real_telemetry",
+            source: "Backend endpoint: system-health-metrics",
+            details: "Metrics loaded from backend telemetry endpoint.",
+            updatedAt: String(typedMetrics.updatedAt ?? nowIso)
+          },
+          edgeFunctions: {
+            confidence: "high",
+            totalCalls: Number(edge.totalCalls ?? 0),
+            successRate: Number(edge.successRate ?? 0),
+            avgResponseTime: Number(edge.avgResponseTime ?? 0),
+            errors: Number(edge.errors ?? 0),
+            recentLogs: (edge.recentLogs as EdgeFunctionLog[] | undefined) ?? [],
+            responseTimeTrend: (edge.responseTimeTrend as TimeSeriesData[] | undefined) ?? [],
+            requestsTrend: (edge.requestsTrend as TimeSeriesData[] | undefined) ?? [],
+            statusDistribution: (edge.statusDistribution as StatusDistribution[] | undefined) ?? []
+          },
+          database: {
+            confidence: "high",
+            totalQueries: Number(db.totalQueries ?? 0),
+            errorCount: Number(db.errorCount ?? 0),
+            warningCount: Number(db.warningCount ?? 0),
+            recentLogs: (db.recentLogs as DatabaseLog[] | undefined) ?? [],
+            severityDistribution: (db.severityDistribution as StatusDistribution[] | undefined) ?? []
+          },
+          auth: {
+            confidence: "high",
+            totalRequests: Number(auth.totalRequests ?? 0),
+            successRate: Number(auth.successRate ?? 0),
+            failedAttempts: Number(auth.failedAttempts ?? 0),
+            recentLogs: (auth.recentLogs as AuthLog[] | undefined) ?? [],
+            requestsTrend: (auth.requestsTrend as TimeSeriesData[] | undefined) ?? [],
+            statusDistribution: (auth.statusDistribution as StatusDistribution[] | undefined) ?? []
+          }
+        };
+      }
+
+      // Limited fallback mode (no synthetic/random trend generation).
       const { data: recentTransactions } = await supabase
         .from('transactions')
         .select('id, created_at, status')
@@ -147,38 +283,33 @@ export default function SystemHealth() {
 
       const failedTransactions = recentTransactions?.filter(t => t.status === 'failed').length || 0;
 
-      // Generate time series from actual data
-      const now = new Date();
-      const generateTimeSeries = (): TimeSeriesData[] => {
-        return Array.from({ length: 12 }, (_, i) => {
-          const time = new Date(now.getTime() - (11 - i) * 5 * 60 * 1000);
-          return {
-            time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            value: Math.floor(Math.random() * 20) + 5,
-            errors: Math.floor(Math.random() * 2)
-          };
-        });
-      };
-
       return {
+        dataSourceStatus: {
+          mode: "fallback",
+          source: "Application activity fallback",
+          details: "ETL table and backend telemetry endpoint unavailable; edge/auth data is limited.",
+          updatedAt: nowIso
+        },
         edgeFunctions: {
+          confidence: "low",
           totalCalls: 0,
-          successRate: 100,
+          successRate: 0,
           avgResponseTime: 0,
           errors: 0,
           recentLogs: [],
-          responseTimeTrend: generateTimeSeries(),
-          requestsTrend: generateTimeSeries(),
+          responseTimeTrend: [],
+          requestsTrend: [],
           statusDistribution: [
             { name: 'Success', value: 0, color: 'hsl(var(--chart-1))' },
             { name: 'Errors', value: 0, color: 'hsl(var(--destructive))' }
           ]
         },
         database: {
+          confidence: "medium",
           totalQueries: totalDbOperations,
           errorCount: failedTransactions,
           warningCount: 0,
-          recentLogs: (recentTransactions || []).slice(0, 10).map((t: any) => ({
+          recentLogs: (recentTransactions || []).slice(0, 10).map((t) => ({
             identifier: t.id,
             timestamp: t.created_at,
             event_message: `Transaction ${t.status}`,
@@ -191,11 +322,12 @@ export default function SystemHealth() {
           ]
         },
         auth: {
+          confidence: "low",
           totalRequests: 0,
-          successRate: 100,
+          successRate: 0,
           failedAttempts: 0,
           recentLogs: [],
-          requestsTrend: generateTimeSeries(),
+          requestsTrend: [],
           statusDistribution: [
             { name: 'Success', value: 0, color: 'hsl(var(--chart-1))' },
             { name: 'Failed', value: 0, color: 'hsl(var(--destructive))' }
@@ -236,6 +368,39 @@ export default function SystemHealth() {
       return 'Invalid date';
     }
   };
+
+  const getConfidenceBadge = (level: ConfidenceLevel) => {
+    if (level === "high") return <Badge className="bg-green-100 text-green-700">Confidence: High</Badge>;
+    if (level === "medium") return <Badge className="bg-yellow-100 text-yellow-700">Confidence: Medium</Badge>;
+    return <Badge variant="secondary">Confidence: Low</Badge>;
+  };
+
+  const dataSourceBanner = useMemo(() => {
+    if (!healthData) return null;
+    const isRealTelemetry = healthData.dataSourceStatus.mode === "real_telemetry";
+    const Icon = isRealTelemetry ? ShieldCheck : ShieldAlert;
+
+    return (
+      <Card className={`mb-6 ${isRealTelemetry ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20" : "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20"}`}>
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <Icon className={`w-5 h-5 mt-0.5 ${isRealTelemetry ? "text-green-500" : "text-amber-500"}`} />
+            <div>
+              <p className={`text-sm font-medium ${isRealTelemetry ? "text-green-700 dark:text-green-300" : "text-amber-700 dark:text-amber-300"}`}>
+                HealthDataSourceStatus: {isRealTelemetry ? "Real telemetry" : "Limited fallback mode"}
+              </p>
+              <p className={`text-xs mt-1 ${isRealTelemetry ? "text-green-600/80 dark:text-green-400/80" : "text-amber-700/80 dark:text-amber-400/80"}`}>
+                Source: {healthData.dataSourceStatus.source}. {healthData.dataSourceStatus.details}
+              </p>
+              <p className={`text-xs mt-1 ${isRealTelemetry ? "text-green-600/80 dark:text-green-400/80" : "text-amber-700/80 dark:text-amber-400/80"}`}>
+                Last updated: {formatTimestamp(healthData.dataSourceStatus.updatedAt)}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }, [healthData]);
 
   return (
     <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
@@ -282,30 +447,7 @@ export default function SystemHealth() {
         </div>
       </div>
 
-      {/* Analytics Notice */}
-      <Card className="mb-6 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
-        <CardContent className="pt-4">
-          <div className="flex items-start gap-3">
-            <Activity className="w-5 h-5 text-blue-500 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Limited Analytics View</p>
-              <p className="text-xs text-blue-600/80 dark:text-blue-400/80 mt-1">
-                Detailed edge function, database, and auth logs require the Supabase observability endpoint. 
-                Current view shows database activity from application tables.
-                Access full logs via the{" "}
-                <a 
-                  href="https://supabase.com/dashboard" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="underline hover:text-blue-800 dark:hover:text-blue-200"
-                >
-                  Supabase Dashboard
-                </a>.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {dataSourceBanner}
 
       {/* Overview Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
@@ -313,7 +455,10 @@ export default function SystemHealth() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <Zap className="w-5 h-5 text-blue-500" />
-              {healthData && getStatusBadge(healthData.edgeFunctions.successRate)}
+              <div className="flex flex-col items-end gap-1">
+                {healthData && getStatusBadge(healthData.edgeFunctions.successRate)}
+                {healthData && getConfidenceBadge(healthData.edgeFunctions.confidence)}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -332,7 +477,10 @@ export default function SystemHealth() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <Clock className="w-5 h-5 text-purple-500" />
-              <Badge variant="outline">{healthData?.edgeFunctions.avgResponseTime || 0}ms</Badge>
+              <div className="flex flex-col items-end gap-1">
+                <Badge variant="outline">{healthData?.edgeFunctions.avgResponseTime || 0}ms</Badge>
+                {healthData && getConfidenceBadge(healthData.edgeFunctions.confidence)}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -352,10 +500,13 @@ export default function SystemHealth() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <Database className="w-5 h-5 text-green-500" />
-              {healthData && (healthData.database.errorCount === 0 
-                ? <Badge className="bg-green-100 text-green-700">Healthy</Badge>
-                : <Badge variant="destructive">{healthData.database.errorCount} errors</Badge>
-              )}
+              <div className="flex flex-col items-end gap-1">
+                {healthData && (healthData.database.errorCount === 0
+                  ? <Badge className="bg-green-100 text-green-700">Healthy</Badge>
+                  : <Badge variant="destructive">{healthData.database.errorCount} errors</Badge>
+                )}
+                {healthData && getConfidenceBadge(healthData.database.confidence)}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -373,7 +524,10 @@ export default function SystemHealth() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <Server className="w-5 h-5 text-orange-500" />
-              {healthData && getStatusBadge(healthData.auth.successRate)}
+              <div className="flex flex-col items-end gap-1">
+                {healthData && getStatusBadge(healthData.auth.successRate)}
+                {healthData && getConfidenceBadge(healthData.auth.confidence)}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -399,6 +553,7 @@ export default function SystemHealth() {
               <CardTitle className="text-sm font-medium">Response Time Trend</CardTitle>
             </div>
             <CardDescription className="text-xs">Edge function response times (ms)</CardDescription>
+            {healthData && getConfidenceBadge(healthData.edgeFunctions.confidence)}
           </CardHeader>
           <CardContent>
             {healthData?.edgeFunctions.responseTimeTrend.length ? (
@@ -446,6 +601,7 @@ export default function SystemHealth() {
               <CardTitle className="text-sm font-medium">Request Volume</CardTitle>
             </div>
             <CardDescription className="text-xs">Edge function calls over time</CardDescription>
+            {healthData && getConfidenceBadge(healthData.edgeFunctions.confidence)}
           </CardHeader>
           <CardContent>
             {healthData?.edgeFunctions.requestsTrend.length ? (
@@ -481,6 +637,7 @@ export default function SystemHealth() {
               <CardTitle className="text-sm font-medium">Status Distribution</CardTitle>
             </div>
             <CardDescription className="text-xs">Edge function success vs errors</CardDescription>
+            {healthData && getConfidenceBadge(healthData.edgeFunctions.confidence)}
           </CardHeader>
           <CardContent>
             {healthData?.edgeFunctions.statusDistribution.some(d => d.value > 0) ? (
@@ -525,6 +682,7 @@ export default function SystemHealth() {
               <CardTitle className="text-sm font-medium">Database Health</CardTitle>
             </div>
             <CardDescription className="text-xs">Log severity distribution</CardDescription>
+            {healthData && getConfidenceBadge(healthData.database.confidence)}
           </CardHeader>
           <CardContent>
             {healthData?.database.severityDistribution.some(d => d.value > 0) ? (
@@ -569,6 +727,7 @@ export default function SystemHealth() {
               <CardTitle className="text-sm font-medium">Auth Requests</CardTitle>
             </div>
             <CardDescription className="text-xs">Authentication attempts over time</CardDescription>
+            {healthData && getConfidenceBadge(healthData.auth.confidence)}
           </CardHeader>
           <CardContent>
             {healthData?.auth.requestsTrend.length ? (
@@ -604,6 +763,7 @@ export default function SystemHealth() {
               <CardTitle className="text-sm font-medium">Auth Success Rate</CardTitle>
             </div>
             <CardDescription className="text-xs">Success vs failed authentications</CardDescription>
+            {healthData && getConfidenceBadge(healthData.auth.confidence)}
           </CardHeader>
           <CardContent>
             {healthData?.auth.statusDistribution.some(d => d.value > 0) ? (

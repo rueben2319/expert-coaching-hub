@@ -3,19 +3,36 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Sparkles, BookOpen, TrendingUp, ArrowRight } from "lucide-react";
+import { z } from "zod";
 import { useAIAction } from "@/hooks/useAIAction";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { CourseThumbnail } from "@/components/shared/CourseThumbnail";
 
-interface CourseRecommendation {
-  course_id: string;
+const courseRecommendationSchema = z.object({
+  course_id: z.string().uuid(),
+  reason: z.string().min(1),
+});
+
+const recommendationsResponseSchema = z.object({
+  recommendations: z.array(courseRecommendationSchema).default([]),
+});
+
+type CourseRecommendation = z.infer<typeof courseRecommendationSchema>;
+
+type RecommendedCourse = {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  level: string | null;
+  thumbnail_url: string | null;
+  profiles: {
+    full_name: string | null;
+  } | null;
   reason: string;
-}
-
-interface RecommendationsResponse {
-  recommendations: CourseRecommendation[];
-}
+};
 
 export function RecommendedCourses() {
   const navigate = useNavigate();
@@ -68,8 +85,8 @@ export function RecommendedCourses() {
   useEffect(() => {
     if (isSuccess && data?.output) {
       try {
-        const parsed: RecommendationsResponse = JSON.parse(data.output);
-        setRecommendations(parsed.recommendations || []);
+        const parsed = recommendationsResponseSchema.parse(JSON.parse(data.output));
+        setRecommendations(parsed.recommendations);
       } catch (error) {
         console.error("Failed to parse recommendations:", error);
       }
@@ -116,22 +133,16 @@ export function RecommendedCourses() {
 
         {isSuccess && coursesData && coursesData.length > 0 && (
           <div className="space-y-4">
-            {coursesData.map((course: any) => (
+            {coursesData.map((course: RecommendedCourse) => (
               <Card key={course.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex gap-4">
                     {/* Thumbnail */}
-                    {course.thumbnail_url ? (
-                      <img
-                        src={course.thumbnail_url}
-                        alt={course.title}
-                        className="w-24 h-24 object-cover rounded-md"
-                      />
-                    ) : (
-                      <div className="w-24 h-24 bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900 dark:to-blue-900 rounded-md flex items-center justify-center">
-                        <BookOpen className="h-8 w-8 text-purple-600" />
-                      </div>
-                    )}
+                    <CourseThumbnail
+                      src={course.thumbnail_url}
+                      alt={course.title}
+                      className="h-24 w-24"
+                    />
 
                     {/* Course Info */}
                     <div className="flex-1 space-y-2">
@@ -169,7 +180,7 @@ export function RecommendedCourses() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => navigate(`/client/courses/${course.id}`)}
+                        onClick={() => navigate(`/client/course/${course.id}`)}
                         className="mt-2"
                       >
                         View Course
