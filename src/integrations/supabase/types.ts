@@ -2040,10 +2040,6 @@ export type Database = {
         Args: { course_uuid: string }
         Returns: undefined
       }
-      upsert_own_role: {
-        Args: { p_role: Database["public"]["Enums"]["app_role"] }
-        Returns: Json
-      }
       verify_certificate: {
         Args: { p_certificate_id: string }
         Returns: {

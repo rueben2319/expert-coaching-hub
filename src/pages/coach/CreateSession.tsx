@@ -16,7 +16,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
 import { MeetingManager } from "@/lib/meetingUtils";
 import { AttendeeSelector } from "@/components/AttendeeSelector";
 
@@ -220,18 +219,6 @@ const CreateSession = () => {
           </p>
         </div>
 
-        <GoogleCalendarStatus 
-          onStatusChange={setIsCalendarConnected}
-        />
-
-        {isCalendarConnected === false && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Google Calendar connection is required to create meetings. Please connect your account above.
-            </AlertDescription>
-          </Alert>
-        )}
 
         <Card>
           <CardHeader>
