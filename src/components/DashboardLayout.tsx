@@ -65,17 +65,6 @@ interface DashboardLayoutProps {
   brandName?: string;
 }
 
-const TokenManagementDialog = ({ children }: { children: ReactNode }) => (
-  <Dialog>
-    <DialogTrigger asChild>{children}</DialogTrigger>
-    <DialogContent className="max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>OAuth Token Management</DialogTitle>
-      </DialogHeader>
-      <TokenManagementDashboard />
-    </DialogContent>
-  </Dialog>
-);
 
 export function DashboardLayout({
   children,

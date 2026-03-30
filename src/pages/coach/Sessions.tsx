@@ -269,64 +269,6 @@ export default function Sessions() {
           </Button>
         </div>
 
-        <div className="space-y-4">
-          <GoogleCalendarStatus 
-            compact={true}
-            onStatusChange={setIsCalendarConnected}
-          />
-          
-          {/* Debug Section - Remove in production */}
-          {/* 
-          <Card className="border-dashed border-orange-200 bg-orange-50/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-orange-800 flex items-center gap-2">
-                <AlertCircle className="h-4 w-4" />
-                Token Debug Tools (Development)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    TokenDebugger.logTokenStatus();
-                    addTokenDebugToWindow();
-                  }}
-                  className="text-xs"
-                >
-                  Log Token Status
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    const info = await TokenDebugger.getTokenInfo();
-                    toast({
-                      title: "Token Info",
-                      description: `Session: ${info.hasSession ? '✅' : '❌'} | Provider Token: ${info.hasProviderToken ? '✅' : '❌'} | Refresh Token: ${info.hasRefreshToken ? '✅' : '❌'}`,
-                    });
-                  }}
-                  className="text-xs"
-                >
-                  Show Token Status
-                </Button>
-              </div>
-              <p className="text-xs text-orange-600 mt-2">
-                Check browser console for detailed token information. Use <code>window.tokenDebug</code> for manual testing.
-              </p>
-            </CardContent>
-          </Card>
-          */}
-          
-          {isCalendarConnected === false && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Google Calendar is not connected. Some features may be limited.
-              </AlertDescription>
-            </Alert>
-          )}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap gap-2">

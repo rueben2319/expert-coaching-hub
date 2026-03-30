@@ -126,7 +126,7 @@ export class MeetingManager {
     // Try to cancel via edge function if there's a calendar event
     if (existingMeeting.calendar_event_id) {
       try {
-        await cancelGoogleMeet(meetingId);
+        await cancelGoogleMeet({ meetingId, calendarEventId: existingMeeting.calendar_event_id });
         calendarDeleted = true;
       } catch (error: any) {
         logger.warn('Calendar cancellation failed:', error);
