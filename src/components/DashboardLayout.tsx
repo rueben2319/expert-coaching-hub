@@ -621,15 +621,6 @@ export function DashboardLayout({
                     <Settings className="mr-3 h-4 w-4 text-primary" />
                     <span className="font-medium">Settings</span>
                   </DropdownMenuItem>
-                  <TokenManagementDialog>
-                    <DropdownMenuItem 
-                      onSelect={(e) => e.preventDefault()}
-                      className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
-                    >
-                      <Shield className="mr-3 h-4 w-4 text-primary" />
-                      <span className="font-medium">Token Management</span>
-                    </DropdownMenuItem>
-                  </TokenManagementDialog>
                 </div>
 
                 <DropdownMenuSeparator className="my-1" />

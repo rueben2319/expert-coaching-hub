@@ -219,18 +219,6 @@ const CreateSession = () => {
           </p>
         </div>
 
-        <GoogleCalendarStatus 
-          onStatusChange={setIsCalendarConnected}
-        />
-
-        {isCalendarConnected === false && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Google Calendar connection is required to create meetings. Please connect your account above.
-            </AlertDescription>
-          </Alert>
-        )}
 
         <Card>
           <CardHeader>
