@@ -10,9 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format, isAfter, isBefore, addMinutes } from "date-fns";
 import { coachSidebarSections } from "@/config/navigation";
-import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
 import { MeetingManager } from "@/lib/meetingUtils";
-import { TokenDebugger, addTokenDebugToWindow } from "@/lib/tokenDebug";
 import {
   AlertDialog,
   AlertDialogAction,

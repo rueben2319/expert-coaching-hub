@@ -16,7 +16,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
 import { MeetingManager } from "@/lib/meetingUtils";
 import { AttendeeSelector } from "@/components/AttendeeSelector";
 

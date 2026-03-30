@@ -1,22 +1,33 @@
 import { Button } from "@/components/ui/button";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { GoogleCalendarView } from "@/components/GoogleCalendarView";
-import { GoogleCalendarStatus } from "@/components/GoogleCalendarStatus";
-import { Plus } from "lucide-react";
+import { Plus, Calendar } from "lucide-react";
 import { useState } from "react";
 import { coachSidebarSections } from "@/config/navigation";
 import { useNavigate } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { MeetingManager } from "@/lib/meetingUtils";
+import { format, startOfWeek, endOfWeek, addDays, isToday, isSameDay } from "date-fns";
 
 const Schedule = () => {
   const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [isCalendarConnected, setIsCalendarConnected] = useState<boolean | null>(null);
+
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+
+  const { data: meetings = [], isLoading } = useQuery({
+    queryKey: ["schedule-meetings", weekStart.toISOString(), weekEnd.toISOString()],
+    queryFn: () => MeetingManager.getUserMeetings({
+      startDate: weekStart.toISOString(),
+      endDate: weekEnd.toISOString(),
+    }),
+  });
+
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <DashboardLayout
-      sidebarSections={coachSidebarSections}
-      brandName="Experts Coaching Hub"
-    >
+    <DashboardLayout sidebarSections={coachSidebarSections} brandName="Experts Coaching Hub">
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -29,16 +40,46 @@ const Schedule = () => {
           </Button>
         </div>
 
-        <GoogleCalendarStatus 
-          compact={true}
-          onStatusChange={setIsCalendarConnected}
-        />
+        <div className="flex items-center justify-between">
+          <Button variant="outline" size="sm" onClick={() => setCurrentDate(d => addDays(d, -7))}>
+            Previous Week
+          </Button>
+          <span className="text-sm font-medium">
+            {format(weekStart, "MMM d")} - {format(weekEnd, "MMM d, yyyy")}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setCurrentDate(d => addDays(d, 7))}>
+            Next Week
+          </Button>
+        </div>
 
-        <GoogleCalendarView 
-          currentDate={currentDate}
-          onDateChange={setCurrentDate}
-          showNavigation={true}
-        />
+        <div className="grid grid-cols-7 gap-2">
+          {weekDays.map((day) => {
+            const dayMeetings = meetings.filter(m => isSameDay(new Date(m.start_time), day));
+            return (
+              <Card key={day.toISOString()} className={isToday(day) ? "border-primary" : ""}>
+                <CardHeader className="p-2">
+                  <CardTitle className="text-xs text-center">
+                    <div>{format(day, "EEE")}</div>
+                    <div className={isToday(day) ? "text-primary font-bold" : ""}>{format(day, "d")}</div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-1 space-y-1">
+                  {dayMeetings.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => navigate(`/coach/sessions/${m.id}`)}
+                      className="w-full text-left p-1 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                    >
+                      <p className="text-xs font-medium truncate">{m.summary}</p>
+                      <p className="text-xs text-muted-foreground">{format(new Date(m.start_time), "HH:mm")}</p>
+                    </button>
+                  ))}
+                  {isLoading && <div className="text-xs text-muted-foreground text-center">...</div>}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </DashboardLayout>
   );
