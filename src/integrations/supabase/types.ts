@@ -1927,6 +1927,10 @@ export type Database = {
         Returns: Json
       }
       rollback_transaction: { Args: never; Returns: string }
+      rotate_user_session_version: {
+        Args: { p_reason?: string; p_user_id: string }
+        Returns: number
+      }
       transfer_credits: {
         Args: {
           amount: number
