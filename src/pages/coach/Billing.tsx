@@ -155,7 +155,7 @@ const CoachBilling = () => {
       // Refresh data
       queryClient.invalidateQueries({ queryKey: ["coach_subscription", user?.id] });
     } catch (e: any) {
-      console.error("Error changing billing cycle:", e);
+      logger.error("Error changing billing cycle:", e);
       toast.error("Failed to change billing cycle");
     }
   };
