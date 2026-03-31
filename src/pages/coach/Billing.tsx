@@ -79,7 +79,7 @@ const CoachBilling = () => {
           .limit(1)
           .maybeSingle();
         if (error) throw error;
-        console.log("Fetched subscription data:", data);
+        logger.log("Fetched subscription data:", data);
         return data;
       } catch (e) {
         console.error("Error fetching subscription:", e);
