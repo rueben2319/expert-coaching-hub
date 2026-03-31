@@ -122,7 +122,7 @@ const CoachBilling = () => {
       queryClient.invalidateQueries({ queryKey: ["invoices", user?.id] });
     },
     onError: (error: any) => {
-      console.error("Error cancelling subscription:", error);
+      logger.error("Error cancelling subscription:", error);
       toast.error(error?.message || "Failed to cancel subscription");
     },
   });
