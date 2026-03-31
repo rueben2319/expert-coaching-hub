@@ -278,7 +278,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && isPlaying) {
-        console.log('Tab hidden - pausing tracking');
+        logger.log('Tab hidden - pausing tracking');
         setIsPlaying(false);
       }
     };
