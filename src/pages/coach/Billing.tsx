@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { coachSidebarSections } from "@/config/navigation";
 import { AlertCircle, Clock, Loader2 } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 const CoachBilling = () => {
   const { user } = useAuth();
