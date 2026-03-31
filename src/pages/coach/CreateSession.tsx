@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { MeetingManager } from "@/lib/meetingUtils";
 import { AttendeeSelector } from "@/components/AttendeeSelector";
+import { logger } from "@/lib/logger";
 
 const meetingSchema = z.object({
   summary: z.string().min(3, "Title must be at least 3 characters").max(100),
