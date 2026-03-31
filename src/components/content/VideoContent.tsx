@@ -131,16 +131,13 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
             data = JSON.parse(data);
           }
           
-          console.log('Vimeo event:', data.event);
+          logger.log('Vimeo event:', data.event);
           if (data.event === 'play') {
-            console.log('Vimeo: Playing');
             setHasStarted(true);
             setIsPlaying(true);
           } else if (data.event === 'pause') {
-            console.log('Vimeo: Paused');
             setIsPlaying(false);
           } else if (data.event === 'ended') {
-            console.log('Vimeo: Ended');
             setIsPlaying(false);
             handleVideoComplete();
           }
