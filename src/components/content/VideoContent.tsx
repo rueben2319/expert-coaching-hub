@@ -321,10 +321,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
         return;
       }
 
-      console.log('✅ Progress saved:', data);
-
       if (isComplete && onComplete) {
-        console.log('📢 Calling onComplete callback');
         onComplete();
       }
     } catch (err) {
