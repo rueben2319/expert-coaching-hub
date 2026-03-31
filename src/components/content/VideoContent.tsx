@@ -263,7 +263,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
               totalWatchTime.current = newTime;
               return newTime;
             });
-            console.log('Fallback tracking: +30s');
+            logger.log('Fallback tracking: +30s');
           }
         }
       }, 30000); // Every 30 seconds
