@@ -82,7 +82,7 @@ const CoachBilling = () => {
         logger.log("Fetched subscription data:", data);
         return data;
       } catch (e) {
-        console.error("Error fetching subscription:", e);
+        logger.error("Error fetching subscription:", e);
         return null;
       }
     },
