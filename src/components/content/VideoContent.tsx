@@ -316,7 +316,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
         .select();
 
       if (error) {
-        console.error('❌ Error saving progress:', error);
+        logger.error('Error saving progress:', error);
         // Continue without throwing - video still works
         return;
       }
