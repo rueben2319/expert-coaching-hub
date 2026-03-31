@@ -81,7 +81,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
             const savedWatchTime = interactionData.watch_time;
             setWatchTime(savedWatchTime);
             totalWatchTime.current = savedWatchTime;
-            console.log('Restored watch time:', savedWatchTime);
+            logger.log('Restored watch time:', savedWatchTime);
           }
         }
       } catch (err) {
