@@ -120,8 +120,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Restore session from storage — this is the single source of truth on page load
     supabase.auth.getSession().then(async ({ data: { session: existingSession } }) => {
       if (!mounted.current) return;
-      initialSessionResolved = true;
-
       setSession(existingSession);
       setUser(existingSession?.user ?? null);
 

@@ -98,6 +98,9 @@ const App = () => {
             <Route path="/client/sessions" element={<ProtectedRoute allowedRoles={["client"]}><ClientSessions /></ProtectedRoute>} />
             <Route path="/client/meeting/:meetingId" element={<ProtectedRoute allowedRoles={["client"]}><ClientMeetingRoom /></ProtectedRoute>} />
             <Route path="/client/analytics" element={<ProtectedRoute allowedRoles={["client"]}><ClientAnalytics /></ProtectedRoute>} />
+            <Route path="/client/credits" element={<ProtectedRoute allowedRoles={["client"]}><CreditPackages /></ProtectedRoute>} />
+            <Route path="/client/credits/success" element={<ProtectedRoute allowedRoles={["client"]}><CreditPurchaseSuccess /></ProtectedRoute>} />
+            <Route path="/client/session/:meetingId" element={<ProtectedRoute allowedRoles={["client"]}><SessionDetails /></ProtectedRoute>} />
 
             {/* Coach Routes */}
             <Route path="/coach" element={<ProtectedRoute allowedRoles={["coach"]}><CoachDashboard /></ProtectedRoute>} />

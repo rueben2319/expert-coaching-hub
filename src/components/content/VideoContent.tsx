@@ -349,18 +349,11 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   };
 
   const handleVideoComplete = async () => {
-    console.log('🎬 handleVideoComplete called');
-    console.log('Current state:', { isCompleted, watchTime, user: !!user, contentId });
-    
-    if (isCompleted) {
-      console.log('⚠️ Already completed, skipping');
-      return;
-    }
+    if (isCompleted) return;
     
     setIsCompleted(true);
-    console.log('💾 Saving progress with completion...');
     await saveProgress(100, true);
-    console.log('✅ Video completion saved');
+    logger.log('Video completion saved');
   };
 
   // Handle direct video progress

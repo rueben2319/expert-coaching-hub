@@ -177,7 +177,7 @@ const CoachBilling = () => {
       const { checkout_url } = await createCoachSubscription(tierId, billingCycle);
       window.location.href = checkout_url;
     } catch (e: any) {
-      console.error("Error creating subscription:", e);
+      logger.error("Error creating subscription:", e);
       toast.error(e.message || "Failed to start checkout");
     }
   };

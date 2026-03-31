@@ -121,7 +121,7 @@ const CreateSession = () => {
         description: "Google Meet link has been generated and calendar invites sent to attendees.",
       });
     } catch (error: any) {
-      console.error("Error creating meeting:", error);
+      logger.error("Error creating meeting:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create meeting",
