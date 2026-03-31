@@ -85,7 +85,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
           }
         }
       } catch (err) {
-        console.error('Exception fetching content interaction:', err);
+        logger.error('Exception fetching content interaction:', err);
         // Continue without setting completion status
       }
     };
