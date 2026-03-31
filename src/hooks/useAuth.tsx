@@ -72,8 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     mounted.current = true;
+    let initialSessionResolved = false;
 
-    // Safety timeout - if loading hasn't resolved in 8s, clear it
     const safetyTimeout = setTimeout(() => {
       if (mounted.current && loading) {
         logger.warn("Auth loading safety timeout reached");
@@ -81,11 +81,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }, 8000);
 
-    // Set up auth listener FIRST
+    // Set up auth listener FIRST — but don't set loading=false until getSession resolves
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         logger.log("Auth event:", event);
         if (!mounted.current) return;
+
+        // Skip INITIAL_SESSION from the listener — we handle it via getSession below
+        if (event === 'INITIAL_SESSION') return;
 
         setSession(newSession);
         setUser(newSession?.user ?? null);
@@ -94,7 +97,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userRole = await fetchRole(newSession.user.id);
           if (mounted.current) {
             setRole(userRole);
-            // Fetch profile in background - don't block loading
             fetchProfile(newSession.user.id);
           }
         } else {
@@ -105,9 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // Then check existing session
+    // Restore session from storage — this is the single source of truth on page load
     supabase.auth.getSession().then(async ({ data: { session: existingSession } }) => {
       if (!mounted.current) return;
+      initialSessionResolved = true;
 
       setSession(existingSession);
       setUser(existingSession?.user ?? null);
