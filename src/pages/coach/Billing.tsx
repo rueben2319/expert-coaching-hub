@@ -43,10 +43,9 @@ const CoachBilling = () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       if (user?.id) {
-        console.log("Invalidating cache for user:", user.id);
+        logger.log("Invalidating cache for user:", user.id);
         await queryClient.invalidateQueries({ queryKey: ["coach_subscription", user.id] });
         await queryClient.invalidateQueries({ queryKey: ["invoices", user.id] });
-        console.log("Cache invalidated");
       }
     };
 
