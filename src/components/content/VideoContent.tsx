@@ -295,13 +295,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
     try {
       const estimatedDuration = content.duration ? content.duration * 60 : 600;
-      console.log('💾 Saving progress:', {
-        percentage: percentage.toFixed(1),
-        isComplete,
-        watchTime: watchTime.toFixed(1),
-        estimatedDuration,
-        contentId
-      });
+      logger.log('Saving progress:', percentage.toFixed(1) + '%');
       
       const { data, error } = await supabase
         .from("content_interactions")
