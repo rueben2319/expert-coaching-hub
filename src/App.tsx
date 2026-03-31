@@ -25,6 +25,9 @@ const CourseViewer = lazy(() => import("./pages/client/CourseViewer"));
 const ClientSessions = lazy(() => import("./pages/client/Sessions"));
 const ClientMeetingRoom = lazy(() => import("./pages/client/MeetingRoom"));
 const ClientAnalytics = lazy(() => import("./pages/client/ClientAnalytics"));
+const CreditPackages = lazy(() => import("./pages/client/CreditPackages"));
+const CreditPurchaseSuccess = lazy(() => import("./pages/client/CreditPurchaseSuccess"));
+const SessionDetails = lazy(() => import("./pages/client/SessionDetails"));
 const CoachDashboard = lazy(() => import("./pages/coach/CoachDashboard"));
 const CoachCourses = lazy(() => import("./pages/coach/Courses"));
 const CreateCourse = lazy(() => import("./pages/coach/CreateCourse"));
@@ -95,6 +98,9 @@ const App = () => {
             <Route path="/client/sessions" element={<ProtectedRoute allowedRoles={["client"]}><ClientSessions /></ProtectedRoute>} />
             <Route path="/client/meeting/:meetingId" element={<ProtectedRoute allowedRoles={["client"]}><ClientMeetingRoom /></ProtectedRoute>} />
             <Route path="/client/analytics" element={<ProtectedRoute allowedRoles={["client"]}><ClientAnalytics /></ProtectedRoute>} />
+            <Route path="/client/credits" element={<ProtectedRoute allowedRoles={["client"]}><CreditPackages /></ProtectedRoute>} />
+            <Route path="/client/credits/success" element={<ProtectedRoute allowedRoles={["client"]}><CreditPurchaseSuccess /></ProtectedRoute>} />
+            <Route path="/client/session/:meetingId" element={<ProtectedRoute allowedRoles={["client"]}><SessionDetails /></ProtectedRoute>} />
 
             {/* Coach Routes */}
             <Route path="/coach" element={<ProtectedRoute allowedRoles={["coach"]}><CoachDashboard /></ProtectedRoute>} />

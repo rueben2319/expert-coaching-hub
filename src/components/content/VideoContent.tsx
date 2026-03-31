@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 interface VideoContentProps {
   content: {
@@ -80,11 +81,11 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
             const savedWatchTime = interactionData.watch_time;
             setWatchTime(savedWatchTime);
             totalWatchTime.current = savedWatchTime;
-            console.log('Restored watch time:', savedWatchTime);
+            logger.log('Restored watch time:', savedWatchTime);
           }
         }
       } catch (err) {
-        console.error('Exception fetching content interaction:', err);
+        logger.error('Exception fetching content interaction:', err);
         // Continue without setting completion status
       }
     };
@@ -106,20 +107,13 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
           }
           
           if (data.event === 'onStateChange') {
-            console.log('YouTube state change:', data.info);
-            // YouTube states: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (cued)
+            logger.log('YouTube state change:', data.info);
             if (data.info === 1) {
-              // Playing
-              console.log('YouTube: Playing');
               setHasStarted(true);
               setIsPlaying(true);
             } else if (data.info === 2) {
-              // Paused
-              console.log('YouTube: Paused');
               setIsPlaying(false);
             } else if (data.info === 0) {
-              // Ended
-              console.log('YouTube: Ended');
               setIsPlaying(false);
               handleVideoComplete();
             }
@@ -137,16 +131,13 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
             data = JSON.parse(data);
           }
           
-          console.log('Vimeo event:', data.event);
+          logger.log('Vimeo event:', data.event);
           if (data.event === 'play') {
-            console.log('Vimeo: Playing');
             setHasStarted(true);
             setIsPlaying(true);
           } else if (data.event === 'pause') {
-            console.log('Vimeo: Paused');
             setIsPlaying(false);
           } else if (data.event === 'ended') {
-            console.log('Vimeo: Ended');
             setIsPlaying(false);
             handleVideoComplete();
           }
@@ -272,7 +263,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
               totalWatchTime.current = newTime;
               return newTime;
             });
-            console.log('Fallback tracking: +30s');
+            logger.log('Fallback tracking: +30s');
           }
         }
       }, 30000); // Every 30 seconds
@@ -287,7 +278,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && isPlaying) {
-        console.log('Tab hidden - pausing tracking');
+        logger.log('Tab hidden - pausing tracking');
         setIsPlaying(false);
       }
     };
@@ -298,19 +289,13 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
   const saveProgress = async (percentage: number, isComplete = false) => {
     if (!user || isCompleted) {
-      console.log('⏭️ Skipping save:', { hasUser: !!user, isCompleted });
+      logger.log('Skipping save — no user or already completed');
       return;
     }
 
     try {
       const estimatedDuration = content.duration ? content.duration * 60 : 600;
-      console.log('💾 Saving progress:', {
-        percentage: percentage.toFixed(1),
-        isComplete,
-        watchTime: watchTime.toFixed(1),
-        estimatedDuration,
-        contentId
-      });
+      logger.log('Saving progress:', percentage.toFixed(1) + '%');
       
       const { data, error } = await supabase
         .from("content_interactions")
@@ -331,19 +316,16 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
         .select();
 
       if (error) {
-        console.error('❌ Error saving progress:', error);
+        logger.error('Error saving progress:', error);
         // Continue without throwing - video still works
         return;
       }
 
-      console.log('✅ Progress saved:', data);
-
       if (isComplete && onComplete) {
-        console.log('📢 Calling onComplete callback');
         onComplete();
       }
     } catch (err) {
-      console.error('💥 Exception saving progress:', err);
+      logger.error('Exception saving progress:', err);
       // Continue without throwing - video still works
     }
   };
@@ -367,18 +349,11 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   };
 
   const handleVideoComplete = async () => {
-    console.log('🎬 handleVideoComplete called');
-    console.log('Current state:', { isCompleted, watchTime, user: !!user, contentId });
-    
-    if (isCompleted) {
-      console.log('⚠️ Already completed, skipping');
-      return;
-    }
+    if (isCompleted) return;
     
     setIsCompleted(true);
-    console.log('💾 Saving progress with completion...');
     await saveProgress(100, true);
-    console.log('✅ Video completion saved');
+    logger.log('Video completion saved');
   };
 
   // Handle direct video progress

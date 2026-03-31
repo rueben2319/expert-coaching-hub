@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { MeetingManager } from "@/lib/meetingUtils";
 import { AttendeeSelector } from "@/components/AttendeeSelector";
+import { logger } from "@/lib/logger";
 
 const meetingSchema = z.object({
   summary: z.string().min(3, "Title must be at least 3 characters").max(100),
@@ -120,7 +121,7 @@ const CreateSession = () => {
         description: "Google Meet link has been generated and calendar invites sent to attendees.",
       });
     } catch (error: any) {
-      console.error("Error creating meeting:", error);
+      logger.error("Error creating meeting:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create meeting",

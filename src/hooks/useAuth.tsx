@@ -90,6 +90,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Skip INITIAL_SESSION from the listener — we handle it via getSession below
         if (event === 'INITIAL_SESSION') return;
 
+        // Handle stale refresh token: if token refresh fires with no session, sign out
+        if (event === 'TOKEN_REFRESHED' && !newSession) {
+          logger.warn("Token refresh returned null session — signing out");
+          setUser(null);
+          setSession(null);
+          setRole(null);
+          setLoading(false);
+          return;
+        }
+
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
@@ -110,8 +120,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Restore session from storage — this is the single source of truth on page load
     supabase.auth.getSession().then(async ({ data: { session: existingSession } }) => {
       if (!mounted.current) return;
-      initialSessionResolved = true;
-
       setSession(existingSession);
       setUser(existingSession?.user ?? null);
 

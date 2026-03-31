@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { coachSidebarSections } from "@/config/navigation";
 import { AlertCircle, Clock, Loader2 } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 const CoachBilling = () => {
   const { user } = useAuth();
@@ -42,10 +43,9 @@ const CoachBilling = () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       if (user?.id) {
-        console.log("Invalidating cache for user:", user.id);
+        logger.log("Invalidating cache for user:", user.id);
         await queryClient.invalidateQueries({ queryKey: ["coach_subscription", user.id] });
         await queryClient.invalidateQueries({ queryKey: ["invoices", user.id] });
-        console.log("Cache invalidated");
       }
     };
 
@@ -60,7 +60,7 @@ const CoachBilling = () => {
         if (error) throw error;
         return data || [];
       } catch (e) {
-        console.error("Error fetching tiers:", e);
+        logger.error("Error fetching tiers:", e);
         return [];
       }
     },
@@ -79,10 +79,10 @@ const CoachBilling = () => {
           .limit(1)
           .maybeSingle();
         if (error) throw error;
-        console.log("Fetched subscription data:", data);
+        logger.log("Fetched subscription data:", data);
         return data;
       } catch (e) {
-        console.error("Error fetching subscription:", e);
+        logger.error("Error fetching subscription:", e);
         return null;
       }
     },
@@ -101,7 +101,7 @@ const CoachBilling = () => {
         if (error) throw error;
         return data || [];
       } catch (e) {
-        console.error("Error fetching invoices:", e);
+        logger.error("Error fetching invoices:", e);
         return [];
       }
     },
@@ -122,7 +122,7 @@ const CoachBilling = () => {
       queryClient.invalidateQueries({ queryKey: ["invoices", user?.id] });
     },
     onError: (error: any) => {
-      console.error("Error cancelling subscription:", error);
+      logger.error("Error cancelling subscription:", error);
       toast.error(error?.message || "Failed to cancel subscription");
     },
   });
@@ -155,7 +155,7 @@ const CoachBilling = () => {
       // Refresh data
       queryClient.invalidateQueries({ queryKey: ["coach_subscription", user?.id] });
     } catch (e: any) {
-      console.error("Error changing billing cycle:", e);
+      logger.error("Error changing billing cycle:", e);
       toast.error("Failed to change billing cycle");
     }
   };
@@ -167,9 +167,9 @@ const CoachBilling = () => {
   };
 
   const handleSubscribe = async (tierId: string) => {
-    console.log("handleSubscribe called with tierId:", tierId, "billingCycle:", billingCycle);
+    logger.log("handleSubscribe called with tierId:", tierId, "billingCycle:", billingCycle);
     if (!tierId) {
-      console.error("No tierId provided");
+      logger.error("No tierId provided");
       toast.error("Please select a subscription plan");
       return;
     }
@@ -177,7 +177,7 @@ const CoachBilling = () => {
       const { checkout_url } = await createCoachSubscription(tierId, billingCycle);
       window.location.href = checkout_url;
     } catch (e: any) {
-      console.error("Error creating subscription:", e);
+      logger.error("Error creating subscription:", e);
       toast.error(e.message || "Failed to start checkout");
     }
   };
