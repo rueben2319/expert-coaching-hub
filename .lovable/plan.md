@@ -1,98 +1,73 @@
 
 
-# Auth System Rebuild: Simplified & Secure
+# Full Codebase Audit Report
 
-## Summary
+## Current State
 
-Remove Google OAuth entirely. Rebuild email/password auth with ACID-compliant user creation, eliminate localStorage role caching, and simplify the auth flow to remove race conditions and timeouts.
+The auth rebuild is complete and working. Here are the remaining issues found across the codebase:
 
-## Current Problems
+## Issues Found
 
-1. **localStorage role caching** -- client-side role can be spoofed
-2. **Race conditions** -- 12-second timeouts, `authListenerReady` refs, dual initialization paths
-3. **800+ line Auth.tsx** -- OAuth callback handling, role dialogs, complex state machine
-4. **Non-atomic user creation** -- `handle_new_user` trigger uses nested BEGIN/EXCEPTION blocks that mask partial failures
-5. **Google OAuth complexity** -- token sync, refresh logic, localStorage flags (`oauth_provider`, `oauth_role`)
+### 1. Missing Routes in App.tsx (HIGH)
+Three pages exist but have no routes defined:
+- `src/pages/client/CreditPackages.tsx` -- no route (referenced by `CreditWallet.tsx` as `/client/credits`)
+- `src/pages/client/CreditPurchaseSuccess.tsx` -- no route
+- `src/pages/client/SessionDetails.tsx` -- no route
 
-## What Changes
+**Fix**: Add lazy imports and routes for these three pages.
 
-### Database Migration
+### 2. Stale Refresh Token (HIGH)
+Auth logs show `"Invalid Refresh Token: Refresh Token Not Found"`. This happens when the browser has an old session token that Supabase no longer recognizes. The current `useAuth.tsx` handles `getSession()` errors but doesn't explicitly clear stale sessions when a token refresh fails.
 
-1. **Replace `handle_new_user` trigger** with a truly atomic version:
-   - Single transaction: profile + role + wallet (no nested exception blocks that swallow errors)
-   - Set `search_path = public` only (remove `auth`)
-   - Keep admin-role protection
+**Fix**: Add a `TOKEN_REFRESHED` error handler in `onAuthStateChange` -- if the session becomes null after a refresh failure, clear state and redirect to `/auth`.
 
-2. **Drop `upsert_own_role` function** -- no longer needed since role is set at signup and cannot be changed client-side. If role changes are needed, they go through admin-only operations.
+### 3. Unused `initialSessionResolved` Variable (LOW)
+In `useAuth.tsx` line 75, `initialSessionResolved` is set but never read.
 
-3. **Clean up `user_roles` RLS** -- remove any policy that allows authenticated users to INSERT/UPDATE their own role. Only `service_role` and the trigger can write roles.
+**Fix**: Remove it.
 
-### Frontend: `useAuth.tsx` (rewrite)
+### 4. Raw `console.log/error/warn` Calls (MEDIUM)
+656 instances across 30 files use raw `console.*` instead of the `logger` utility. In production, these leak debug info.
 
-- Remove localStorage role caching entirely
-- Remove `authListenerReady` ref and dual-path initialization
-- Simplify to: `onAuthStateChange` listener sets session/user, then fetches role from DB
-- Single timeout (5s) for the entire init, no nested timeouts
-- Remove `refreshRole` (role is immutable after signup)
-- Keep `refreshUser` for profile updates
-- Remove token sync setup (no more Google OAuth)
+**Fix**: Replace `console.log/warn` with `logger.log/warn` in key files: `Billing.tsx`, `VideoContent.tsx`, `supabaseFunctions.ts`, `CreateSession.tsx`. Keep `console.error` only where `logger.error` isn't imported.
 
-### Frontend: `Auth.tsx` (rewrite ~400 lines instead of 800+)
+### 5. `CreditWallet.tsx` Links to Wrong Route (MEDIUM)
+Navigates to `/client/credits` but the page file is `CreditPackages.tsx`. Route must match.
 
-- Remove all Google OAuth code (button, `startOAuthWithRole`, `handleGoogleAuth`, OAuth callback detection)
-- Remove role dialog for OAuth users
-- Keep: email/password login, signup with role selection (client/coach), password strength meter, input validation
-- Add: password reset flow (forgot password + `/reset-password` page)
-- Cleaner state: remove `oauthLoading`, `isFromOAuth`, `showRoleDialog`, `pendingRole`, `submittingRole`
+**Fix**: Add route `/client/credits` pointing to `CreditPackages` component.
 
-### Frontend: `ProtectedRoute.tsx` (simplify)
+### 6. `supabaseFunctions.ts` Still Has Raw Console Logs (LOW)
+Uses `console.error` and `console.log` directly instead of the `logger` utility, including logging partial auth tokens.
 
-- Remove 12-second `roleCheckDelay` timer
-- Simple logic: loading? show spinner. No user? redirect to `/auth`. No role? redirect to `/auth`. Wrong role? redirect to their dashboard.
-- Single 8-second loading timeout for edge cases
+**Fix**: Replace with `logger` calls, remove token presence logging.
 
-### Frontend: `App.tsx`
+### 7. Duplicate RLS Policies on Several Tables (LOW)
+`credit_wallets` has duplicate SELECT and UPDATE policies; `client_notes` has duplicate CRUD policies; `profiles` has duplicate SELECT and INSERT policies. These are functionally harmless but add confusion.
 
-- Remove `setupTokenSync` (no OAuth tokens to sync)
-- Remove token sync `useEffect`
+**Fix**: Database migration to drop the redundant older policies.
 
-### Files to Delete
+## Implementation Plan
 
-- `src/lib/tokenSync.ts`
-- `src/lib/tokenDebug.ts`
-- `src/components/TokenManagementDashboard.tsx`
-- `src/components/GoogleCalendarStatus.tsx`
-- `src/components/GoogleCalendarView.tsx`
-- `src/components/AuthDebug.tsx`
-- `src/hooks/useGoogleCalendar.ts`
-- `src/integrations/google/calendar.ts`
+### Step 1: Add missing routes to App.tsx
+- Add lazy imports for `CreditPackages`, `CreditPurchaseSuccess`, `SessionDetails`
+- Add three client routes: `/client/credits`, `/client/credits/success`, `/client/session/:meetingId`
 
-### Files to Update (remove Google Calendar references)
+### Step 2: Fix stale refresh token handling in useAuth.tsx
+- Remove unused `initialSessionResolved` variable
+- In `onAuthStateChange`, handle case where `TOKEN_REFRESHED` fires with null session (sign out gracefully)
 
-- `src/components/DashboardLayout.tsx` -- remove Google Calendar nav items if present
-- `src/config/navigation.tsx` -- remove Google Calendar menu entries
-- Any coach pages referencing Google Calendar (Schedule, Sessions, MeetingRoom)
+### Step 3: Replace raw console.* with logger in key files
+- `src/lib/supabaseFunctions.ts` -- replace all console.* with logger, remove token logging
+- `src/pages/coach/Billing.tsx` -- replace console.* with logger
+- `src/pages/coach/CreateSession.tsx` -- replace console.error with logger.error
+- `src/components/content/VideoContent.tsx` -- replace console.* with logger
 
-### New File
-
-- `src/pages/ResetPassword.tsx` -- handles password reset after email link click
+### Step 4: Database migration to clean duplicate RLS policies
+- Drop duplicate policies on `credit_wallets`, `client_notes`, `profiles`
 
 ## Technical Details
 
-**ACID guarantee**: The `handle_new_user` trigger runs inside Postgres's implicit transaction for the INSERT into `auth.users`. If any step (profile, role, wallet) fails, the entire user creation rolls back. No nested exception handlers that catch and re-raise -- a single atomic block.
+The auth logs show the refresh token error originates from the preview URL. This is expected when sessions expire or are invalidated server-side. The fix ensures the frontend gracefully handles this instead of showing a blank loading state.
 
-**Role security**: Roles are set once at signup via the trigger. No client-facing RPC to change roles. Admin role assignment requires direct DB access or a service-role edge function.
-
-**Session management**: Supabase handles session persistence, refresh, and token rotation. The frontend only reads `session.user` and queries `user_roles` table -- no caching, no localStorage.
-
-## Implementation Order
-
-1. Database migration (atomic trigger, lock down role RLS)
-2. Rewrite `useAuth.tsx`
-3. Rewrite `ProtectedRoute.tsx`
-4. Rewrite `Auth.tsx` (email-only, with reset password)
-5. Create `ResetPassword.tsx`
-6. Update `App.tsx` (remove token sync, add reset-password route)
-7. Delete obsolete files (token sync, Google Calendar, debug components)
-8. Update remaining components that reference deleted modules
+The missing routes are the most impactful issue -- users clicking "Buy Credits" from the wallet component get a 404.
 
