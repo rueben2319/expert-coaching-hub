@@ -60,7 +60,7 @@ const CoachBilling = () => {
         if (error) throw error;
         return data || [];
       } catch (e) {
-        console.error("Error fetching tiers:", e);
+        logger.error("Error fetching tiers:", e);
         return [];
       }
     },
