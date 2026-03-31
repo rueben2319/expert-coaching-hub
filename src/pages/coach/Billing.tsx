@@ -101,7 +101,7 @@ const CoachBilling = () => {
         if (error) throw error;
         return data || [];
       } catch (e) {
-        console.error("Error fetching invoices:", e);
+        logger.error("Error fetching invoices:", e);
         return [];
       }
     },
