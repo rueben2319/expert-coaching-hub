@@ -107,20 +107,13 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
           }
           
           if (data.event === 'onStateChange') {
-            console.log('YouTube state change:', data.info);
-            // YouTube states: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (cued)
+            logger.log('YouTube state change:', data.info);
             if (data.info === 1) {
-              // Playing
-              console.log('YouTube: Playing');
               setHasStarted(true);
               setIsPlaying(true);
             } else if (data.info === 2) {
-              // Paused
-              console.log('YouTube: Paused');
               setIsPlaying(false);
             } else if (data.info === 0) {
-              // Ended
-              console.log('YouTube: Ended');
               setIsPlaying(false);
               handleVideoComplete();
             }
