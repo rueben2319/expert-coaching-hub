@@ -289,7 +289,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
   const saveProgress = async (percentage: number, isComplete = false) => {
     if (!user || isCompleted) {
-      console.log('⏭️ Skipping save:', { hasUser: !!user, isCompleted });
+      logger.log('Skipping save — no user or already completed');
       return;
     }
 
