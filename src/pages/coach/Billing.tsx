@@ -167,9 +167,9 @@ const CoachBilling = () => {
   };
 
   const handleSubscribe = async (tierId: string) => {
-    console.log("handleSubscribe called with tierId:", tierId, "billingCycle:", billingCycle);
+    logger.log("handleSubscribe called with tierId:", tierId, "billingCycle:", billingCycle);
     if (!tierId) {
-      console.error("No tierId provided");
+      logger.error("No tierId provided");
       toast.error("Please select a subscription plan");
       return;
     }
