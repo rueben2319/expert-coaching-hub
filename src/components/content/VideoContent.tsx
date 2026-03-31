@@ -325,7 +325,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
         onComplete();
       }
     } catch (err) {
-      console.error('💥 Exception saving progress:', err);
+      logger.error('Exception saving progress:', err);
       // Continue without throwing - video still works
     }
   };
