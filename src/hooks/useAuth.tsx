@@ -25,6 +25,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const mounted = useRef(true);
 
+  const normalizeRole = useCallback((value: unknown): UserRole | null => {
+    if (value === "client" || value === "coach" || value === "admin") {
+      return value;
+    }
+    return null;
+  }, []);
+
+  const getRoleFromUser = useCallback((authUser: User | null): UserRole | null => {
+    if (!authUser) return null;
+    const appMetaRole = normalizeRole(authUser.app_metadata?.role);
+    if (appMetaRole) return appMetaRole;
+    return normalizeRole(authUser.user_metadata?.role);
+  }, [normalizeRole]);
+
   const fetchRole = useCallback(async (userId: string): Promise<UserRole | null> => {
     try {
       const { data, error } = await supabase
@@ -103,10 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(newSession?.user ?? null);
 
         if (newSession?.user) {
+          const metadataRole = getRoleFromUser(newSession.user);
+
+          // Fast path: use signed role metadata immediately so redirects don't stall
+          if (metadataRole) {
+            setRole(metadataRole);
+            setLoading(false);
+          }
+
           // Fire-and-forget: don't block the auth state change callback
           fetchRole(newSession.user.id).then((userRole) => {
             if (mounted.current) {
-              setRole(userRole);
+              setRole(userRole ?? metadataRole);
               setLoading(false);
             }
           });
@@ -125,9 +147,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(existingSession?.user ?? null);
 
       if (existingSession?.user) {
+        const metadataRole = getRoleFromUser(existingSession.user);
+
+        // Fast path for restored sessions
+        if (metadataRole) {
+          setRole(metadataRole);
+          setLoading(false);
+        }
+
         const userRole = await fetchRole(existingSession.user.id);
         if (mounted.current) {
-          setRole(userRole);
+          setRole(userRole ?? metadataRole);
           fetchProfile(existingSession.user.id);
         }
       }
@@ -162,14 +192,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.auth.getUser();
       if (data.user) {
         setUser(data.user);
+        const metadataRole = getRoleFromUser(data.user);
         const userRole = await fetchRole(data.user.id);
-        setRole(userRole);
+        setRole(userRole ?? metadataRole);
         await fetchProfile(data.user.id);
       }
     } catch (error) {
       logger.error("Error refreshing user:", error);
     }
-  }, [fetchRole, fetchProfile]);
+  }, [fetchRole, fetchProfile, getRoleFromUser]);
 
   return (
     <AuthContext.Provider value={{ user, session, role, loading, signOut, refreshUser }}>
