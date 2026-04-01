@@ -27,28 +27,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchRole = useCallback(async (userId: string): Promise<UserRole | null> => {
     try {
-      const rolePromise = supabase
+      const { data, error } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", userId)
         .maybeSingle();
 
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => {
-          logger.error("fetchRole timed out after 5s");
-          resolve(null);
-        }, 5000);
-      });
-
-      const result = await Promise.race([rolePromise, timeoutPromise]);
-      
-      if (!result || !('data' in result)) return null;
-
-      if (result.error) {
-        logger.error("Failed to fetch role:", result.error.message);
+      if (error) {
+        logger.error("Failed to fetch role:", error.message);
         return null;
       }
-      return (result.data?.role as UserRole) ?? null;
+      return (data?.role as UserRole) ?? null;
     } catch (err) {
       logger.error("Exception fetching role:", err);
       return null;
