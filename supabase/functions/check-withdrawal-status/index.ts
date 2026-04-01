@@ -205,13 +205,8 @@ serve(async (req: Request) => {
 
   } catch (error) {
     console.error("Check withdrawal status error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const errorStack = error instanceof Error ? error.stack : undefined;
     return new Response(
-      JSON.stringify({
-        error: errorMessage,
-        stack: errorStack,
-      }),
+      JSON.stringify({ error: "Internal server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
