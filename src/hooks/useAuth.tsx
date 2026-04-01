@@ -72,7 +72,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     mounted.current = true;
-    let initialSessionResolved = false;
 
     const safetyTimeout = setTimeout(() => {
       if (mounted.current && loading) {
