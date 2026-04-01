@@ -40,13 +40,21 @@ export default function Auth() {
   const { user, role, signOut } = useAuth();
   const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const roleFromMetadata =
+    user?.app_metadata?.role === "client" || user?.app_metadata?.role === "coach" || user?.app_metadata?.role === "admin"
+      ? user.app_metadata.role
+      : user?.user_metadata?.role === "client" || user?.user_metadata?.role === "coach" || user?.user_metadata?.role === "admin"
+        ? user.user_metadata.role
+        : null;
+  const effectiveRole = role ?? roleFromMetadata;
+
   // Redirect if already authenticated with a role
   useEffect(() => {
-    if (user && role) {
+    if (user && effectiveRole) {
       const from = (location.state as any)?.from;
-      navigate(from || `/${role}`, { replace: true });
+      navigate(from || `/${effectiveRole}`, { replace: true });
     }
-  }, [user, role, navigate, location.state]);
+  }, [user, effectiveRole, navigate, location.state]);
 
   // Real-time validation with debouncing
   const validateField = useCallback((fieldName: string, value: string) => {
@@ -102,9 +110,23 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Welcome back!");
+
+        const signedInRole =
+          data.user?.app_metadata?.role === "client" || data.user?.app_metadata?.role === "coach" || data.user?.app_metadata?.role === "admin"
+            ? data.user.app_metadata.role
+            : data.user?.user_metadata?.role === "client" || data.user?.user_metadata?.role === "coach" || data.user?.user_metadata?.role === "admin"
+              ? data.user.user_metadata.role
+              : null;
+
+        const from = (location.state as { from?: string } | null)?.from;
+        if (from && from !== "/auth") {
+          navigate(from, { replace: true });
+        } else if (signedInRole) {
+          navigate(`/${signedInRole}`, { replace: true });
+        }
       } else {
         // Validate
         const newErrors: Record<string, string> = {};
@@ -173,7 +195,7 @@ export default function Auth() {
   };
 
   // Already logged in
-  if (user && role) {
+  if (user && effectiveRole) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">
         <div className="absolute top-4 right-4"><ThemeToggle /></div>
@@ -186,7 +208,7 @@ export default function Auth() {
             <CardDescription>You're currently signed in.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={() => navigate(`/${role}`)} className="w-full">Go to Dashboard</Button>
+            <Button onClick={() => navigate(`/${effectiveRole}`)} className="w-full">Go to Dashboard</Button>
             <Button onClick={async () => { await signOut(); toast.success("Signed out"); }} variant="outline" className="w-full">Sign Out</Button>
           </CardContent>
         </Card>
