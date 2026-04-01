@@ -27,17 +27,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchRole = useCallback(async (userId: string): Promise<UserRole | null> => {
     try {
-      const { data, error } = await supabase
+      const rolePromise = supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", userId)
         .maybeSingle();
 
-      if (error) {
-        logger.error("Failed to fetch role:", error);
+      const timeoutPromise = new Promise<null>((resolve) => {
+        setTimeout(() => {
+          logger.error("fetchRole timed out after 5s");
+          resolve(null);
+        }, 5000);
+      });
+
+      const result = await Promise.race([rolePromise, timeoutPromise]);
+      
+      if (!result || !('data' in result)) return null;
+
+      if (result.error) {
+        logger.error("Failed to fetch role:", result.error.message);
         return null;
       }
-      return (data?.role as UserRole) ?? null;
+      return (result.data?.role as UserRole) ?? null;
     } catch (err) {
       logger.error("Exception fetching role:", err);
       return null;
@@ -80,9 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }, 8000);
 
-    // Set up auth listener FIRST — but don't set loading=false until getSession resolves
+    // Set up auth listener FIRST — but don't block inside the callback
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
+      (event, newSession) => {
         logger.log("Auth event:", event);
         if (!mounted.current) return;
 
@@ -103,16 +114,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(newSession?.user ?? null);
 
         if (newSession?.user) {
-          const userRole = await fetchRole(newSession.user.id);
-          if (mounted.current) {
-            setRole(userRole);
-            fetchProfile(newSession.user.id);
-          }
+          // Fire-and-forget: don't block the auth state change callback
+          fetchRole(newSession.user.id).then((userRole) => {
+            if (mounted.current) {
+              setRole(userRole);
+              setLoading(false);
+            }
+          });
+          fetchProfile(newSession.user.id);
         } else {
           setRole(null);
+          setLoading(false);
         }
-
-        if (mounted.current) setLoading(false);
       }
     );
 
