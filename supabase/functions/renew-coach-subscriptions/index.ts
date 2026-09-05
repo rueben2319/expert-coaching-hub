@@ -3,16 +3,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -83,8 +79,7 @@ type Tier = {
 const MAX_RENEWALS_PER_RUN = Number(Deno.env.get("RENEWAL_BATCH_SIZE") ?? 25);
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
 
   const results: Array<Record<string, unknown>> = [];
@@ -127,7 +122,7 @@ serve(async (req: Request) => {
         }),
         {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
         },
       );
     }
@@ -416,7 +411,7 @@ serve(async (req: Request) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       },
     );
   } catch (error) {
@@ -428,7 +423,7 @@ serve(async (req: Request) => {
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       },
     );
   }

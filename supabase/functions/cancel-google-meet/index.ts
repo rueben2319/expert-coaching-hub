@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { getValidatedGoogleToken, OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
@@ -11,15 +12,8 @@ declare const Deno: {
   };
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, DELETE',
-};
-
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
 
   try {
@@ -123,7 +117,7 @@ serve(async (req) => {
         meeting_id: meetingId,
         calendar_cancelled: calendarResponse.ok || calendarResponse.status === 410 || calendarResponse.status === 404,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error cancelling meeting:', error);
@@ -132,7 +126,7 @@ serve(async (req) => {
       JSON.stringify({ error: errorMessage }),
       { 
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' }
       }
     );
   }

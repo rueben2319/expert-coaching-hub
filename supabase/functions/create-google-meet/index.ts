@@ -4,19 +4,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { getValidatedGoogleToken, OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
 import { TokenStorage } from "../_shared/token-storage.ts";
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimitPreset, RATE_LIMIT_PRESETS } from "../_shared/redis-rate-limit.ts";
+import { circuitBreakers } from "../_shared/circuit-breaker.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
 };
 
 interface MeetingRequest {
@@ -42,32 +38,15 @@ interface CalendarEvent {
   hangoutLink?: string;
 }
 
-// Simple rate limiting store (in production, use Redis or similar)
+// In-memory fallback rate limiting (used only if Redis fails)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 10; // 10 requests per minute
 
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const userLimit = rateLimitStore.get(userId);
-  
-  if (!userLimit || now > userLimit.resetTime) {
-    rateLimitStore.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
-    return true;
-  }
-  
-  if (userLimit.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return false;
-  }
-  
-  userLimit.count++;
-  return true;
-}
-
 serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const requestOrigin = req.headers.get("Origin");
+  
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); }
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -96,22 +75,50 @@ serve(async (req: Request) => {
       throw new Error('Unauthorized');
     }
 
-    // Check rate limit
-    if (!checkRateLimit(user.id)) {
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }), 
-        { 
-          status: 429, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    // Check rate limit using Redis
+    try {
+      const rateLimitResult = await checkRateLimitPreset(user.id, 'calendar');
+      
+      if (!rateLimitResult.allowed) {
+        const errorResponse = new Response(
+          JSON.stringify({ 
+            error: `Rate limit exceeded. ${rateLimitResult.remaining} requests remaining. Please try again later.` 
+          }), 
+          { 
+            status: 429, 
+            headers: { 'Content-Type': 'application/json' } 
+          }
+        );
+        return withCorsHeaders(errorResponse, requestOrigin);
+      }
+    } catch (redisError) {
+      console.warn("Redis rate limiting failed, using in-memory fallback:", redisError);
+      // Simple in-memory fallback if Redis fails
+      const now = Date.now();
+      const userLimit = rateLimitStore.get(user.id);
+      
+      if (!userLimit || now > userLimit.resetTime) {
+        rateLimitStore.set(user.id, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+      } else if (userLimit.count >= RATE_LIMIT_MAX_REQUESTS) {
+        const errorResponse = new Response(
+          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }), 
+          { 
+            status: 429, 
+            headers: { 'Content-Type': 'application/json' } 
+          }
+        );
+        return withCorsHeaders(errorResponse, requestOrigin);
+      } else {
+        userLimit.count++;
+      }
     }
 
     // Enforce role: only coaches or admins can create meetings for courses
     const { data: roleRow, error: roleErr } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle();
     const userRole = roleRow?.role || null;
     if (userRole !== 'coach' && userRole !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Forbidden: only coaches can create meetings' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const errorResponse = new Response(JSON.stringify({ error: 'Forbidden: only coaches can create meetings' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     const body: MeetingRequest = await req.json();
@@ -169,46 +176,48 @@ serve(async (req: Request) => {
 
     // Helper function to make Google Calendar API request with automatic token handling
     const makeCalendarRequest = async (): Promise<CalendarEvent> => {
-      const requestId = `meet-${Date.now()}-${crypto.randomUUID()}`;
-      
-      const calendarResponse = await OAuthTokenManager.makeAuthenticatedRequest(
-        'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            summary: sanitizedSummary,
-            description: sanitizedDescription,
-            start: {
-              dateTime: startTime,
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      return await circuitBreakers.googleCalendar.execute(async () => {
+        const requestId = `meet-${Date.now()}-${crypto.randomUUID()}`;
+        
+        const calendarResponse = await OAuthTokenManager.makeAuthenticatedRequest(
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
             },
-            end: {
-              dateTime: endTime,
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-            },
-            attendees: sanitizedAttendees.map(email => ({ email })),
-            conferenceData: {
-              createRequest: {
-                requestId,
-                conferenceSolutionKey: { type: 'hangoutsMeet' },
+            body: JSON.stringify({
+              summary: sanitizedSummary,
+              description: sanitizedDescription,
+              start: {
+                dateTime: startTime,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
               },
-            },
-          }),
-        },
-        accessToken,
-        refreshToken
-      );
+              end: {
+                dateTime: endTime,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+              },
+              attendees: sanitizedAttendees.map(email => ({ email })),
+              conferenceData: {
+                createRequest: {
+                  requestId,
+                  conferenceSolutionKey: { type: 'hangoutsMeet' },
+                },
+              },
+            }),
+          },
+          accessToken,
+          refreshToken
+        );
 
-      if (!calendarResponse.ok) {
-        const errorText = await calendarResponse.text();
-        console.error('Google Calendar API error:', calendarResponse.status, errorText);
-        throw new Error(`Failed to create calendar event: ${calendarResponse.status} ${errorText}`);
-      }
+        if (!calendarResponse.ok) {
+          const errorText = await calendarResponse.text();
+          console.error('Google Calendar API error:', calendarResponse.status, errorText);
+          throw new Error(`Failed to create calendar event: ${calendarResponse.status} ${errorText}`);
+        }
 
-      return await calendarResponse.json();
+        return await calendarResponse.json();
+      });
     };
 
     // Create the calendar event
@@ -268,7 +277,7 @@ serve(async (req: Request) => {
 
     console.log('Meeting created successfully:', meeting.id);
 
-    return new Response(
+    const successResponse = new Response(
       JSON.stringify({
         success: true,
         meetingId: meeting.id,
@@ -289,18 +298,20 @@ serve(async (req: Request) => {
       }),
       { 
         status: 201,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { 'Content-Type': 'application/json' } 
       }
     );
+    return withCorsHeaders(successResponse, requestOrigin);
   } catch (error) {
     console.error('Error creating meeting:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    return new Response(
+    const errorResponse = new Response(
       JSON.stringify({ error: errorMessage }),
       { 
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' }
       }
     );
+    return withCorsHeaders(errorResponse, requestOrigin);
   }
 });

@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
@@ -10,14 +11,8 @@ declare const Deno: {
   };
 };
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
 
   try {
@@ -36,7 +31,7 @@ serve(async (req: Request) => {
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -45,7 +40,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -58,7 +53,7 @@ serve(async (req: Request) => {
     if (roleData?.role !== "admin") {
       return new Response(JSON.stringify({ error: "Forbidden: Admin access required" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -151,7 +146,7 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({ processed: results.length, results, message: "Processed pending withdrawals" }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      { headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }, status: 200 }
     );
 
   } catch (error) {
@@ -159,7 +154,7 @@ serve(async (req: Request) => {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
   }
 });

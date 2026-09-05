@@ -10,7 +10,7 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
  * If backend cookie sessions are not available yet, set VITE_SUPABASE_USE_BROWSER_STORAGE=true
  * as a temporary fallback.
  */
-const USE_BROWSER_STORAGE = false;
+const USE_BROWSER_STORAGE = true;
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   throw new Error('Missing required Supabase environment variables. Please check your .env file.');

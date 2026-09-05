@@ -3,11 +3,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 interface VideoContentProps {
-  content: {
-    url: string;
+  content?: {
+    // Support both old format (url) and new backend format (video_url/embed_url)
+    url?: string;
+    video_url?: string;
+    embed_url?: string;
+    provider?: string;
     title?: string;
     duration?: number;
     thumbnail?: string;
+    thumbnail_url?: string;
   };
   contentId: string;
   onProgress?: (percentage: number) => void;
@@ -16,6 +21,7 @@ interface VideoContentProps {
 
 // Helper function to convert YouTube URL to embed URL
 const getEmbedUrl = (url: string): string => {
+  if (!url) return "";
   // YouTube
   const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
   const youtubeMatch = url.match(youtubeRegex);
@@ -54,9 +60,16 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
   const totalWatchTime = useRef<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const embedUrl = getEmbedUrl(content.url);
-  const isDirectVideo = isVideoFile(content.url);
-  const videoType = getVideoType(content.url);
+  
+  // Support both old format (url) and new backend format (video_url/embed_url)
+  const rawVideoUrl = content?.url || content?.video_url;
+  const rawEmbedUrl = content?.embed_url;
+  const rawDuration = content?.duration;
+  const videoUrl = typeof rawVideoUrl === "string" ? rawVideoUrl.trim() : "";
+  const embedUrl = typeof rawEmbedUrl === "string" ? rawEmbedUrl.trim() : getEmbedUrl(videoUrl);
+  const durationMinutes = typeof rawDuration === "number" ? rawDuration : 0;
+  const isDirectVideo = isVideoFile(videoUrl);
+  const videoType = getVideoType(videoUrl);
 
   // Check completion status and load saved progress on mount
   useEffect(() => {
@@ -197,11 +210,10 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
           // Calculate time since last start
           const sessionTime = (Date.now() - watchStartTime.current) / 1000;
           // Add to total watch time
-          const currentTotal = totalWatchTime.current + sessionTime;
-          setWatchTime(currentTotal);
+            const currentTotal = totalWatchTime.current + sessionTime;
 
-          // Mark as complete when 90% watched
-          const estimatedDuration = content.duration ? content.duration * 60 : 600;
+            // Mark as complete when 90% watched
+            const estimatedDuration = durationMinutes > 0 ? durationMinutes * 60 : 600;
           const progressPercentage = (currentTotal / estimatedDuration) * 100;
           if (progressPercentage >= 90 && !isCompleted) {
             handleVideoComplete();
@@ -232,7 +244,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
         watchStartTime.current = null;
       }
     };
-  }, [isPlaying, isCompleted, content.duration]);
+  }, [isPlaying, isCompleted, durationMinutes]);
 
   // Periodic progress saving (every 10 seconds while playing)
   useEffect(() => {
@@ -240,7 +252,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
     if (isPlaying && !isCompleted && user) {
       saveInterval = setInterval(() => {
-        const estimatedDuration = content.duration ? content.duration * 60 : 600;
+        const estimatedDuration = durationMinutes > 0 ? durationMinutes * 60 : 600;
         const progressPercentage = (watchTime / estimatedDuration) * 100;
         saveProgress(progressPercentage);
       }, 10000); // Save every 10 seconds
@@ -249,7 +261,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
     return () => {
       if (saveInterval) clearInterval(saveInterval);
     };
-  }, [isPlaying, watchTime, isCompleted, user, content.duration]);
+  }, [isPlaying, watchTime, isCompleted, user, durationMinutes]);
 
   // Fallback heartbeat tracking for embedded videos (YouTube/Vimeo)
   // This ensures tracking continues even if postMessage events don't fire
@@ -303,7 +315,7 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
     }
 
     try {
-      const estimatedDuration = content.duration ? content.duration * 60 : 600;
+      const estimatedDuration = durationMinutes > 0 ? durationMinutes * 60 : 600;
       console.log('💾 Saving progress:', {
         percentage: percentage.toFixed(1),
         isComplete,
@@ -395,12 +407,16 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-      {!isDirectVideo ? (
+      {!videoUrl ? (
+        <div className="flex h-full items-center justify-center p-6 text-center text-white">
+          <p>Video unavailable</p>
+        </div>
+      ) : !isDirectVideo ? (
         <iframe
           ref={iframeRef}
           src={embedUrl}
           className="w-full h-full border-0"
-          title={content.title || "Video Content"}
+          title={content?.title || "Video Content"}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           onLoad={handleVideoStart}
@@ -408,14 +424,14 @@ export function VideoContent({ content, contentId, onProgress, onComplete }: Vid
       ) : (
         <video
           ref={videoRef}
-          src={content.url}
+          src={videoUrl}
           className="w-full h-full"
           controls
           onPlay={handleVideoResume}
           onPause={handleVideoPause}
           onTimeUpdate={handleDirectVideoProgress}
           onEnded={handleVideoComplete}
-          title={content.title || "Video Content"}
+          title={content?.title || "Video Content"}
         />
       )}
     </div>

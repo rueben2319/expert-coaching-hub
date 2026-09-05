@@ -139,7 +139,7 @@ export function useCredits() {
         return;
       }
 
-      toast.info("Payment request created. Please follow the payment instructions from OneKhusa.");
+      toast.info("Payment request created. Please follow the payment instructions to complete your purchase.");
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to initiate credit purchase");

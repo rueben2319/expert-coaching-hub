@@ -4,6 +4,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { logRateLimitHit, logHighValueTransaction, createLogEntry } from "../_shared/monitoring.ts";
 import { requestToPay } from "../_shared/onekhusa.ts";
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimitPreset, RATE_LIMIT_PRESETS } from "../_shared/redis-rate-limit.ts";
+import { circuitBreakers } from "../_shared/circuit-breaker.ts";
 
 // Minimal Deno type declaration for environment access
 declare const Deno: {
@@ -12,18 +15,14 @@ declare const Deno: {
   };
 };
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "OPTIONS, POST",
-  "Access-Control-Max-Age": "86400",
-};
-
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const requestOrigin = req.headers.get("Origin");
+  
+  if (req.method === "OPTIONS") return handleCorsPreflight(requestOrigin);
 
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    const errorResponse = new Response("Method Not Allowed", { status: 405 });
+    return withCorsHeaders(errorResponse, requestOrigin);
   }
 
   try {
@@ -37,7 +36,7 @@ serve(async (req: Request) => {
       console.log("Environment variables:");
       console.log("- SUPABASE_URL:", supabaseUrl ? "SET" : "NOT SET");
       console.log("- SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "SET" : "NOT SET");
-      console.log("- ONEKHUSA_SECRET_KEY:", onekhusaSecretKey ? "SET" : "NOT SET");
+      console.log("- Payment gateway secret:", onekhusaSecretKey ? "SET" : "NOT SET");
       console.log("- APP_BASE_URL:", appBaseUrl);
     }
 
@@ -50,20 +49,22 @@ serve(async (req: Request) => {
     // Authenticate user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "No authorization header" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     // Parse request body
@@ -71,45 +72,69 @@ serve(async (req: Request) => {
     const { package_id } = body;
 
     if (!package_id) {
-      return new Response(JSON.stringify({ error: "package_id is required" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "package_id is required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
-    // 🔒 SECURITY: Rate limiting on purchases (10 per hour)
-    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
-    const { count: purchaseCount, error: rlError } = await supabase
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("transaction_mode", "credit_purchase")
-      .gte("created_at", oneHourAgo);
-    
-    if (rlError) {
-      // Fail closed or degrade gracefully based on your policy
-      console.error("Rate-limit check failed:", rlError.message);
-      // For security, fail closed on rate limit errors
-      await logRateLimitHit(user.id, "credit_purchase", 10, 0);
-      return new Response(JSON.stringify({ 
-        error: "Service temporarily unavailable. Please try again later." 
-      }), {
-        status: 503,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    
-    if ((purchaseCount || 0) >= 10) {
-      await logRateLimitHit(user.id, "credit_purchase", 10, purchaseCount || 0);
-      return new Response(JSON.stringify({ 
-        error: "Too many purchase attempts. Please try again later." 
-      }), {
-        status: 429,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (isDebug) {
-      console.log(`✓ Purchase rate limit check passed (${purchaseCount || 0}/10 in last hour)`);
+    // 🔒 SECURITY: Rate limiting on purchases (10 per hour) using Redis
+    try {
+      const rateLimitResult = await checkRateLimitPreset(user.id, 'creditPurchase');
+      
+      if (!rateLimitResult.allowed) {
+        await logRateLimitHit(user.id, "credit_purchase", rateLimitResult.limit, rateLimitResult.remaining);
+        const errorResponse = new Response(JSON.stringify({ 
+          error: `Too many purchase attempts. ${rateLimitResult.remaining} requests remaining. Please try again later.` 
+        }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+        return withCorsHeaders(errorResponse, requestOrigin);
+      }
+      
+      if (isDebug) {
+        console.log(`✓ Purchase rate limit check passed (${rateLimitResult.remaining}/${rateLimitResult.limit} remaining)`);
+      }
+    } catch (redisError) {
+      // Fallback to database-based rate limiting if Redis fails
+      console.warn("Redis rate limiting failed, falling back to database:", redisError);
+      
+      const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+      const { count: purchaseCount, error: rlError } = await supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("transaction_mode", "credit_purchase")
+        .gte("created_at", oneHourAgo);
+      
+      if (rlError) {
+        console.error("Rate-limit check failed:", rlError.message);
+        await logRateLimitHit(user.id, "credit_purchase", 10, 0);
+        const errorResponse = new Response(JSON.stringify({ 
+          error: "Service temporarily unavailable. Please try again later." 
+        }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+        return withCorsHeaders(errorResponse, requestOrigin);
+      }
+      
+      if ((purchaseCount || 0) >= 10) {
+        await logRateLimitHit(user.id, "credit_purchase", 10, purchaseCount || 0);
+        const errorResponse = new Response(JSON.stringify({ 
+          error: "Too many purchase attempts. Please try again later." 
+        }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+        return withCorsHeaders(errorResponse, requestOrigin);
+      }
+      
+      if (isDebug) {
+        console.log(`✓ Purchase rate limit check passed (${purchaseCount || 0}/10 in last hour)`);
+      }
     }
 
     // Fetch credit package
@@ -121,10 +146,11 @@ serve(async (req: Request) => {
       .single();
 
     if (packageError || !creditPackage) {
-      return new Response(JSON.stringify({ error: "Credit package not found" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "Credit package not found" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     // 🔒 SECURITY: Fraud detection for large purchases
@@ -182,16 +208,16 @@ serve(async (req: Request) => {
     // Log high-value transactions
     await logHighValueTransaction('purchase', user.id, totalCredits, amount);
 
-    // Call OneKhusa API
+    // Call payment gateway API
     if (isDebug) {
-      console.log("About to call OneKhusa API for credit purchase");
+      console.log("About to call payment gateway for credit purchase");
       console.log("Payment payload (redacted):", JSON.stringify({
           amount: String(amount),
           currency: "MWK",
           email: "<redacted>",
           first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
           last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
-          callback_url: `${supabaseUrl}/functions/v1/onekhusa-webhook`,
+          callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
           return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
           tx_ref: tx_ref,
           customization: {
@@ -207,20 +233,21 @@ serve(async (req: Request) => {
         }, null, 2));
     }
 
-    const onekhusaResponse = await fetch("https://api.onekhusa.com/payment", {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${onekhusaSecretKey!}`,
-      },
-      body: JSON.stringify({
-        amount: String(amount),
-        currency: "MWK",
-        email: user.email,
-        first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
+    const onekhusaResponse = await circuitBreakers.onekhusa.execute(async () => {
+      return await fetch("https://api.onekhusa.com/payment", {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${onekhusaSecretKey!}`,
+        },
+        body: JSON.stringify({
+          amount: String(amount),
+          currency: "MWK",
+          email: user.email,
+          first_name: user.user_metadata?.full_name?.split(' ')[0] || "User",
         last_name: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
-        callback_url: `${supabaseUrl}/functions/v1/onekhusa-webhook`,
+        callback_url: `${supabaseUrl}/functions/v1/paychangu-webhook`,
         return_url: `${appBaseUrl}/client/credits/success?tx_ref=${tx_ref}`,
         tx_ref: tx_ref,
         customization: {
@@ -238,8 +265,8 @@ serve(async (req: Request) => {
 
     const onekhusaData = await onekhusaResponse.json();
     if (isDebug) {
-      console.log("OneKhusa response status:", onekhusaResponse.status);
-      console.log("OneKhusa response data:", JSON.stringify(onekhusaData, null, 2));
+      console.log("Payment gateway response status:", onekhusaResponse.status);
+      console.log("Payment gateway response data:", JSON.stringify(onekhusaData, null, 2));
     }
 
     if (!onekhusaResponse.ok || onekhusaData.status !== "success") {
@@ -249,24 +276,26 @@ serve(async (req: Request) => {
         .update({ status: "failed", gateway_response: onekhusaData })
         .eq("id", transaction.id);
 
-      return new Response(JSON.stringify({
+      const errorResponse = new Response(JSON.stringify({
         error: "Failed to initialize payment",
         details: onekhusaData,
       }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
-    return new Response(
+    const successResponse = new Response(
       JSON.stringify({
         checkout_url: onekhusaData.data.checkout_url,
         transaction_ref: tx_ref,
         credits_amount: totalCredits,
         package_name: creditPackage.name,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { "Content-Type": "application/json" } }
     );
+    return withCorsHeaders(successResponse, requestOrigin);
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
@@ -274,9 +303,10 @@ serve(async (req: Request) => {
       error: msg,
       stack: e instanceof Error ? e.stack : undefined,
     });
-    return new Response(JSON.stringify({ error: msg }), {
+    const errorResponse = new Response(JSON.stringify({ error: msg }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
     });
+    return withCorsHeaders(errorResponse, requestOrigin);
   }
 });

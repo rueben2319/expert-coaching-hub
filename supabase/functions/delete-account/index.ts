@@ -3,23 +3,17 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-expect-error: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "OPTIONS, POST",
-};
-
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 const CONFIRMATION_TEXT = "DELETE MY ACCOUNT";
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const requestOrigin = req.headers.get("Origin");
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 
@@ -36,7 +30,7 @@ serve(async (req: Request) => {
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -44,7 +38,7 @@ serve(async (req: Request) => {
     if (!token) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -60,7 +54,7 @@ serve(async (req: Request) => {
     if (authError || !authData.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -72,7 +66,7 @@ serve(async (req: Request) => {
     if (confirmationText !== CONFIRMATION_TEXT) {
       return new Response(JSON.stringify({ error: `Confirmation text must be exactly '${CONFIRMATION_TEXT}'` }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -92,7 +86,7 @@ serve(async (req: Request) => {
       console.error("Failed to write account deletion audit log:", auditError);
       return new Response(JSON.stringify({ error: "Failed to write audit log" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -101,20 +95,20 @@ serve(async (req: Request) => {
       console.error("Failed to delete user:", deleteError);
       return new Response(JSON.stringify({ error: "Failed to delete account" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
     console.error("delete-account error:", message);
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 });

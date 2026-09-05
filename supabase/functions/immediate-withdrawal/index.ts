@@ -4,18 +4,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { sendAlert, sendFraudAlert, logHighValueTransaction, logRateLimitHit } from "../_shared/monitoring.ts";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "OPTIONS, POST",
-  "Access-Control-Max-Age": "86400",
 };
 
 /** ---------- Helper Functions ---------- **/
@@ -416,9 +410,9 @@ async function calculateFraudScore(supabase: any, userId: string, amount: number
 /** ---------- Main Server ---------- **/
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return handleCorsPreflight(req.headers.get('Origin'));
   if (req.method !== "POST")
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    return new Response("Method Not Allowed", { status: 405, headers: getCorsHeaders(req.headers.get('Origin')) });
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -533,7 +527,7 @@ serve(async (req: Request) => {
           transaction_ref: recent.transaction_ref,
           message: "A withdrawal with this amount was just processed. Returning existing withdrawal.",
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -670,7 +664,7 @@ serve(async (req: Request) => {
           amount_mwk: amountMWK,
           message: "Withdrawal is being processed. You'll receive confirmation shortly.",
         }),
-        { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 202, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
     
@@ -722,14 +716,14 @@ serve(async (req: Request) => {
         new_balance: newBalance,
         message: "Withdrawal executed successfully.",
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("Immediate withdrawal error:", msg);
     return new Response(
       JSON.stringify({ error: msg }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
   }
 });

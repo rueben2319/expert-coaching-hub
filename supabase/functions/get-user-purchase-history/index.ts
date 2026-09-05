@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
@@ -10,13 +11,8 @@ declare const Deno: {
   };
 };
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return handleCorsPreflight(req.headers.get('Origin'));
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -24,11 +20,11 @@ serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return new Response(JSON.stringify({ error: "No authorization header" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!authHeader) return new Response(JSON.stringify({ error: "No authorization header" }), { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
     const token = authHeader.replace("Bearer ", "");
 
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
 
     // Note: client_orders table was removed - only coach subscriptions are supported
     const [invoicesRes, subsRes, txsRes] = await Promise.all([
@@ -44,10 +40,10 @@ serve(async (req: Request) => {
         subscriptions: subsRes.data ?? [],
         transactions: txsRes.data ?? [],
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
-    return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
   }
 });

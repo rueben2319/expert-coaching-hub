@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
@@ -10,18 +11,11 @@ declare const Deno: {
   };
 };
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "OPTIONS, POST",
-  "Access-Control-Max-Age": "86400",
-};
-
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return handleCorsPreflight(req.headers.get('Origin'));
 
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    return new Response("Method Not Allowed", { status: 405, headers: getCorsHeaders(req.headers.get('Origin')) });
   }
 
   try {
@@ -39,7 +33,7 @@ serve(async (req: Request) => {
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -49,7 +43,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -63,7 +57,7 @@ serve(async (req: Request) => {
     if (!userRole || (userRole.role !== "coach" && userRole.role !== "admin")) {
       return new Response(JSON.stringify({ error: "Only coaches can request withdrawals" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -74,7 +68,7 @@ serve(async (req: Request) => {
     if (!credits_amount || !payment_method || !payment_details) {
       return new Response(
         JSON.stringify({ error: "credits_amount, payment_method, and payment_details are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -83,7 +77,7 @@ serve(async (req: Request) => {
     if (creditsToWithdraw <= 0) {
       return new Response(JSON.stringify({ error: "Amount must be positive" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -97,7 +91,7 @@ serve(async (req: Request) => {
     if (walletErr || !wallet) {
       return new Response(JSON.stringify({ error: "Wallet not found" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -110,7 +104,7 @@ serve(async (req: Request) => {
           current_balance: currentBalance,
           requested: creditsToWithdraw,
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -151,7 +145,7 @@ serve(async (req: Request) => {
         status: "pending",
         message: "Withdrawal request submitted successfully. Credits will be held until admin approval.",
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
 
   } catch (e) {
@@ -159,7 +153,7 @@ serve(async (req: Request) => {
     console.error("Error in request-withdrawal:", msg);
     return new Response(JSON.stringify({ error: msg }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 });

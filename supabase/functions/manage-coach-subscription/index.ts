@@ -3,16 +3,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 type ManageCoachSubscriptionRequest = {
@@ -38,8 +34,7 @@ interface RoleRow {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
 
   let supabase: ReturnType<typeof createClient> | null = null;
@@ -58,7 +53,7 @@ serve(async (req: Request) => {
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Missing authorization header" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -69,14 +64,14 @@ serve(async (req: Request) => {
       const msg = jsonErr instanceof Error ? jsonErr.message : "Invalid JSON";
       return new Response(JSON.stringify({ error: `Invalid request body: ${msg}` }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
     if (!body || body.action !== "cancel") {
       return new Response(JSON.stringify({ error: "Unsupported action" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -85,7 +80,7 @@ serve(async (req: Request) => {
     if (!subscription_id) {
       return new Response(JSON.stringify({ error: "subscription_id is required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -98,7 +93,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -120,14 +115,14 @@ serve(async (req: Request) => {
     if (subscriptionError || !subscription) {
       return new Response(JSON.stringify({ error: "Subscription not found" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
     if (subscription.coach_id !== user.id && !isAdmin) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -138,7 +133,7 @@ serve(async (req: Request) => {
           status: "already_cancelled",
           cancelled_effective_at: subscription.end_date,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
       );
     }
 
@@ -146,7 +141,7 @@ serve(async (req: Request) => {
     if (!cancellableStatuses.has(subscription.status)) {
       return new Response(JSON.stringify({ error: `Cannot cancel subscription in status ${subscription.status}` }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -190,14 +185,14 @@ serve(async (req: Request) => {
         cancelled_effective_at: effectiveEndDate,
         cancel_immediately,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     console.error("manage-coach-subscription error:", message);
     return new Response(JSON.stringify({ error: message }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 });

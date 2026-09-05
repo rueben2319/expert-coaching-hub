@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
@@ -28,16 +29,11 @@ const googleCalendarService = {
   },
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+
 
 serve(async (req: Request) => {
   // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); }
 
   try {
     const supabase = createClient(
@@ -55,7 +51,7 @@ serve(async (req: Request) => {
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
       )
     }
 
@@ -65,7 +61,7 @@ serve(async (req: Request) => {
     if (!lessonId || !meetingContent) {
       return new Response(
         JSON.stringify({ error: 'Missing lessonId or meetingContent' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
       )
     }
 
@@ -90,7 +86,7 @@ serve(async (req: Request) => {
     if (lessonError || !lesson) {
       return new Response(
         JSON.stringify({ error: 'Lesson not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 404, headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
       )
     }
 
@@ -112,7 +108,7 @@ serve(async (req: Request) => {
     if (enrollmentError) {
       return new Response(
         JSON.stringify({ error: 'Failed to get enrolled students' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
       )
     }
 
@@ -152,7 +148,7 @@ serve(async (req: Request) => {
     if (meetingError) {
       return new Response(
         JSON.stringify({ error: 'Failed to create meeting', details: meetingError }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
       )
     }
 
@@ -183,7 +179,7 @@ serve(async (req: Request) => {
       }),
       { 
         status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } 
       }
     )
 
@@ -192,7 +188,7 @@ serve(async (req: Request) => {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' } }
     )
   }
 })

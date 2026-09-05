@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { TrendingUp, AlertCircle, ExternalLink, Copy, Wallet, CheckCircle } from "lucide-react";
+import { TrendingUp, AlertCircle, ExternalLink, Copy, Wallet, CheckCircle, RefreshCw } from "lucide-react";
 import { adminSidebarSections } from "@/config/navigation";
 import { toast } from "sonner";
 import { useAdminOverviewData } from "@/hooks/useAdminOverviewData";
@@ -29,12 +29,14 @@ export default function AdminDashboard() {
   const [totalTransactions, setTotalTransactions] = useState<number>(0);
   const [totalCreditsInCirculation, setTotalCreditsInCirculation] = useState<number>(0);
   const [renewalIssues, setRenewalIssues] = useState<RenewalIssue[]>([]);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
       setLoadingFinancialHealth(true);
+      setDashboardError(null);
       try {
         const [{ count: txnCount }, walletsResult, renewalResult] = await Promise.all([
           supabase.from("transactions").select("*", { count: "exact", head: true }).eq("status", "success"),
@@ -62,6 +64,7 @@ export default function AdminDashboard() {
         }
       } catch (e) {
         console.error("Error loading admin financial stats", e);
+        setDashboardError("Failed to load dashboard data. Please check your database permissions.");
       } finally {
         if (mounted) setLoadingFinancialHealth(false);
       }
@@ -103,11 +106,49 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleRefreshDashboard = () => {
+    window.location.reload();
+  };
+
+  if (dashboardError) {
+    return (
+      <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
+        <div className="flex items-center justify-center min-h-screen">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-5 w-5" />
+                <CardTitle>Dashboard Error</CardTitle>
+              </div>
+              <CardDescription>{dashboardError}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => window.location.reload()} className="w-full">Reload Page</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout sidebarSections={adminSidebarSections} brandName="Admin Panel">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Admin Dashboard</h1>
-        <p className="text-muted-foreground">Revenue overview and action items</p>
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-1 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Admin Dashboard</h1>
+            <p className="text-sm text-muted-foreground">Revenue overview and action items</p>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleRefreshDashboard}
+            className="gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <QuickLinksRow onNavigate={navigate} />
@@ -120,7 +161,7 @@ export default function AdminDashboard() {
         onNavigate={navigate}
       />
 
-      <h2 className="text-xl font-semibold mb-4">Revenue Overview</h2>
+      <h2 className="text-lg font-semibold mb-3">Revenue Overview</h2>
       <RevenueTabs
         revenue={overviewData.revenue}
         isLoading={sections.revenue.isLoading}
@@ -129,79 +170,71 @@ export default function AdminDashboard() {
         formatCurrency={formatCurrency}
       />
 
-      <h2 className="text-xl font-semibold mb-4">Financial Health</h2>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <TrendingUp className="w-5 h-5 text-green-500" />
-              <span className="text-xs text-muted-foreground">Active</span>
+      <h2 className="text-lg font-semibold mb-3">Financial Health</h2>
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 mb-6">
+        <Card className="hover:shadow-md transition-all hover:scale-[1.02]">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <TrendingUp className="w-4 h-4 text-green-500" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Active</span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-500">{loadingFinancialHealth ? "..." : overviewData.subscriptions.active}</div>
-            <p className="text-xs text-muted-foreground">Coach Subscriptions</p>
+            <div className="text-xl font-bold text-green-500">{loadingFinancialHealth ? <RefreshCw className="h-4 w-4 animate-spin inline" /> : overviewData.subscriptions.active}</div>
+            <p className="text-[10px] text-muted-foreground">Coach Subscriptions</p>
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <Wallet className="w-5 h-5 text-indigo-500" />
-              <span className="text-xs text-muted-foreground">In wallets</span>
+        <Card className="hover:shadow-md transition-all hover:scale-[1.02]">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Wallet className="w-4 h-4 text-indigo-500" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">In wallets</span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-indigo-500">{loadingFinancialHealth ? "..." : totalCreditsInCirculation.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Credits in Circulation</p>
+            <div className="text-xl font-bold text-indigo-500">{loadingFinancialHealth ? <RefreshCw className="h-4 w-4 animate-spin inline" /> : totalCreditsInCirculation.toLocaleString()}</div>
+            <p className="text-[10px] text-muted-foreground">Credits in Circulation</p>
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CheckCircle className="w-5 h-5 text-emerald-500" />
-              <span className="text-xs text-muted-foreground">Successful</span>
+        <Card className="hover:shadow-md transition-all hover:scale-[1.02]">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Successful</span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-emerald-500">{loadingFinancialHealth ? "..." : totalTransactions}</div>
-            <p className="text-xs text-muted-foreground">Total Transactions</p>
+            <div className="text-xl font-bold text-emerald-500">{loadingFinancialHealth ? <RefreshCw className="h-4 w-4 animate-spin inline" /> : totalTransactions}</div>
+            <p className="text-[10px] text-muted-foreground">Total Transactions</p>
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <AlertCircle className="w-5 h-5 text-orange-500" />
-              <span className="text-xs text-muted-foreground">Failed renewals</span>
+        <Card className="hover:shadow-md transition-all hover:scale-[1.02]">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <AlertCircle className="w-4 h-4 text-orange-500" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Failed renewals</span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{loadingFinancialHealth ? "..." : overviewData.subscriptions.failedRenewals}</div>
-            <p className="text-xs text-muted-foreground">Expired Subscriptions</p>
+            <div className="text-xl font-bold text-orange-500">{loadingFinancialHealth ? <RefreshCw className="h-4 w-4 animate-spin inline" /> : overviewData.subscriptions.failedRenewals}</div>
+            <p className="text-[10px] text-muted-foreground">Expired Subscriptions</p>
           </CardContent>
         </Card>
       </div>
 
       {renewalIssues.length > 0 && (
-        <Card className="mb-8">
-          <CardHeader>
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-yellow-500" />
-              <CardTitle>Subscription Renewal Issues</CardTitle>
+              <AlertCircle className="w-4 h-4 text-yellow-500" />
+              <CardTitle className="text-base">Subscription Renewal Issues</CardTitle>
             </div>
-            <CardDescription>Pending or failed renewal transactions that may need attention</CardDescription>
+            <CardDescription className="text-xs">Pending or failed renewal transactions that may need attention</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full table-auto border-collapse text-sm">
+              <table className="w-full table-auto border-collapse text-xs">
                 <thead>
                   <tr className="text-left text-muted-foreground border-b">
-                    <th className="py-2 px-3">Date</th>
-                    <th className="py-2 px-3">Transaction Ref</th>
-                    <th className="py-2 px-3">Status</th>
-                    <th className="py-2 px-3">Actions</th>
+                    <th className="py-2 px-2">Date</th>
+                    <th className="py-2 px-2">Transaction Ref</th>
+                    <th className="py-2 px-2">Status</th>
+                    <th className="py-2 px-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -209,24 +242,24 @@ export default function AdminDashboard() {
                     const checkoutUrl = extractCheckoutUrl(issue.gateway_response);
                     return (
                       <tr key={issue.id} className="border-b hover:bg-muted/50">
-                        <td className="py-2 px-3">{new Date(issue.created_at).toLocaleDateString()}</td>
-                        <td className="py-2 px-3 font-mono text-xs">{issue.transaction_ref}</td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">{new Date(issue.created_at).toLocaleDateString()}</td>
+                        <td className="py-2 px-2 font-mono text-[10px]">{issue.transaction_ref}</td>
+                        <td className="py-2 px-2">
                           <span
-                            className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
                               issue.status === "failed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
                             }`}
                           >
                             {issue.status}
                           </span>
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">
                           {checkoutUrl && (
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="sm" onClick={() => window.open(checkoutUrl, "_blank")}>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => window.open(checkoutUrl, "_blank")}>
                                 <ExternalLink className="w-3 h-3" />
                               </Button>
-                              <Button variant="ghost" size="sm" onClick={() => handleCopyCheckoutUrl(checkoutUrl)}>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleCopyCheckoutUrl(checkoutUrl)}>
                                 <Copy className="w-3 h-3" />
                               </Button>
                             </div>

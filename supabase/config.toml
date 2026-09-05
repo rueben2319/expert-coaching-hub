@@ -1,5 +1,9 @@
 project_id = "vbrxgaxjmpwusbbbzzgl"
 
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
 [functions.create-google-meet]
 verify_jwt = true
 

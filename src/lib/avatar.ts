@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getOptimizedAvatarUrl } from "./image-optimization";
 
 export const AVATAR_PUBLIC_PATH_SEGMENT = "/storage/v1/object/public/avatars/";
 
@@ -40,7 +41,8 @@ export const resolveAvatarUrl = (value?: string | null): string | undefined => {
     const {
       data: { publicUrl },
     } = supabase.storage.from("avatars").getPublicUrl(value);
-    return publicUrl;
+    // Return optimized URL with Supabase transformations
+    return getOptimizedAvatarUrl(publicUrl);
   }
 
   return value;

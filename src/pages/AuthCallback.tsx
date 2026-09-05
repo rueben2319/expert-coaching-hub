@@ -1,158 +1,42 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Loader2, RotateCw, ShieldAlert } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuthService } from "@/hooks/useAuthService";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";
-import { clearOAuthCallbackState, clearOAuthCallbackUrl, readOAuthCallbackState, resolveOAuthCallbackNextPath } from "@/lib/oauthCallback";
-
-type OAuthFinalizeResponse = {
-  role: "client" | "coach" | "admin";
-  onboarding_state: "ready" | "role_bootstrapped" | "needs_role_selection";
-  redirect_to: string;
-  finalized_for_session: boolean;
-};
-
-const makeSupportCode = () => `OAUTH-${Date.now().toString(36).toUpperCase()}`;
-
-const hasProviderCallbackParams = (url: URL) => {
-  const hashParams = new URLSearchParams(url.hash.replace("#", "?"));
-  const searchParams = url.searchParams;
-
-  return (
-    searchParams.has("code") ||
-    searchParams.has("error") ||
-    searchParams.has("state") ||
-    hashParams.has("access_token") ||
-    hashParams.has("error")
-  );
-};
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { resolvePostAuthRoute } from "@/lib/authRouting";
+import { Loader2, ShieldAlert } from "lucide-react";
 
 export default function AuthCallback() {
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [supportCode, setSupportCode] = useState<string | null>(null);
+  const { status, role } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { finalizeAuthAndResolveRole, signOut } = useAuthService();
-
-  const oauthState = useMemo(() => readOAuthCallbackState(), []);
-
-  const finalizeOAuthCallback = useCallback(async () => {
-    setLoading(true);
-    setErrorMessage(null);
-    setSupportCode(null);
-
-    const url = new URL(window.location.href);
-    if (!hasProviderCallbackParams(url)) {
-      clearOAuthCallbackUrl();
-      setLoading(false);
-      setErrorMessage("This callback URL is missing OAuth provider parameters.");
-      return;
-    }
-
-    const nonceFromUrl = url.searchParams.get("nonce");
-    if (!nonceFromUrl || !oauthState.nonce || nonceFromUrl !== oauthState.nonce) {
-      clearOAuthCallbackUrl();
-      const code = makeSupportCode();
-      setSupportCode(code);
-      setLoading(false);
-      setErrorMessage("OAuth callback validation failed. Please retry sign-in.");
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase.functions.invoke<OAuthFinalizeResponse>("oauth-callback", {
-        body: {
-          callback_nonce: nonceFromUrl,
-        },
-      });
-
-      if (error || !data) {
-        throw new Error(error?.message || "Unable to finalize OAuth callback.");
-      }
-
-      if (data.onboarding_state === "needs_role_selection") {
-        throw new Error("Account onboarding is incomplete. Please contact support.");
-      }
-
-      const finalized = await finalizeAuthAndResolveRole({
-        intendedPath: oauthState.intendedPath ?? (location.state as { from?: string } | null)?.from ?? data.redirect_to,
-      });
-
-      clearOAuthCallbackState();
-      clearOAuthCallbackUrl();
-
-      navigate(resolveOAuthCallbackNextPath(finalized.role ?? data.role, finalized.intendedPath), { replace: true });
-    } catch (error: unknown) {
-      clearOAuthCallbackUrl();
-      const code = makeSupportCode();
-      setSupportCode(code);
-      setErrorMessage(error instanceof Error ? error.message : "OAuth sign-in could not be completed.");
-      toast.error("OAuth sign-in could not be completed.");
-    } finally {
-      setLoading(false);
-    }
-  }, [finalizeAuthAndResolveRole, location.state, navigate, oauthState.intendedPath, oauthState.nonce]);
 
   useEffect(() => {
-    void finalizeOAuthCallback();
-  }, [finalizeOAuthCallback]);
+    if (status === "authenticated" && role) {
+      navigate(resolvePostAuthRoute(role), { replace: true });
+    } else if (status === "unauthenticated" || status === "error") {
+      navigate("/auth?error=oauth_failed", { replace: true });
+    }
+    // "bootstrapping" → keep showing spinner
+  }, [status, role, navigate]);
 
-  if (loading) {
+  if (status === "error") {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Completing sign-in
-            </CardTitle>
-            <CardDescription>Please wait while we finalize your OAuth login.</CardDescription>
-          </CardHeader>
-        </Card>
+        <div className="flex items-center gap-2 text-destructive">
+          <ShieldAlert className="h-5 w-5" />
+          <p>Sign-in failed. Please try again.</p>
+        </div>
       </div>
     );
   }
 
-  if (errorMessage) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-destructive" />
-              OAuth callback failed
-            </CardTitle>
-            <CardDescription>{errorMessage}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {supportCode ? (
-              <p className="text-sm text-muted-foreground">
-                Support code: <span className="font-mono">{supportCode}</span>
-              </p>
-            ) : null}
-            <Button onClick={() => void finalizeOAuthCallback()} className="w-full">
-              <RotateCw className="h-4 w-4 mr-2" />
-              Retry callback finalize
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={async () => {
-                clearOAuthCallbackState();
-                await signOut({ scope: "local", redirectTo: "/auth", replace: true });
-              }}
-            >
-              Return to sign-in
-            </Button>
-          </CardContent>
-        </Card>
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/10">
+      <div className="w-16 h-16 rounded-2xl bg-background/80 shadow-lg flex items-center justify-center backdrop-blur-md border border-white/10 mb-6">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
-    );
-  }
-
-  return null;
+      <h2 className="text-xl font-medium tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+        Authenticating...
+      </h2>
+      <p className="text-sm text-muted-foreground mt-2">Please wait while we verify your session.</p>
+    </div>
+  );
 }

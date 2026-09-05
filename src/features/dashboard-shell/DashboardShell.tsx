@@ -78,7 +78,7 @@ export const DashboardShell = memo(function DashboardShell({
   const onSearchSubmit = useCallback(() => submitSearch(searchQuery), [searchQuery, submitSearch]);
 
   const isCurrentPath = useCallback(
-    (href: string) => location.pathname === href || location.pathname.startsWith(`${href}/`),
+    (href: string) => location.pathname === href,
     [location.pathname]
   );
 

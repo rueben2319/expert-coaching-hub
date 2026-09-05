@@ -36,6 +36,7 @@ export type UseCoachDashboardDataResult = {
   hasCourses: boolean;
   coursesError: Error | null;
   enrollmentsError: Error | null;
+  enrollmentsCount: number;
 };
 
 export function useCoachDashboardData(): UseCoachDashboardDataResult {
@@ -48,6 +49,8 @@ export function useCoachDashboardData(): UseCoachDashboardDataResult {
     error: coursesError,
   } = useQuery<CourseWithModules[], Error>({
     queryKey: ["coach-courses", user?.id],
+    throwOnError: false,
+    retry: 1,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("courses")
@@ -63,7 +66,11 @@ export function useCoachDashboardData(): UseCoachDashboardDataResult {
         `)
         .eq("coach_id", user?.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error("coach dashboard courses query failed", error);
+        throw error;
+      }
+
       return (data ?? []) as CourseWithModules[];
     },
     enabled: !!user?.id,
@@ -75,6 +82,8 @@ export function useCoachDashboardData(): UseCoachDashboardDataResult {
     error: enrollmentsError,
   } = useQuery<EnrollmentWithCourseCoach[], Error>({
     queryKey: ["coach-enrollments", user?.id],
+    throwOnError: false,
+    retry: 1,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("course_enrollments")
@@ -84,7 +93,11 @@ export function useCoachDashboardData(): UseCoachDashboardDataResult {
         `)
         .eq("courses.coach_id", user?.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error("coach dashboard enrollments query failed", error);
+        throw error;
+      }
+
       return (data ?? []) as EnrollmentWithCourseCoach[];
     },
     enabled: !!user?.id,
@@ -117,5 +130,6 @@ export function useCoachDashboardData(): UseCoachDashboardDataResult {
     hasCourses: courses.length > 0,
     coursesError,
     enrollmentsError,
+    enrollmentsCount: enrollments.length,
   };
 }

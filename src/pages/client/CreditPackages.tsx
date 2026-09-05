@@ -117,7 +117,7 @@ export default function CreditPackages() {
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Check className="h-3 w-3 text-green-600" />
-                            <span>Secure payment via OneKhusa</span>
+                            <span>Secure payment via Paychangu</span>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Check className="h-3 w-3 text-green-600" />

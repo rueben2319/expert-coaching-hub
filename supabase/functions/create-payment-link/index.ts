@@ -3,16 +3,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno imports work at runtime
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 type BillingCycle = "monthly" | "yearly";
@@ -67,7 +63,7 @@ function redact(value: unknown): unknown {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return handleCorsPreflight(req.headers.get('Origin'));
 
   // Initialize variables for cleanup in catch block
   let supabase: any;
@@ -102,7 +98,7 @@ serve(async (req: Request) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       console.log("No authorization header found");
-      return new Response(JSON.stringify({ error: "No authorization header" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "No authorization header" }), { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
     }
     console.log("Authorization header present");
 
@@ -111,7 +107,7 @@ serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
       console.error("User auth error");
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
     }
 
     console.log("User authenticated:", user.id);
@@ -166,7 +162,7 @@ serve(async (req: Request) => {
     // For coach subscription, ensure the user is a coach (or admin)
     if (mode === "coach_subscription") {
       if (userRole !== "coach" && userRole !== "admin") {
-        return new Response(JSON.stringify({ error: "Forbidden: user must be a coach to subscribe to coach plans" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: "Forbidden: user must be a coach to subscribe to coach plans" }), { status: 403, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
       }
     }
 
@@ -335,7 +331,7 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({
         error: "Failed to initialize payment",
         details: sanitizedGatewayResponse,
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }), { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
     }
 
     return new Response(
@@ -349,7 +345,7 @@ serve(async (req: Request) => {
         order_id: orderId,
         subscription_id: subscriptionId,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
@@ -367,6 +363,6 @@ serve(async (req: Request) => {
       console.error("Error during cleanup:", cleanupError);
     }
 
-    return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
   }
 });

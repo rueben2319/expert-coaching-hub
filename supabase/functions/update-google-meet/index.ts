@@ -4,12 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { getValidatedGoogleToken, OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, PATCH',
-};
-
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 interface UpdateMeetingRequest {
   meetingId: string;
   summary?: string;
@@ -63,8 +58,7 @@ interface GoogleCalendarResponse {
 }
 
 serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
 
   try {
@@ -263,7 +257,7 @@ serve(async (req: Request) => {
         message: 'Meeting updated successfully',
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
         status: 200,
       }
     );
@@ -277,7 +271,7 @@ serve(async (req: Request) => {
         error: error.message || 'Failed to update meeting',
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
         status: 400,
       }
     );

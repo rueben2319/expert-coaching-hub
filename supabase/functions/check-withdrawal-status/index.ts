@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 // @ts-ignore: Deno imports work at runtime
 import { z } from "https://esm.sh/zod@3.23.8";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Minimal Deno type declaration for environment access
 declare const Deno: {
   env: {
@@ -12,23 +13,16 @@ declare const Deno: {
   };
 };
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
 const RequestSchema = z.object({
   withdrawalId: z.string().uuid(),
 });
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
 
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    return new Response("Method Not Allowed", { status: 405, headers: getCorsHeaders(req.headers.get('Origin')) });
   }
 
   try {
@@ -46,7 +40,7 @@ serve(async (req: Request) => {
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
       );
     }
 
@@ -55,7 +49,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
       );
     }
 
@@ -74,7 +68,7 @@ serve(async (req: Request) => {
           error: "Invalid request body",
           details: parseResult.error.flatten(),
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
       );
     }
     const { withdrawalId } = parseResult.data;
@@ -93,7 +87,7 @@ serve(async (req: Request) => {
     if (error) {
       return new Response(
         JSON.stringify({ error: "Failed to fetch withdrawal" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
       );
     }
 
@@ -107,20 +101,20 @@ serve(async (req: Request) => {
       if (existsError) {
         return new Response(
           JSON.stringify({ error: "Failed to fetch withdrawal" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 500, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
         );
       }
 
       if (exists) {
         return new Response(
           JSON.stringify({ error: "Forbidden" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 403, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } },
         );
       }
 
       return new Response(
         JSON.stringify({ error: "Withdrawal not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 404, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -131,7 +125,7 @@ serve(async (req: Request) => {
           message: `Withdrawal is already ${withdrawal.status}`,
           status: withdrawal.status,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -143,7 +137,7 @@ serve(async (req: Request) => {
           message: "No transaction ID found. Cannot check status.",
           status: withdrawal.status,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -171,7 +165,7 @@ serve(async (req: Request) => {
           message: "Failed to check status with payment provider. Please try again later.",
           status: withdrawal.status,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -187,7 +181,7 @@ serve(async (req: Request) => {
           message: "Could not determine status from payment provider.",
           status: withdrawal.status,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -216,7 +210,7 @@ serve(async (req: Request) => {
           message: "Withdrawal is still being processed by the payment provider. Please check again in a few moments.",
           status: withdrawal.status,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     } else {
       console.warn(`Unknown status for withdrawal ${withdrawalId}: ${txStatus}`);
@@ -226,7 +220,7 @@ serve(async (req: Request) => {
           message: `Unknown status from payment provider: ${txStatus}`,
           status: withdrawal.status,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -245,7 +239,7 @@ serve(async (req: Request) => {
             message: "Failed to update withdrawal status in database.",
             status: withdrawal.status,
           }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
         );
       }
 
@@ -255,7 +249,7 @@ serve(async (req: Request) => {
           status: newStatus,
           message: `Withdrawal marked as ${newStatus}`,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
       );
     }
 
@@ -265,7 +259,7 @@ serve(async (req: Request) => {
         message: "No status update available.",
         status: withdrawal.status,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
     );
 
   } catch (error) {
@@ -279,7 +273,7 @@ serve(async (req: Request) => {
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       }
     );
   }

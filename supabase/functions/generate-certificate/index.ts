@@ -1,16 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
+
 
 serve(async (req) => {
   // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); }
 
   try {
     const supabaseClient = createClient(
@@ -97,7 +93,7 @@ serve(async (req) => {
         certificateUrl: `data:text/html;charset=utf-8,${encodeURIComponent(certificateHtml)}`
       }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
         status: 200 
       }
     )
@@ -106,7 +102,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
         status: 400 
       }
     )

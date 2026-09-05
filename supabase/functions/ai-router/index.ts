@@ -4,18 +4,14 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.46.1";
 // @ts-ignore OpenAI SDK for Deno
 import OpenAI from "https://deno.land/x/openai@v4.24.0/mod.ts";
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimitPreset, RATE_LIMIT_PRESETS } from "../_shared/redis-rate-limit.ts";
+import { circuitBreakers } from "../_shared/circuit-breaker.ts";
 
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "OPTIONS, POST",
-  "Access-Control-Max-Age": "86400",
 };
 
 interface AIRequestPayload {
@@ -35,6 +31,54 @@ interface AIResponsePayload {
 const RATE_LIMITS: Record<string, { limit: number; windowSeconds: number }> = {
   default: { limit: 50, windowSeconds: 60 * 30 }, // 50 requests per 30 minutes
 };
+
+// Use Redis rate limiting if available, otherwise fall back to database-based check
+async function enforceRateLimit(
+  userId: string,
+  actionKey: string,
+): Promise<void> {
+  try {
+    // Try Redis rate limiting first
+    const rateLimitResult = await checkRateLimitPreset(
+      `${userId}:${actionKey}`,
+      'aiRouter'
+    );
+
+    if (!rateLimitResult.allowed) {
+      throw new HttpError(
+        `Rate limit exceeded. ${rateLimitResult.remaining} requests remaining. Please wait before trying again.`,
+        429
+      );
+    }
+  } catch (redisError) {
+    // Fallback to database-based rate limiting if Redis fails
+    console.warn("Redis rate limiting failed, falling back to database:", redisError);
+    
+    // Original database-based rate limiting as fallback
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    const { limit, windowSeconds } = RATE_LIMITS.default;
+    const windowStart = new Date(Date.now() - windowSeconds * 1000).toISOString();
+
+    const { count, error } = await supabase
+      .from("ai_generations")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("action_key", actionKey)
+      .gte("created_at", windowStart);
+
+    if (error) {
+      console.error("Rate limit check failed", error);
+      throw new HttpError("Failed to evaluate request quota", 500, error);
+    }
+
+    if ((count ?? 0) >= limit) {
+      throw new HttpError("Rate limit exceeded. Please wait before trying again.", 429);
+    }
+  }
+}
 
 class HttpError extends Error {
   status: number;
@@ -60,31 +104,6 @@ type ActionHandler = (params: {
   model?: string;
 }>;
 
-async function enforceRateLimit(
-  supabase: SupabaseClient,
-  userId: string,
-  actionKey: string,
-): Promise<void> {
-  const { limit, windowSeconds } = RATE_LIMITS.default;
-  const windowStart = new Date(Date.now() - windowSeconds * 1000).toISOString();
-
-  const { count, error } = await supabase
-    .from("ai_generations")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("action_key", actionKey)
-    .gte("created_at", windowStart);
-
-  if (error) {
-    console.error("Rate limit check failed", error);
-    throw new HttpError("Failed to evaluate request quota", 500, error);
-  }
-
-  if ((count ?? 0) >= limit) {
-    throw new HttpError("Rate limit exceeded. Please wait before trying again.", 429);
-  }
-}
-
 function buildPrompt(body: AIRequestPayload): string {
   if (body.prompt) return body.prompt;
 
@@ -106,27 +125,29 @@ async function callOpenAI(
   model: string,
   options?: Record<string, unknown>,
 ): Promise<AIResponsePayload> {
-  const mergedOptions = options ? { ...options } : {};
-  if (mergedOptions && "model" in mergedOptions) {
-    delete (mergedOptions as Record<string, unknown>).model;
-  }
+  return await circuitBreakers.openai.execute(async () => {
+    const mergedOptions = options ? { ...options } : {};
+    if (mergedOptions && "model" in mergedOptions) {
+      delete (mergedOptions as Record<string, unknown>).model;
+    }
 
-  const response = await client.chat.completions.create({
-    model,
-    messages: [{ role: "user", content: prompt }],
-    ...mergedOptions,
-  } as any);
+    const response = await client.chat.completions.create({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      ...mergedOptions,
+    } as any);
 
-  const content = response.choices?.[0]?.message?.content || "";
-  const tokensPrompt = response.usage?.prompt_tokens ?? 0;
-  const tokensCompletion = response.usage?.completion_tokens ?? 0;
+    const content = response.choices?.[0]?.message?.content || "";
+    const tokensPrompt = response.usage?.prompt_tokens ?? 0;
+    const tokensCompletion = response.usage?.completion_tokens ?? 0;
 
-  return {
-    content,
-    model: response.model ?? model,
-    tokens_prompt: tokensPrompt,
-    tokens_completion: tokensCompletion,
-  };
+    return {
+      content,
+      model: response.model ?? model,
+      tokens_prompt: tokensPrompt,
+      tokens_completion: tokensCompletion,
+    };
+  });
 }
 
 async function callDeepSeek(
@@ -179,74 +200,76 @@ async function callGemini(
   model: string,
   options?: Record<string, unknown>,
 ): Promise<AIResponsePayload> {
-  // Use v1beta API with Gemini 2.0 Flash experimental
-  const modelName = model || "gemini-2.0-flash-exp";
-  
-  // Build request body with optional thinking config
-  const requestBody: any = {
-    contents: [{
-      parts: [{ text: prompt }]
-    }],
-  };
-
-  // Add generation config if provided
-  if (options?.generationConfig) {
-    requestBody.generationConfig = options.generationConfig;
-  }
-
-  // Add thinking config if provided (for extended reasoning)
-  if (options?.thinkingConfig) {
-    requestBody.thinkingConfig = options.thinkingConfig;
-  }
-
-  // Merge any additional options
-  if (options?.response_format) {
-    // Handle JSON schema for structured output (Gemini format)
-    const schema = (options.response_format as any)?.json_schema?.schema || options.response_format;
-    requestBody.generationConfig = {
-      ...requestBody.generationConfig,
-      responseMimeType: "application/json",
-      responseSchema: schema,
+  return await circuitBreakers.googleGenAI.execute(async () => {
+    // Use a stable Gemini 2.0 Flash model available in the current API version.
+    const modelName = model || "gemini-2.0-flash";
+    
+    // Build request body with optional thinking config
+    const requestBody: any = {
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
     };
-  }
-  
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify(requestBody),
+
+    // Add generation config if provided
+    if (options?.generationConfig) {
+      requestBody.generationConfig = options.generationConfig;
     }
-  );
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${response.status} ${error}`);
-  }
-
-  const data = await response.json();
-  
-  // Extract text from all parts (including thoughts if present)
-  let content = "";
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  for (const part of parts) {
-    if (part.text) {
-      content += part.text;
+    // Add thinking config if provided (for extended reasoning)
+    if (options?.thinkingConfig) {
+      requestBody.thinkingConfig = options.thinkingConfig;
     }
-  }
-  
-  const tokensPrompt = data.usageMetadata?.promptTokenCount ?? 0;
-  const tokensCompletion = data.usageMetadata?.candidatesTokenCount ?? 0;
 
-  return {
-    content: content || "",
-    model: modelName,
-    tokens_prompt: tokensPrompt,
-    tokens_completion: tokensCompletion,
-  };
+    // Merge any additional options
+    if (options?.response_format) {
+      // Handle JSON schema for structured output (Gemini format)
+      const schema = (options.response_format as any)?.json_schema?.schema || options.response_format;
+      requestBody.generationConfig = {
+        ...requestBody.generationConfig,
+        responseMimeType: "application/json",
+        responseSchema: schema,
+      };
+    }
+    
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${response.status} ${error}`);
+    }
+
+    const data = await response.json();
+    
+    // Extract text from all parts (including thoughts if present)
+    let content = "";
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      if (part.text) {
+        content += part.text;
+      }
+    }
+    
+    const tokensPrompt = data.usageMetadata?.promptTokenCount ?? 0;
+    const tokensCompletion = data.usageMetadata?.candidatesTokenCount ?? 0;
+
+    return {
+      content: content || "",
+      model: modelName,
+      tokens_prompt: tokensPrompt,
+      tokens_completion: tokensCompletion,
+    };
+  });
 }
 
 async function callAIWithFallback(
@@ -1496,15 +1519,15 @@ Return a JSON object matching the provided schema and nothing else.`;
 };
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const requestOrigin = req.headers.get("Origin");
+  
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); }
 
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", {
+    const errorResponse = new Response("Method Not Allowed", {
       status: 405,
-      headers: corsHeaders,
     });
+    return withCorsHeaders(errorResponse, requestOrigin);
   }
 
   try {
@@ -1517,18 +1540,20 @@ serve(async (req: Request) => {
 
     if (!supabaseUrl || !serviceKey) {
       console.error("Missing Supabase configuration");
-      return new Response(JSON.stringify({ error: "Server misconfiguration" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "Server misconfiguration" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     if (!openAIApiKey && !deepSeekApiKey && !geminiApiKey) {
       console.error("No AI provider API keys configured");
-      return new Response(JSON.stringify({ error: "No AI providers available" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "No AI providers available" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -1536,10 +1561,11 @@ serve(async (req: Request) => {
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "Missing Authorization header" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     const token = authHeader.replace("Bearer ", "");
@@ -1549,21 +1575,23 @@ serve(async (req: Request) => {
     } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
     const body = (await req.json()) as AIRequestPayload;
     if (!body?.action_key) {
-      return new Response(JSON.stringify({ error: "action_key is required" }), {
+      const errorResponse = new Response(JSON.stringify({ error: "action_key is required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
 
-    await enforceRateLimit(supabase, user.id, body.action_key);
+    await enforceRateLimit(user.id, body.action_key);
 
     const handler = actionHandlers[body.action_key];
     let prompt: string;
@@ -1611,7 +1639,7 @@ serve(async (req: Request) => {
     if (geminiApiKey) {
       providers.push({
         name: "Gemini",
-        call: (p, m, o) => callGemini(geminiApiKey, p, "gemini-2.0-flash-exp", o),
+        call: (p, m, o) => callGemini(geminiApiKey, p, m || "gemini-2.0-flash", o),
       });
     }
 
@@ -1650,23 +1678,26 @@ serve(async (req: Request) => {
       },
     };
 
-    return new Response(JSON.stringify(response), {
+    const successResponse = new Response(JSON.stringify(response), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
     });
+    return withCorsHeaders(successResponse, requestOrigin);
   } catch (error) {
     console.error("ai-router error", error);
     if (error instanceof HttpError) {
-      return new Response(JSON.stringify({ error: error.message, details: error.details }), {
+      const errorResponse = new Response(JSON.stringify({ error: error.message, details: error.details }), {
         status: error.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
+      return withCorsHeaders(errorResponse, requestOrigin);
     }
-    return new Response(JSON.stringify({
+    const errorResponse = new Response(JSON.stringify({
       error: error instanceof Error ? error.message : "Unexpected server error",
     }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
     });
+    return withCorsHeaders(errorResponse, requestOrigin);
   }
 });

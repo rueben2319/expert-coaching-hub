@@ -162,7 +162,7 @@ const CoachBilling = () => {
 
   const handleUpdatePaymentMethod = async () => {
     // For now, just show a message that this feature is coming soon
-    // In a full implementation, this would integrate with OneKhusa's saved payment methods
+    // In a full implementation, this would integrate with saved payment methods
     toast.info("Payment method update coming soon - please contact support");
   };
 
@@ -188,7 +188,7 @@ const CoachBilling = () => {
         return;
       }
 
-      toast.info("Subscription payment request created. Complete payment using OneKhusa instructions.");
+      toast.info("Subscription payment request created. Please follow the payment instructions to complete your subscription.");
     } catch (e: any) {
       console.error("Error creating subscription:", e);
       toast.error(e.message || "Failed to start checkout");

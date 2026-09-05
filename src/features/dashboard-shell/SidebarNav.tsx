@@ -41,27 +41,51 @@ export const SidebarNav = memo(function SidebarNav({
   onCollapse,
   showCollapseButton = true,
 }: SidebarNavProps) {
+  const isAdmin = role === "admin";
+  const sidebarBgClass = isAdmin 
+    ? "bg-muted/40 border-r border-border" 
+    : "bg-gradient-to-b from-background to-muted/20";
+  
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-background to-muted/20">
+    <div className={cn("flex flex-col h-full", sidebarBgClass)}>
       {!collapsed && (
-        <div className="md:hidden p-6 border-b bg-gradient-to-r from-primary/5 to-accent/5">
+        <div className={cn(
+          "md:hidden p-4 border-b",
+          isAdmin 
+            ? "bg-muted/60 border-border" 
+            : "bg-gradient-to-r from-primary/5 to-accent/5"
+        )}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg overflow-hidden ring-2 ring-primary/20 bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+            <div className={cn(
+              "w-10 h-10 rounded-lg overflow-hidden ring-2 flex items-center justify-center",
+              isAdmin 
+                ? "ring-border bg-muted" 
+                : "ring-primary/20 bg-gradient-to-br from-primary to-accent"
+            )}>
               <img src={expertsLogo} alt="Experts Coaching Hub" className="w-6 h-6 object-contain" />
             </div>
             <div>
-              <span className="font-bold text-lg text-foreground">{brandName}</span>
-              <p className="text-xs text-muted-foreground">Professional Coaching</p>
+              <span className={cn("font-bold text-lg", isAdmin ? "text-foreground" : "text-foreground")}>{brandName}</span>
+              <p className={cn("text-xs", isAdmin ? "text-muted-foreground" : "text-muted-foreground")}>
+                {isAdmin ? "Admin Panel" : "Professional Coaching"}
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto py-4 px-2">
+      <div className={cn("flex-1 overflow-y-auto", isAdmin ? "py-3 px-2" : "py-4 px-2")}>
         {sections.map((section, sectionIdx) => (
-          <div key={sectionIdx} className="mb-6">
+          <div key={sectionIdx} className={cn("mb-4", isAdmin && "mb-5")}>
             {section.title && !collapsed && (
-              <h3 className="px-3 text-xs font-bold text-muted-foreground mb-3 uppercase tracking-widest opacity-70">{section.title}</h3>
+              <h3 className={cn(
+                "px-3 text-xs font-bold mb-2 uppercase tracking-widest text-muted-foreground",
+                isAdmin 
+                  ? "opacity-60" 
+                  : "opacity-70"
+              )}>
+                {section.title}
+              </h3>
             )}
             <div className="space-y-1">
               {section.items.map((item, itemIdx) => {
@@ -73,16 +97,28 @@ export const SidebarNav = memo(function SidebarNav({
                     size="sm"
                     className={cn(
                       "w-full transition-all duration-200 rounded-lg",
-                      collapsed ? "justify-center px-2 h-10" : "justify-start h-10 px-3",
+                      collapsed ? "justify-center px-2 h-10" : cn(
+                        "justify-start px-3",
+                        isAdmin ? "h-9 text-sm" : "h-10 text-sm"
+                      ),
                       isActive
-                        ? "bg-primary/15 text-primary font-semibold shadow-sm border border-primary/20 hover:bg-primary/20"
-                        : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
+                        ? isAdmin
+                          ? "bg-primary/10 text-primary font-semibold shadow-sm border border-primary/20 hover:bg-primary/15"
+                          : "bg-primary/15 text-primary font-semibold shadow-sm border border-primary/20 hover:bg-primary/20"
+                        : isAdmin
+                          ? "text-foreground hover:bg-primary/8 hover:text-primary"
+                          : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
                     )}
                     onClick={() => onItemClick(item)}
                   >
                     <span className={cn("flex items-center flex-shrink-0", collapsed ? "" : "mr-3")}>{item.icon}</span>
-                    {!collapsed && <span className="flex-1 text-left text-sm font-medium">{item.label}</span>}
-                    {!collapsed && isActive && <div className="w-1.5 h-1.5 rounded-full bg-primary ml-2 flex-shrink-0" />}
+                    {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
+                    {!collapsed && isActive && (
+                      <div className={cn(
+                        "w-1.5 h-1.5 rounded-full ml-2 flex-shrink-0",
+                        isAdmin ? "bg-foreground" : "bg-primary"
+                      )} />
+                    )}
                   </Button>
                 );
 
@@ -104,7 +140,12 @@ export const SidebarNav = memo(function SidebarNav({
         ))}
       </div>
 
-      <div className="border-t bg-gradient-to-t from-muted/30 to-transparent p-3 space-y-2">
+      <div className={cn(
+        "border-t p-3 space-y-2",
+        isAdmin 
+          ? "bg-muted/30 border-border" 
+          : "bg-gradient-to-t from-muted/30 to-transparent"
+      )}>
         <ProfileMenu
           trigger={<ProfileMenuButton collapsed={collapsed} user={user} />}
           side={collapsed ? "right" : "top"}
@@ -121,7 +162,9 @@ export const SidebarNav = memo(function SidebarNav({
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start mt-1 hidden md:flex hover:bg-accent rounded-lg mx-2 mb-2"
+            className={cn(
+              "w-full justify-start mt-1 hidden md:flex rounded-lg hover:bg-accent mx-2 mb-2"
+            )}
             onClick={onCollapse}
           >
             <ChevronLeft className="mr-2 h-4 w-4" />

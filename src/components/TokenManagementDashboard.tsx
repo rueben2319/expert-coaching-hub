@@ -16,7 +16,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { SUPABASE_URL, supabase } from '@/integrations/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
-import { syncTokens } from '@/lib/tokenSync';
+
 
 const getSupabaseFunctionsUrl = (path: string): string => {
   if (!SUPABASE_URL) {
@@ -136,9 +136,7 @@ export function TokenManagementDashboard({
           description: 'Google OAuth token has been refreshed successfully',
         });
         
-        // Synchronize tokens from backend to frontend
-        await syncTokens();
-        
+        // Token sync is no longer required in canonical auth pattern
         await fetchTokenStatus();
         onTokenRefresh?.();
       } else {
@@ -236,14 +234,16 @@ export function TokenManagementDashboard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Shield className="h-5 w-5" />
-          OAuth Token Management
+    <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
+      <CardHeader className="bg-gradient-to-r from-primary/5 to-accent/5 border-b border-border/50 pb-4">
+        <CardTitle className="flex items-center gap-2 text-lg font-medium">
+          <div className="p-2 rounded-lg bg-primary/10 text-primary">
+            <Shield className="h-5 w-5" />
+          </div>
+          Google Calendar Integration
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6 pt-6">
         {/* Token Status */}
         <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
           <div className="flex items-center gap-3">

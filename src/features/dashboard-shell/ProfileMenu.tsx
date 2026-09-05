@@ -1,4 +1,4 @@
-import { memo, ReactNode } from "react";
+import { memo, ReactNode, forwardRef } from "react";
 import { User } from "@supabase/supabase-js";
 import { useNavigate } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -105,21 +105,23 @@ export const ProfileMenu = memo(function ProfileMenu({
           </div>
         </div>
 
-        <div className="px-4 py-3 bg-muted/30 border-b">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Available Credits</p>
-              <p className="text-lg font-bold text-foreground">{walletLoading ? "..." : `${balance ?? 0}`}</p>
+        {role !== "admin" && (
+          <div className="px-4 py-3 bg-muted/30 border-b">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Available Credits</p>
+                <p className="text-lg font-bold text-foreground">{walletLoading ? "..." : `${balance ?? 0}`}</p>
+              </div>
+              <button
+                type="button"
+                className="px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                onClick={() => navigate("/profile?tab=credits")}
+              >
+                Buy
+              </button>
             </div>
-            <button
-              type="button"
-              className="px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-              onClick={() => navigate("/profile?tab=credits")}
-            >
-              Buy
-            </button>
           </div>
-        </div>
+        )}
 
         <div className="py-2">
           <DropdownMenuItem
@@ -129,13 +131,15 @@ export const ProfileMenu = memo(function ProfileMenu({
             <LayoutDashboard className="mr-3 h-4 w-4 text-primary" />
             <span className="font-medium">Dashboard</span>
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}
-            className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
-          >
-            <BarChart3 className="mr-3 h-4 w-4 text-primary" />
-            <span className="font-medium">Progress</span>
-          </DropdownMenuItem>
+          {role !== "admin" && (
+            <DropdownMenuItem
+              onClick={() => navigate(role === "coach" ? "/coach/analytics" : "/client/analytics")}
+              className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
+            >
+              <BarChart3 className="mr-3 h-4 w-4 text-primary" />
+              <span className="font-medium">Progress</span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onClick={() => navigate("/profile")}
             className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors"
@@ -155,16 +159,20 @@ export const ProfileMenu = memo(function ProfileMenu({
 
         <DropdownMenuSeparator className="my-1" />
 
-        <div className="py-2">
-          <DropdownMenuItem onClick={() => navigate("/privacy")} className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm">
-            Privacy Policy
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => navigate("/terms")} className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm">
-            Terms of Service
-          </DropdownMenuItem>
-        </div>
+        {role !== "admin" && (
+          <>
+            <div className="py-2">
+              <DropdownMenuItem onClick={() => navigate("/privacy")} className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm">
+                Privacy Policy
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/terms")} className="px-3 py-2 mx-1 rounded-md cursor-pointer hover:bg-accent transition-colors text-sm">
+                Terms of Service
+              </DropdownMenuItem>
+            </div>
 
-        <DropdownMenuSeparator className="my-1" />
+            <DropdownMenuSeparator className="my-1" />
+          </>
+        )}
 
         <div className="py-2">
           <AlertDialog open={signOutDialogOpen} onOpenChange={onSignOutDialogChange}>
@@ -201,13 +209,13 @@ export const ProfileMenu = memo(function ProfileMenu({
   );
 });
 
-export const ProfileMenuButton = memo(function ProfileMenuButton({
-  collapsed,
-  user,
-}: {
+export const ProfileMenuButton = memo(forwardRef<HTMLButtonElement, {
   collapsed?: boolean;
   user: User | null;
-}) {
+}>(function ProfileMenuButton({
+  collapsed,
+  user,
+}, ref) {
   const getInitials = (name?: string) => {
     if (!name) return "U";
     return name
@@ -220,6 +228,7 @@ export const ProfileMenuButton = memo(function ProfileMenuButton({
 
   return (
     <Button
+      ref={ref}
       variant="ghost"
       className={cn(
         "w-full transition-all duration-200 rounded-lg hover:bg-accent/50",
@@ -240,4 +249,6 @@ export const ProfileMenuButton = memo(function ProfileMenuButton({
       )}
     </Button>
   );
-});
+}));
+
+ProfileMenuButton.displayName = "ProfileMenuButton";

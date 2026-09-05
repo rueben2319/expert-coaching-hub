@@ -1,0 +1,817 @@
+openapi: 3.0.3
+info:
+  title: Expert Coaching Hub API
+  description: |
+    API documentation for the Expert Coaching Hub platform.
+    
+    This API consists of:
+    - Supabase REST API endpoints (auto-generated from database schema)
+    - Supabase Edge Functions (38 serverless functions)
+    
+    ## Authentication
+    All endpoints require authentication via Supabase Auth JWT token.
+    Include the token in the Authorization header: `Bearer <token>`
+    
+    ## Rate Limiting
+    - AI requests: 50 per 30 minutes
+    - Credit purchases: 10 per hour
+    - Withdrawals: 5 per hour
+    - Calendar operations: 10 per minute
+  version: 1.0.0
+  contact:
+    name: Expert Coaching Hub API Support
+    email: support@expertcoachinghub.com
+
+servers:
+  - url: https://your-project.supabase.co
+    description: Production Supabase API
+  - url: https://your-project-dev.supabase.co
+    description: Development Supabase API
+
+tags:
+  - name: Authentication
+    description: User authentication and role management
+  - name: Courses
+    description: Course catalog and content management
+  - name: Enrollments
+    description: Course enrollment and progress tracking
+  - name: Payments
+    description: Credit purchases and payment processing
+  - name: Withdrawals
+    description: Coach withdrawal requests and processing
+  - name: Calendar
+    description: Google Calendar integration for meetings
+  - name: AI
+    description: AI-powered content generation
+  - name: Subscriptions
+    description: Coach subscription management
+  - name: Admin
+    description: Administrative operations
+
+paths:
+  # Edge Functions
+  /functions/v1/auth-login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticates user and returns session data with role information
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  session:
+                    $ref: '#/components/schemas/Session'
+                  role:
+                    $ref: '#/components/schemas/AppRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /functions/v1/get-user-role:
+    get:
+      tags:
+        - Authentication
+      summary: Get user role
+      description: Retrieves the current user's role and permissions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Role retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role:
+                    $ref: '#/components/schemas/AppRole'
+                  permissions:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /functions/v1/upsert-user-role:
+    post:
+      tags:
+        - Authentication
+      summary: Update user role
+      description: Updates a user's role (admin only). Prevents self-assignment to admin role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - role
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                role:
+                  $ref: '#/components/schemas/AppRole'
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Role updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  user_id:
+                    type: string
+                  role:
+                    $ref: '#/components/schemas/AppRole'
+                  previous_role:
+                    $ref: '#/components/schemas/AppRole'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /functions/v1/purchase-credits:
+    post:
+      tags:
+        - Payments
+      summary: Purchase credits
+      description: Initiates a credit purchase and redirects to payment gateway
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - package_id
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Purchase initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  transaction_id:
+                    type: string
+                  checkout_url:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /functions/v1/request-withdrawal:
+    post:
+      tags:
+        - Withdrawals
+      summary: Request withdrawal
+      description: Coaches can request withdrawal of earnings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - credits_amount
+                - payment_method
+                - payment_details
+              properties:
+                credits_amount:
+                  type: number
+                  minimum: 10
+                  maximum: 10000
+                payment_method:
+                  type: string
+                  enum: [onekhusa, paychangu, bank_transfer]
+                payment_details:
+                  type: object
+      responses:
+        '200':
+          description: Withdrawal request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /functions/v1/process-withdrawal:
+    post:
+      tags:
+        - Withdrawals
+      summary: Process withdrawal
+      description: Admin approves or rejects withdrawal requests
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - withdrawal_id
+                - action
+              properties:
+                withdrawal_id:
+                  type: string
+                  format: uuid
+                action:
+                  type: string
+                  enum: [approve, reject]
+                admin_notes:
+                  type: string
+      responses:
+        '200':
+          description: Withdrawal processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                  payout_ref:
+                    type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /functions/v1/create-google-meet:
+    post:
+      tags:
+        - Calendar
+      summary: Create Google Meet
+      description: Creates a Google Calendar event with Google Meet link
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - summary
+                - startTime
+                - endTime
+              properties:
+                summary:
+                  type: string
+                description:
+                  type: string
+                startTime:
+                  type: string
+                  format: date-time
+                endTime:
+                  type: string
+                  format: date-time
+                attendees:
+                  type: array
+                  items:
+                    type: string
+                courseId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Meeting created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  meetingId:
+                    type: string
+                  meetLink:
+                    type: string
+                  calendarEventId:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /functions/v1/ai-router:
+    post:
+      tags:
+        - AI
+      summary: AI content generation
+      description: Routes AI requests to appropriate provider (Google GenAI or OpenAI)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - prompt
+              properties:
+                action:
+                  type: string
+                  enum: [generate_exercise, generate_quiz, generate_content, summarize]
+                prompt:
+                  type: string
+                model:
+                  type: string
+                  enum: [gemini-pro, gpt-4, gpt-3.5-turbo]
+                context:
+                  type: object
+      responses:
+        '200':
+          description: AI generation successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  content:
+                    type: string
+                  model:
+                    type: string
+                  tokens_used:
+                    type: number
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /functions/v1/enroll-with-credits:
+    post:
+      tags:
+        - Enrollments
+      summary: Enroll in course with credits
+      description: Enrolls user in a course and deducts credits from wallet
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - course_id
+              properties:
+                course_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Enrollment successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseEnrollment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '402':
+          description: Insufficient credits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  required_credits:
+                    type: number
+                  current_balance:
+                    type: number
+
+  /functions/v1/manage-coach-subscription:
+    post:
+      tags:
+        - Subscriptions
+      summary: Manage coach subscription
+      description: Subscribe, upgrade, or cancel coach subscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum: [subscribe, upgrade, cancel]
+                tier_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Subscription updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachSubscription'
+
+  # Webhooks
+  /functions/v1/onekhusa-webhook:
+    post:
+      tags:
+        - Payments
+      summary: OneKhusa payment webhook
+      description: Processes payment callbacks from OneKhusa gateway
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                tx_ref:
+                  type: string
+                amount:
+                  type: number
+                signature:
+                  type: string
+      responses:
+        '200':
+          description: Webhook processed
+        '400':
+          description: Invalid signature
+
+  /functions/v1/paychangu-webhook:
+    post:
+      tags:
+        - Payments
+      summary: PayChangu payment webhook
+      description: Processes payment callbacks from PayChangu gateway
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                tx_ref:
+                  type: string
+                amount:
+                  type: number
+                signature:
+                  type: string
+      responses:
+        '200':
+          description: Webhook processed
+        '400':
+          description: Invalid signature
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supabase Auth JWT token
+
+  schemas:
+    AppRole:
+      type: string
+      enum:
+        - client
+        - coach
+        - admin
+      description: User role in the system
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        token_type:
+          type: string
+          enum: [bearer]
+
+    Course:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        thumbnail_url:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [draft, published, archived]
+        level:
+          type: string
+          enum: [introduction, intermediate, advanced]
+        price_credits:
+          type: number
+        is_free:
+          type: boolean
+        average_rating:
+          type: number
+          minimum: 0
+          maximum: 5
+        review_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    CourseEnrollment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        course_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, completed, dropped]
+        progress_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        enrolled_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        credits_paid:
+          type: number
+
+    WithdrawalRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        credits_amount:
+          type: number
+        amount_mwk:
+          type: number
+        status:
+          type: string
+          enum: [draft, pending, approved, rejected, completed, failed]
+        payment_method:
+          type: string
+        payment_details:
+          type: object
+        processed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    CoachSubscription:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        tier_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, past_due, cancelled, expired]
+        current_period_start:
+          type: string
+          format: date-time
+        current_period_end:
+          type: string
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+
+    CreditWallet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        balance:
+          type: number
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        transaction_ref:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [draft, pending, success, failed, cancelled]
+        transaction_mode:
+          type: string
+          enum: [credit_purchase, course_payment, course_earning, refund, withdrawal, deposit]
+        credits_amount:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Bad Request"
+            message: "Invalid input data"
+            code: "400"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Unauthorized"
+            message: "Authentication required"
+            code: "401"
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Forbidden"
+            message: "Insufficient permissions"
+            code: "403"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Not Found"
+            message: "Resource not found"
+            code: "404"
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Too Many Requests"
+            message: "Rate limit exceeded"
+            code: "429"
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Number of seconds to wait before retrying
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal Server Error"
+            message: "An unexpected error occurred"
+            code: "500"

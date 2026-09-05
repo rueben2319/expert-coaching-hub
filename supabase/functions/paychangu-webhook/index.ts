@@ -1,24 +1,17 @@
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
+
 /**
- * Backward-compatibility wrapper.
+ * Paychangu Payment Webhook Handler
  *
- * Legacy integrations may still target /functions/v1/paychangu-webhook.
- * We intentionally reuse the OneKhusa webhook implementation to avoid
- * maintaining duplicate webhook processors.
+ * Processes payment confirmations from Paychangu payment gateway.
+ * Handles credit purchases and coach subscriptions.
  */
-import "../onekhusa-webhook/index.ts";
 
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, signature",
-  "Access-Control-Allow-Methods": "OPTIONS, GET, POST",
-  "Access-Control-Max-Age": "86400",
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -142,7 +135,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 async function verifySignature(rawBody: string, signatureHeader: string | null): Promise<boolean> {
-  const secret = Deno.env.get("ONEKHUSA_WEBHOOK_SECRET");
+  const secret = Deno.env.get("PAYCHANGU_WEBHOOK_SECRET");
   if (!secret || !signatureHeader) return false;
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -159,15 +152,15 @@ async function verifySignature(rawBody: string, signatureHeader: string | null):
 }
 
 serve(async (req: Request) => {
-  console.log("=== ONEKHUSA WEBHOOK RECEIVED ===");
+  console.log("=== PAYMENT WEBHOOK RECEIVED ===");
   console.log("Method:", req.method);
   console.log("URL:", req.url);
   console.log("Headers:", Object.fromEntries(req.headers.entries()));
   console.log("Timestamp:", new Date().toISOString());
 
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return handleCorsPreflight(req.headers.get('Origin'));
 
-  // Handle GET requests for endpoint verification (OneKhusa health checks)
+  // Handle GET requests for endpoint verification (health checks)
   if (req.method === "GET") {
     // Check if this is a redirect request with tx_ref (user being redirected after payment)
     const url = new URL(req.url);
@@ -207,13 +200,13 @@ serve(async (req: Request) => {
     // Regular health check
     return new Response(JSON.stringify({ status: "ok", message: "Webhook endpoint is active" }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 
   if (req.method !== "POST") {
     console.log("Non-POST request received, ignoring");
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    return new Response("Method Not Allowed", { status: 405, headers: getCorsHeaders(req.headers.get('Origin')) });
   }
 
   console.log("Processing POST webhook request");
@@ -224,17 +217,17 @@ serve(async (req: Request) => {
   console.log("Raw body preview:", rawBody.substring(0, 500) + (rawBody.length > 500 ? "..." : ""));
 
   const signature =
-    req.headers.get("X-OneKhusa-Webhook-Signature") ||
-    req.headers.get("x-onekhusa-webhook-signature") ||
+    req.headers.get("X-Paychangu-Webhook-Signature") ||
+    req.headers.get("x-paychangu-webhook-signature") ||
     req.headers.get("Signature") ||
     req.headers.get("signature");
   console.log("Signature present:", !!signature);
 
   // Require secret and signature for all environments
-  if (!Deno.env.get("ONEKHUSA_WEBHOOK_SECRET") || !signature) {
+  if (!Deno.env.get("PAYCHANGU_WEBHOOK_SECRET") || !signature) {
     return new Response(JSON.stringify({ error: "Missing signature or secret" }), {
       status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 
@@ -245,7 +238,7 @@ serve(async (req: Request) => {
     console.error("❌ SIGNATURE VERIFICATION FAILED");
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
       status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 
@@ -256,7 +249,7 @@ serve(async (req: Request) => {
   } catch (e) {
     return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   }
 
@@ -295,7 +288,7 @@ serve(async (req: Request) => {
       console.log("Webhook already processed for tx_ref:", tx_ref);
       return new Response(JSON.stringify({ received: true, duplicate: true }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
       });
     }
 
@@ -448,7 +441,7 @@ serve(async (req: Request) => {
           currency: tx.currency,
           invoice_number: invNum ?? `INV-${Date.now()}`,
           invoice_date: now.toISOString(),
-          payment_method: "onekhusa",
+          payment_method: "paychangu",
           description: "Credit purchase",
           status: "paid",
           subscription_id: null,
@@ -765,7 +758,7 @@ serve(async (req: Request) => {
     // Always return JSON for webhook acknowledgement
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
@@ -786,6 +779,6 @@ serve(async (req: Request) => {
       }
     }
 
-    return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } });
   }
 });

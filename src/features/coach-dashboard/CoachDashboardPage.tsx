@@ -18,9 +18,11 @@ export function CoachDashboardPage() {
     coursesError,
     enrollmentsError,
     hasCourses,
+    enrollmentsCount,
   } = useCoachDashboardData();
 
-  const hasKpiError = Boolean(coursesError || enrollmentsError);
+  const hasKpiError = Boolean(coursesError || enrollmentsError) && (hasCourses || enrollmentsCount > 0);
+  const hasCourseDataError = Boolean(coursesError) && hasCourses;
 
   return (
     <>
@@ -72,13 +74,17 @@ export function CoachDashboardPage() {
           <EmptyCoursesState onCreateCourse={() => navigate("/coach/courses/create")} />
         )}
 
-        {!isCoursesLoading && coursesError && (
+        {!isCoursesLoading && hasCourseDataError && (
           <div className="mt-8">
             <DashboardSectionError
               title="Unable to load recent courses"
               message="We could not fetch your courses right now. Please try again shortly."
             />
           </div>
+        )}
+
+        {!isCoursesLoading && !coursesError && !hasCourses && !hasCourseDataError && (
+          <EmptyCoursesState onCreateCourse={() => navigate("/coach/courses/create")} />
         )}
       </section>
     </>

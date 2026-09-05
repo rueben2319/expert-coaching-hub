@@ -5,17 +5,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 import { OAuthTokenManager } from "../_shared/oauth-token-manager.ts";
 import { DatabaseTokenStorage, TokenStorage } from "../_shared/token-storage.ts";
 
+import { getCorsHeaders, handleCorsPreflight, withCorsHeaders } from "../_shared/cors.ts";
 // Deno global type declaration for IDE
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-};
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const refreshLocks = new Map<string, Promise<Response>>();
@@ -24,11 +19,10 @@ const randomRequestId = (): string =>
   `${Date.now()}-${crypto.randomUUID()}`;
 
 serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') { return handleCorsPreflight(req.headers.get('Origin')); });
   }
   if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
+    return new Response('Method Not Allowed', { status: 405, headers: getCorsHeaders(req.headers.get('Origin')) });
   }
 
   try {
@@ -83,7 +77,7 @@ serve(async (req: Request) => {
             timestamp: new Date().toISOString(),
           }),
           {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
             status: 200,
           }
         );
@@ -182,7 +176,7 @@ serve(async (req: Request) => {
           action_required: 'refresh_session',
         }),
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
           status: 200,
         }
       );
@@ -205,7 +199,7 @@ serve(async (req: Request) => {
         timestamp: new Date().toISOString(),
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
         status: 400,
       }
     );

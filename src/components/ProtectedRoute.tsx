@@ -14,7 +14,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   const location = useLocation();
   const intendedPath = location.pathname + location.search;
 
-  if (authStatus === "idle" || authStatus === "bootstrapping") {
+  if (authStatus === "bootstrapping") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center">
@@ -31,10 +31,6 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
   if (authStatus === "unauthenticated" || !user) {
     return <Navigate to="/auth" replace state={{ from: intendedPath }} />;
-  }
-
-  if (authStatus === "role_missing" || !role) {
-    return <Navigate to="/auth/onboarding" replace state={{ from: intendedPath }} />;
   }
 
   if (authStatus === "error") {
@@ -63,7 +59,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
+  if (allowedRoles && role && !allowedRoles.includes(role)) {
     return <Navigate to={resolvePostAuthRoute(role)} replace />;
   }
 

@@ -1,6 +1,5 @@
 import React, { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
-import { setupTokenSync } from "@/lib/tokenSync";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -28,6 +27,8 @@ const CourseViewer = lazy(() => import("./pages/client/CourseViewer"));
 const ClientSessions = lazy(() => import("./pages/client/Sessions"));
 const ClientMeetingRoom = lazy(() => import("./pages/client/MeetingRoom"));
 const ClientAnalytics = lazy(() => import("./pages/client/ClientAnalytics"));
+const CreditPackages = lazy(() => import("./pages/client/CreditPackages"));
+const CreditPurchaseSuccess = lazy(() => import("./pages/client/CreditPurchaseSuccess"));
 const CoachDashboard = lazy(() => import("./pages/coach/CoachDashboard"));
 const CoachCourses = lazy(() => import("./pages/coach/Courses"));
 const CreateCourse = lazy(() => import("./pages/coach/CreateCourse"));
@@ -73,11 +74,6 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
-  // Set up automatic token synchronization
-  React.useEffect(() => {
-    const cleanup = setupTokenSync(60000); // Check every 60 seconds
-    return cleanup;
-  }, []);
 
   return (
     <ErrorBoundary>
@@ -154,6 +150,22 @@ const App = () => {
               element={
                 <ProtectedRoute allowedRoles={["client"]}>
                   <ClientAnalytics />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/client/credits"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <CreditPackages />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/client/credits/success"
+              element={
+                <ProtectedRoute allowedRoles={["client"]}>
+                  <CreditPurchaseSuccess />
                 </ProtectedRoute>
               }
             />
