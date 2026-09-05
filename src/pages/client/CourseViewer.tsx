@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ContentRenderer } from "@/components/content/ContentRenderer";
 import { AIStudyBuddy } from "@/components/student/AIStudyBuddy";
+import { ModuleIntroduction } from "@/components/course/ModuleIntroduction";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
@@ -14,6 +15,20 @@ import { CheckCircle2, Clock, BookOpen, PlayCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 type ViewType = "overview" | "lesson";
+
+interface Module {
+  id: string;
+  title: string;
+  description?: string;
+  order_index: number;
+  lessons: {
+    id: string;
+    title: string;
+    order_index: number;
+    estimated_duration?: number;
+    isCompleted: boolean;
+  }[];
+}
 
 export default function CourseViewer() {
   const { courseId } = useParams();
@@ -24,6 +39,7 @@ export default function CourseViewer() {
   const [currentModuleId, setCurrentModuleId] = useState<string | undefined>();
   const [currentLessonId, setCurrentLessonId] = useState<string | undefined>();
   const [isCheckingCompletion, setIsCheckingCompletion] = useState(false);
+  const [showModuleIntro, setShowModuleIntro] = useState(false);
 
   // Fetch course details
   const { data: course, isLoading: courseLoading } = useQuery({
@@ -200,7 +216,7 @@ export default function CourseViewer() {
       if (allRequiredCompleted) {
         // Check if lesson is already completed in database
         const isLessonAlreadyCompleted = lessonProgress?.some(
-          (p: any) => p.lesson_id === currentLessonId && p.is_completed
+          (p: any) => p.lesson_id === currentLessonId && (p.progress_percentage === 100 || p.completed_at)
         );
 
         if (!isLessonAlreadyCompleted) {
@@ -295,7 +311,7 @@ export default function CourseViewer() {
           .upsert({
             user_id: user.id,
             lesson_id: currentLessonId,
-            is_completed: false,
+            progress_percentage: 0,
             started_at: new Date().toISOString(),
           }, {
             onConflict: 'user_id,lesson_id',
@@ -325,7 +341,7 @@ export default function CourseViewer() {
         .upsert({
           user_id: user!.id,
           lesson_id: lessonId,
-          is_completed: true,
+          progress_percentage: 100,
           completed_at: new Date().toISOString(),
         });
 
@@ -342,28 +358,33 @@ export default function CourseViewer() {
   const progressMap = useMemo(() => {
     const map = new Map<string, boolean>();
     lessonProgress?.forEach(p => {
-      if (p.is_completed) {
+      // Consider lesson completed if progress is 100% or has completed_at timestamp
+      if (p.progress_percentage === 100 || p.completed_at) {
         map.set(p.lesson_id, true);
       }
     });
     return map;
   }, [lessonProgress]);
 
-  // Prepare modules data with completion status
+  // Prepare modules data with completion status and numbering
   const modules = useMemo(() => {
     return course?.course_modules
       ?.sort((a: any, b: any) => a.order_index - b.order_index)
-      .map((module: any) => ({
+      .map((module: any, moduleIndex: number) => ({
         id: module.id,
         title: module.title,
+        description: module.description,
         order_index: module.order_index,
+        moduleNumber: `${moduleIndex + 1}`,
         lessons: module.lessons
           ?.sort((a: any, b: any) => a.order_index - b.order_index)
-          .map((lesson: any) => ({
+          .map((lesson: any, lessonIndex: number) => ({
             id: lesson.id,
             title: lesson.title,
             order_index: lesson.order_index,
+            estimated_duration: lesson.estimated_duration,
             isCompleted: progressMap.get(lesson.id) || false, // O(1) lookup!
+            lessonNumber: `${moduleIndex + 1}.${lessonIndex + 1}`,
           })) || [],
       })) || [];
   }, [course?.course_modules, progressMap]);
@@ -423,12 +444,32 @@ export default function CourseViewer() {
     setCurrentView("lesson");
     setCurrentModuleId(moduleId);
     setCurrentLessonId(lessonId);
+    
+    // Show module introduction if this is the first lesson in a new module
+    const module = modules.find(m => m.id === moduleId);
+    if (module && module.lessons.length > 0 && module.lessons[0].id === lessonId) {
+      setShowModuleIntro(true);
+    } else {
+      setShowModuleIntro(false);
+    }
   };
 
   const handleMarkComplete = () => {
     if (currentLessonId) {
       completeLessonMutation.mutate(currentLessonId);
     }
+  };
+
+  const getCurrentModule = () => {
+    if (!currentModuleId) return null;
+    return modules.find((m: any) => m.id === currentModuleId);
+  };
+
+  const getCurrentLessonNumber = () => {
+    if (!currentModuleId || !currentLessonId) return null;
+    const module = modules.find((m: any) => m.id === currentModuleId);
+    const lesson = module?.lessons.find((l: any) => l.id === currentLessonId);
+    return lesson?.lessonNumber || null;
   };
 
   if (courseLoading) {
@@ -508,6 +549,12 @@ export default function CourseViewer() {
       onPrev={handlePrev}
       hasNext={currentLessonIndex < allLessons.length - 1}
       hasPrev={currentLessonIndex > 0}
+      currentLessonNumber={getCurrentLessonNumber() || undefined}
+      resources={[
+        { title: "Course Syllabus", url: "#", type: "PDF" },
+        { title: "Additional Reading", url: "#", type: "Link" },
+        { title: "Exercise Files", url: "#", type: "ZIP" },
+      ]}
     >
       {currentView === "overview" ? (
         <div className="space-y-6">
@@ -687,57 +734,79 @@ export default function CourseViewer() {
         </div>
       ) : (
         <div className="space-y-6">
-            {/* Lesson Header */}
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h1 className="text-3xl font-bold mb-2">
+          {/* Module Introduction */}
+          {showModuleIntro && currentModuleId && (
+            <ModuleIntroduction
+              title={getCurrentModule()?.title || ""}
+              description={getCurrentModule()?.description}
+              moduleNumber={modules.findIndex(m => m.id === currentModuleId) + 1}
+              totalLessons={getCurrentModule()?.lessons.length || 0}
+              estimatedDuration={getCurrentModule()?.lessons.reduce((sum, l) => sum + (l.estimated_duration || 0), 0)}
+              learningObjectives={[
+                "Understand the core concepts",
+                "Apply practical skills",
+                "Complete hands-on exercises"
+              ]}
+              onStart={() => setShowModuleIntro(false)}
+            />
+          )}
+
+          {/* Lesson Header */}
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl font-bold text-muted-foreground">
+                  {getCurrentLessonNumber()}
+                </span>
+                <h1 className="text-3xl font-bold">
                   {currentLesson?.title}
                 </h1>
-                {currentLesson?.description && (
-                  <p className="text-muted-foreground">
-                    {currentLesson.description}
-                  </p>
-                )}
-                {currentLesson?.estimated_duration && (
-                  <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>{currentLesson.estimated_duration} minutes</span>
-                  </div>
-                )}
-                {/* Lesson Progress */}
-                {currentLesson?.lesson_content && (
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Lesson Progress</span>
-                      <span className="font-medium">
-                        {trackableLessonContent.length > 0
-                          ? `${completedTrackableContent} of ${trackableLessonContent.length} required items completed`
-                          : "No required items in this lesson"}
-                      </span>
-                    </div>
-                    <Progress
-                      value={lessonProgressPercentage}
-                      className="h-2"
-                    />
-                  </div>
-                )}
               </div>
-              {!isLessonCompleted && (
-                <Button
-                  onClick={handleMarkComplete}
-                  disabled={completeLessonMutation.isPending}
-                >
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Mark Complete
-                </Button>
+              {currentLesson?.description && (
+                <p className="text-muted-foreground">
+                  {currentLesson.description}
+                </p>
               )}
-              {isLessonCompleted && (
-                <Badge className="bg-green-600">
-                  <CheckCircle2 className="mr-1 h-3 w-3" />
-                  Completed
-                </Badge>
+              {currentLesson?.estimated_duration && (
+                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  <span>{currentLesson.estimated_duration} minutes</span>
+                </div>
+              )}
+              {/* Lesson Progress */}
+              {currentLesson?.lesson_content && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Lesson Progress</span>
+                    <span className="font-medium">
+                      {trackableLessonContent.length > 0
+                        ? `${completedTrackableContent} of ${trackableLessonContent.length} required items completed`
+                        : "No required items in this lesson"}
+                    </span>
+                  </div>
+                  <Progress
+                    value={lessonProgressPercentage}
+                    className="h-2"
+                  />
+                </div>
               )}
             </div>
+            {!isLessonCompleted && (
+              <Button
+                onClick={handleMarkComplete}
+                disabled={completeLessonMutation.isPending}
+              >
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Mark Complete
+              </Button>
+            )}
+            {isLessonCompleted && (
+              <Badge className="bg-green-600">
+                <CheckCircle2 className="mr-1 h-3 w-3" />
+                Completed
+              </Badge>
+            )}
+          </div>
 
             {/* Lesson Content */}
             {currentLesson?.lesson_content &&

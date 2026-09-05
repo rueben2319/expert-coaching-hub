@@ -2,14 +2,18 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { BookOpen } from "lucide-react";
 import { clientSidebarSections } from "@/config/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useEnrollmentProgress, type CourseCardViewModel, type CourseModuleRef } from "@/hooks/useEnrollmentProgress";
+import { useUserCertificates } from "@/hooks/useUserCertificates";
+import { useUpcomingLessons, type UpcomingLesson } from "@/hooks/useUserDashboardData";
+import { EnhancedCourseCard } from "@/components/dashboard/EnhancedCourseCard";
+import { AchievementsSection } from "@/components/dashboard/AchievementsSection";
+import { UpcomingLessonsSection } from "@/components/dashboard/UpcomingLessonsSection";
 
 type MyCourseEnrollment = {
   id: string;
@@ -17,6 +21,8 @@ type MyCourseEnrollment = {
     id: string;
     title: string;
     description: string | null;
+    level: string | null;
+    category: string | null;
     course_modules?: CourseModuleRef[];
   };
 };
@@ -33,7 +39,7 @@ export default function MyCourses() {
         .select(`
           id,
           courses(
-            id, title, description,
+            id, title, description, level, category,
             course_modules(
               id,
               lessons(id)
@@ -50,6 +56,8 @@ export default function MyCourses() {
   });
 
   const { calculateEnrollmentProgress, isLoading: progressLoading } = useEnrollmentProgress(user?.id);
+  const { data: certificates, isLoading: certificatesLoading } = useUserCertificates(user?.id);
+  const { data: upcomingLessons, isLoading: upcomingLessonsLoading } = useUpcomingLessons(user?.id, 3);
 
   const cards = useMemo<CourseCardViewModel[]>(() => {
     if (!enrollments) return [];
@@ -60,45 +68,57 @@ export default function MyCourses() {
       title: enrollment.courses.title,
       description: enrollment.courses.description ?? "Keep making progress on this course.",
       progress: calculateEnrollmentProgress(enrollment),
+      level: enrollment.courses.level,
+      category: enrollment.courses.category,
     }));
   }, [enrollments, calculateEnrollmentProgress]);
 
-  const isLoading = enrollmentsLoading || progressLoading;
+  const isLoading = enrollmentsLoading || progressLoading || certificatesLoading || upcomingLessonsLoading;
+
+  const handleContinueLesson = (lessonId: string, courseId: string) => {
+    navigate(`/client/course/${courseId}#lesson-${lessonId}`);
+  };
 
   return (
     <DashboardLayout sidebarSections={clientSidebarSections}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">My Courses</h1>
-          <p className="text-muted-foreground mt-2">Track your learning progress</p>
+          <h1 className="text-3xl font-bold">My Learning</h1>
+          <p className="text-muted-foreground mt-2">Track your learning progress and achievements</p>
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12">Loading your courses...</div>
+          <div className="text-center py-12">Loading your learning dashboard...</div>
         ) : cards.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {cards.map((card) => (
-              <Card key={card.enrollmentId} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <CardTitle className="line-clamp-2">{card.title}</CardTitle>
-                  <CardDescription className="line-clamp-2">{card.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm mb-2">
-                        <span>Progress</span>
-                        <span className="font-medium">{card.progress}%</span>
-                      </div>
-                      <Progress value={Math.max(card.progress, 5)} />
-                    </div>
-                    <Button className="w-full" onClick={() => navigate(`/client/course/${card.courseId}`)}>
-                      {card.progress === 100 ? "Review" : "Continue"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid gap-6 lg:grid-cols-3">
+            {/* Main Content: In-Progress Courses */}
+            <div className="lg:col-span-2 space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-4">In-Progress</h2>
+                <div className="grid gap-6 md:grid-cols-2">
+                  {cards.map((card) => (
+                    <EnhancedCourseCard
+                      key={card.enrollmentId}
+                      card={card}
+                      onContinue={(courseId) => navigate(`/client/course/${courseId}`)}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar: Achievements and Upcoming */}
+            <div className="space-y-6">
+              <AchievementsSection 
+                certificates={certificates || []}
+                isLoading={certificatesLoading}
+              />
+              <UpcomingLessonsSection
+                upcomingLessons={upcomingLessons || []}
+                isLoading={upcomingLessonsLoading}
+                onContinueLesson={handleContinueLesson}
+              />
+            </div>
           </div>
         ) : (
           <Card className="text-center py-12">

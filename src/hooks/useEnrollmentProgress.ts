@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface LessonProgressRecord {
   lesson_id: string;
-  is_completed: boolean;
+  progress_percentage: number;
+  completed_at: string | null;
 }
 
 export interface LessonRef {
@@ -29,6 +30,8 @@ export interface CourseCardViewModel {
   title: string;
   description: string;
   progress: number;
+  level: string | null;
+  category: string | null;
 }
 
 export function calculateProgressFromModules(
@@ -61,7 +64,7 @@ export function useEnrollmentProgress(userId?: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lesson_progress")
-        .select("lesson_id, is_completed")
+        .select("lesson_id, progress_percentage, completed_at")
         .eq("user_id", userId!);
 
       if (error) throw error;
@@ -73,7 +76,10 @@ export function useEnrollmentProgress(userId?: string) {
   const completedLessonIds = useMemo(() => {
     const ids = new Set<string>();
     lessonProgress?.forEach((lesson) => {
-      if (lesson.is_completed) ids.add(lesson.lesson_id);
+      // Consider a lesson completed if progress is 100% or has a completed_at timestamp
+      if (lesson.progress_percentage === 100 || lesson.completed_at) {
+        ids.add(lesson.lesson_id);
+      }
     });
     return ids;
   }, [lessonProgress]);
